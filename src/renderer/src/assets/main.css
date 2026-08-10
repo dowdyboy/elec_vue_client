@@ -1,0 +1,77 @@
+@import './base.css';
+
+/* ─────────────────────────────────────────────
+   全局样式：覆盖 electron-vite 模板的演示样式，
+   改为面向"教学工具应用"的常规布局
+   ───────────────────────────────────────────── */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  /* 禁用模板自带的居中演示布局与背景图 */
+  display: block;
+  overflow: auto;
+  background-image: none;
+  user-select: none;
+}
+
+code {
+  font-weight: 600;
+  padding: 3px 5px;
+  border-radius: 2px;
+  background-color: var(--color-background-mute);
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    SF Mono,
+    Menlo,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 85%;
+}
+
+/* 页面通用 CSS 变量（配合 Naive UI 主题自动切换） */
+:root {
+  --border-color: #e5e7eb;
+  --code-toolbar-bg: #f3f4f6;
+  --text-color-2: #6b7280;
+}
+
+/* 暗色主题下的变量覆盖：由 stores/theme.ts 监听 isDark 切换 <html class="dark"> */
+:root.dark {
+  --border-color: #3f3f3f;
+  --code-toolbar-bg: #2b2b2b;
+  --text-color-2: #a1a1aa;
+}
+
+/* 文件拖拽区域 */
+.drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-color-2);
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.drop-zone:hover {
+  border-color: #2f7ef7;
+  color: #2f7ef7;
+}
+
+/* 代码片段展示（网络页等） */
+.code-snippet {
+  background: var(--code-toolbar-bg);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  overflow-x: auto;
+  line-height: 1.6;
+}
