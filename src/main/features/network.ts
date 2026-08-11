@@ -12,7 +12,7 @@
  */
 
 import axios from 'axios'
-import { ipcMain } from 'electron'
+import { ipcMain, net } from 'electron'
 
 export function registerNetwork(): void {
   ipcMain.handle('network:httpGet', async (_event, url: string) => {
@@ -32,6 +32,23 @@ export function registerNetwork(): void {
           typeof response.data === 'string'
             ? response.data.slice(0, 2000)
             : JSON.stringify(response.data).slice(0, 2000)
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  // ── DNS 解析（域名 → IP 地址列表）──
+  ipcMain.handle('network:resolveDns', async (_event, hostname: string) => {
+    if (!hostname) return { ok: false, error: '域名不能为空' }
+    try {
+      // 类型声明未完全覆盖 ResolvedHost 结构，按官方 API 使用
+      const result = (await net.resolveHost(hostname)) as unknown as {
+        addresses: { address: string; family: number }[]
+      }
+      return {
+        ok: true,
+        addresses: result.addresses.map((a) => `${a.address}（IPv${a.family}）`)
       }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

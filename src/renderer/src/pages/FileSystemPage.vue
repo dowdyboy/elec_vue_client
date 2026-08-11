@@ -3,7 +3,7 @@
  * 文件系统演示页
  * 演示：目录浏览 / 读写文件（经主进程 fs）+ 拖拽获取文件路径
  */
-import { h, ref } from 'vue'
+import { h, onUnmounted, ref } from 'vue'
 import {
   NCard,
   NButton,
@@ -141,6 +141,94 @@ async function getFileIcon(): Promise<void> {
   iconHint.value = `已获取系统图标（文件名: ${iconPath.value.split(/[\\/]/).pop()}）`
 }
 
+// ── shell 文件操作（shellOps.ts）──
+const shellFile = ref('')
+
+async function pickShellFile(): Promise<void> {
+  const file = await window.api.dialog.openFile([{ name: '所有文件', extensions: ['*'] }])
+  if (file) shellFile.value = file
+}
+
+async function shellOpen(): Promise<void> {
+  const res = await window.api.shell.openPath(shellFile.value)
+  if (res.ok) message.success('已用系统默认程序打开')
+  else message.error(res.error ?? '打开失败')
+}
+
+function showInFolder(): void {
+  window.api.shell.showInFolder(shellFile.value)
+}
+
+async function shellTrash(): Promise<void> {
+  const res = await window.api.shell.trash(shellFile.value)
+  if (res.ok) {
+    message.success('已移到回收站')
+    shellFile.value = ''
+  } else {
+    message.error(res.error ?? '操作失败')
+  }
+}
+
+function beep(): void {
+  window.api.shell.beep()
+}
+
+// ── 目录监听（fs.watch）──
+const watching = ref(false)
+const watchDir = ref('')
+const watchEvents = ref<{ time: string; eventType: string; filename: string }[]>([])
+let watchId: number | null = null
+let disposeWatch: (() => void) | null = null
+
+async function pickWatchDir(): Promise<void> {
+  // 用现有"选择文件并浏览目录"的流程取目录
+  const file = await window.api.dialog.openFile([{ name: '所有文件', extensions: ['*'] }])
+  if (!file) return
+  const parts = file.split(/[\\/]/)
+  parts.pop()
+  let dir = parts.join('\\')
+  if (/^[A-Za-z]:$/.test(dir)) dir += '\\'
+
+  disposeWatch?.()
+  const res = await window.api.fs.watch(dir)
+  if (!res.ok) {
+    message.error(res.error ?? '监听失败')
+    return
+  }
+  watchId = res.id
+  watchDir.value = dir
+  watchEvents.value = []
+  watching.value = true
+  disposeWatch = window.api.fs.onWatcherEvent((raw) => {
+    const data = raw as { id: number; eventType: string; filename: string; time: string }
+    if (data.id !== watchId) return
+    watchEvents.value.unshift({
+      time: data.time,
+      eventType: data.eventType,
+      filename: data.filename
+    })
+    if (watchEvents.value.length > 30) watchEvents.value.pop()
+  })
+  message.success('开始监听目录变化')
+}
+
+async function stopWatch(): Promise<void> {
+  if (watchId !== null) await window.api.fs.unwatch(watchId)
+  disposeWatch?.()
+  watching.value = false
+  watchDir.value = ''
+  watchId = null
+}
+
+// 页面卸载时清理：避免路由切换后 watcher 持续占用
+onUnmounted(() => {
+  disposeWatch?.()
+  if (watchId !== null) {
+    window.api.fs.unwatch(watchId)
+    watchId = null
+  }
+})
+
 // ── 表格列 ──
 const columns: DataTableColumns<DirEntry> = [
   {
@@ -267,6 +355,55 @@ const columns: DataTableColumns<DirEntry> = [
         style="display: block; margin-top: 8px; font-size: 12px"
         >{{ iconHint }}</n-text
       >
+    </n-card>
+
+    <n-card
+      size="small"
+      title="文件操作（shell 模块，主进程: shellOps.ts）"
+      style="margin-top: 12px"
+    >
+      <n-button size="small" type="primary" @click="pickShellFile">选择文件</n-button>
+      <n-button size="small" style="margin-left: 8px" @click="beep">系统蜂鸣</n-button>
+      <n-tag
+        v-if="shellFile"
+        size="small"
+        type="info"
+        round
+        style="display: block; margin-top: 8px"
+      >
+        {{ shellFile }}
+      </n-tag>
+      <div v-if="shellFile" style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap">
+        <n-button size="small" @click="shellOpen">打开文件</n-button>
+        <n-button size="small" @click="showInFolder">在文件夹中显示</n-button>
+        <n-button size="small" type="error" @click="shellTrash">移到回收站</n-button>
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        shell 模块：openPath 用系统默认程序打开、showItemInFolder 资源管理器定位、 trashItem
+        移到回收站（可恢复）。下载管理页的"打开/定位/回收站"按钮也是调它。
+      </n-text>
+    </n-card>
+
+    <n-card size="small" title="目录监听（fs.watch）" style="margin-top: 12px">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+        <n-button size="small" type="primary" @click="pickWatchDir">选择目录并开始监听</n-button>
+        <n-button size="small" type="error" :disabled="!watching" @click="stopWatch"
+          >停止监听</n-button
+        >
+        <n-tag v-if="watching" size="small" type="success" round>监听中: {{ watchDir }}</n-tag>
+      </div>
+      <div
+        v-if="watchEvents.length"
+        style="margin-top: 8px; font-size: 12px; max-height: 150px; overflow-y: auto"
+      >
+        <div v-for="(e, i) in watchEvents" :key="i">
+          👁 {{ e.time }} [{{ e.eventType }}] {{ e.filename }}
+        </div>
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        在资源管理器中往该目录新建/删除/修改文件，事件会实时推送（热同步/构建监视器场景）。
+        Windows/macOS 支持递归监听子目录。
+      </n-text>
     </n-card>
 
     <template #code>

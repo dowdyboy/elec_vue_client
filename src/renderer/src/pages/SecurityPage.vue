@@ -4,7 +4,7 @@
  * 演示：权限白名单拦截、外部导航拦截、CSP 说明
  */
 import { onMounted, onUnmounted, ref } from 'vue'
-import { NCard, NButton, NText, useMessage } from 'naive-ui'
+import { NCard, NButton, NText, NSwitch, useMessage } from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
 import securityCode from '../../../main/features/security.ts?raw'
@@ -34,11 +34,50 @@ function triggerNavigation(): void {
 }
 
 let dispose: (() => void) | null = null
+
+// ── 系统权限询问（systemAccess.ts）──
+const isMac = window.electron.process.platform === 'darwin'
+const accessStatus = ref<{ supported: boolean; camera?: string; microphone?: string } | null>(null)
+
+async function refreshAccessStatus(): Promise<void> {
+  accessStatus.value = await window.api.system.getMediaAccessStatus()
+}
+
+async function askAccess(type: 'camera' | 'microphone'): Promise<void> {
+  const res = await window.api.system.askMediaAccess(type)
+  if (!res.ok) {
+    message.info(res.error ?? '当前平台不支持此调用')
+  } else {
+    message.success(res.granted ? `${type} 权限已授予` : `${type} 权限被拒绝`)
+  }
+  await refreshAccessStatus()
+}
+
+// ── 证书校验（certificate.ts）──
+const trustAll = ref(false)
+
+async function toggleCertMode(value: boolean): Promise<void> {
+  trustAll.value = value
+  await window.api.cert.setVerifyMode(value ? 'trustAll' : 'default')
+  message[value ? 'warning' : 'success'](
+    value ? '已放行所有证书（仅演示用，生产禁用！）' : '已恢复系统默认证书校验'
+  )
+}
+
+// ── 静默权限检查（security.ts 扩展）──
+const silentCheck = ref(false)
+
+async function toggleSilentCheck(value: boolean): Promise<void> {
+  silentCheck.value = await window.api.security.setSilentCheck(value)
+  message.info(silentCheck.value ? '已启用静默检查（白名单外权限静默拒绝）' : '已关闭静默检查')
+}
+
 onMounted(() => {
   dispose = window.api.security.onPermissionDenied((permission) => {
     deniedPermissions.value.unshift(permission)
     message.error(`权限请求被主进程拒绝: ${permission}`)
   })
+  refreshAccessStatus()
 })
 onUnmounted(() => dispose?.())
 </script>
@@ -67,7 +106,76 @@ onUnmounted(() => dispose?.())
       </n-text>
     </n-card>
 
-    <n-card size="small" title="③ 安全基线建议">
+    <n-card
+      size="small"
+      title="③ 系统权限询问（macOS，主进程: systemAccess.ts）"
+      style="margin-bottom: 12px"
+    >
+      <div v-if="accessStatus">
+        <n-tag size="small" type="info" round>
+          摄像头: {{ accessStatus.camera ?? 'N/A' }} · 麦克风:
+          {{ accessStatus.microphone ?? 'N/A' }}
+        </n-tag>
+        <n-text
+          v-if="!accessStatus.supported"
+          depth="3"
+          style="display: block; margin-top: 4px; font-size: 12px"
+        >
+          Windows/Linux 由 Chromium 权限弹窗处理（受本页 ① 的白名单控制）。
+        </n-text>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px">
+        <n-button size="small" :disabled="!isMac" @click="askAccess('camera')"
+          >请求摄像头权限</n-button
+        >
+        <n-button size="small" :disabled="!isMac" @click="askAccess('microphone')"
+          >请求麦克风权限</n-button
+        >
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        授权状态: not-determined（未询问）→ granted（已授予）→ denied（已拒绝）。 macOS
+        上必须经主进程 askForMediaAccess 发起系统授权弹窗。
+      </n-text>
+      <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
+        ⚠️ 注意两层权限是独立的关系：系统授权（本卡片，macOS 弹窗）允许操作系统层面使用摄像头；
+        但页面实际调用 getUserMedia 时还会经过本页 ① 的 Chromium 权限白名单 （当前只放行
+        clipboard-read，所以即使系统已授权，getUserMedia 仍会被主进程拒绝）——
+        生产应用需同时处理这两层。
+      </n-alert>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="③.5 静默权限检查（setPermissionCheckHandler）"
+      style="margin-bottom: 12px"
+    >
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="font-size: 13px">静默检查模式：</span>
+        <n-switch :value="silentCheck" @update:value="toggleSilentCheck" />
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        与 ① 的"请求处理器"（有回调交互、可通知页面）不同：检查处理器是<code>无 UI 静默判断</code>
+        （如 permissions.query 的返回值），不弹窗、不通知，直接返回 boolean。
+        两者共用同一白名单——教学演示了两层权限 API 的关系。
+      </n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="④ 证书校验策略（主进程: certificate.ts）"
+      style="margin-bottom: 12px"
+    >
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="font-size: 13px">放行所有证书（trustAll）：</span>
+        <n-switch :value="trustAll" @update:value="toggleCertMode" />
+      </div>
+      <n-alert type="error" :show-icon="true" size="small" style="margin-top: 8px">
+        ⚠️ trustAll 会带来中间人攻击风险（任何人可伪造证书窃取数据），
+        仅用于企业内网自签证书或测试环境，生产必须保持默认校验。
+      </n-alert>
+    </n-card>
+
+    <n-card size="small" title="⑤ 安全基线建议">
       <n-text depth="3" style="font-size: 13px">
         1. 永远开启 contextIsolation，preload 只暴露最小化 API（本工程 preload/index.ts 即范例）<br />
         2. 生产环境建议 sandbox: true（本工程保持模板默认 false 便于教学演示）<br />

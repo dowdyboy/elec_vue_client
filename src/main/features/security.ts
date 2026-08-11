@@ -11,7 +11,7 @@
  *         配合 webPreferences 的 contextIsolation: true 与 sandbox 一起使用
  */
 
-import { app, session, shell } from 'electron'
+import { app, ipcMain, session, shell } from 'electron'
 
 export function registerSecurity(): void {
   // ── ① 权限请求白名单 ───────────────────────────────
@@ -29,8 +29,20 @@ export function registerSecurity(): void {
     webContents.send('security:permission-denied', permission)
   })
 
-  // 也可用 setPermissionCheckHandler 做"静默查询"（不弹窗）的权限判断
-  // session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowedPermissions.has(permission))
+  // ── ①.5 静默权限检查（setPermissionCheckHandler）──
+  // 与上面的"请求处理器"（有回调交互、可通知页面）不同：
+  // 检查处理器是"无 UI 静默判断"（如 permissions.query API 的返回值），
+  // 不弹窗、不通知，直接返回 boolean。开关演示两种模式的差异。
+  let silentCheck = false
+  ipcMain.handle('security:setSilentCheck', (_e, enabled: boolean) => {
+    silentCheck = enabled
+    return silentCheck
+  })
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    // 开关关闭（未启用静默检查层）：放行查询，权限最终由上面的 request handler 裁决
+    // 开关开启：白名单内权限放行，其余静默拒绝（不产生任何提示）
+    return !silentCheck || allowedPermissions.has(permission)
+  })
 
   // ── ② 每个 webContents 创建时挂拦截器 ───────────────
   app.on('web-contents-created', (_event, contents) => {

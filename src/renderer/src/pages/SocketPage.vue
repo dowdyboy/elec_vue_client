@@ -74,6 +74,16 @@ async function bindUdp(port: number): Promise<void> {
   message.success(`已绑定 UDP 端口 ${port}`)
 }
 
+async function unbindUdp(port: number): Promise<void> {
+  const res = await window.api.socket.udp.unbind(port)
+  if (res.ok) {
+    boundPorts.value = boundPorts.value.filter((p) => p !== port)
+    message.info(`已解绑端口 ${port}`)
+  } else {
+    message.error(res.error ?? '解绑失败')
+  }
+}
+
 async function sendUdp(from: number, to: number): Promise<void> {
   const res = await window.api.socket.udp.send({
     fromPort: from,
@@ -166,6 +176,20 @@ onUnmounted(() => disposers.forEach((d) => d()))
           @click="bindUdp(Number(udpPortB))"
         >
           绑定 {{ udpPortB }}
+        </n-button>
+        <n-button
+          type="error"
+          :disabled="!boundPorts.includes(Number(udpPortA))"
+          @click="unbindUdp(Number(udpPortA))"
+        >
+          解绑 {{ udpPortA }}
+        </n-button>
+        <n-button
+          type="error"
+          :disabled="!boundPorts.includes(Number(udpPortB))"
+          @click="unbindUdp(Number(udpPortB))"
+        >
+          解绑 {{ udpPortB }}
         </n-button>
       </div>
       <div style="display: flex; gap: 8px">

@@ -100,6 +100,30 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '网络通信', icon: '🌐' }
   },
   {
+    path: '/download',
+    name: 'download',
+    component: () => import('../pages/DownloadPage.vue'),
+    meta: { title: '下载管理', icon: '⬇️' }
+  },
+  {
+    path: '/session',
+    name: 'session',
+    component: () => import('../pages/SessionPage.vue'),
+    meta: { title: '会话管理', icon: '🧾' }
+  },
+  {
+    path: '/database',
+    name: 'database',
+    component: () => import('../pages/DatabasePage.vue'),
+    meta: { title: 'SQLite 数据库', icon: '🗄️' }
+  },
+  {
+    path: '/platform',
+    name: 'platform',
+    component: () => import('../pages/PlatformPage.vue'),
+    meta: { title: '平台特性', icon: '🎛️' }
+  },
+  {
     path: '/capture',
     name: 'capture',
     component: () => import('../pages/CapturePage.vue'),

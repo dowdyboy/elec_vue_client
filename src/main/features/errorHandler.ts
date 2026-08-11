@@ -49,9 +49,22 @@ export function registerErrorHandler(getMainWindow: MainWindowGetter): void {
     log('unhandledRejection', String(reason))
   })
 
+  // ── 崩溃自动恢复：渲染进程崩溃后自动 reload（可开关）──
+  let autoRecovery = false
+  ipcMain.handle('error:setAutoRecovery', (_e, enabled: boolean) => {
+    autoRecovery = enabled
+    return autoRecovery
+  })
+
   // 渲染进程崩溃/被系统终止
-  app.on('render-process-gone', (_event, _webContents, details) => {
+  app.on('render-process-gone', (_event, webContents, details) => {
     log('render-process-gone', `原因: ${details.reason}（exitCode=${details.exitCode}）`)
+    // 自动恢复：等 1 秒后重新加载页面（clean-exit 是正常退出，无需恢复）
+    if (autoRecovery && details.reason !== 'clean-exit' && !webContents.isDestroyed()) {
+      setTimeout(() => {
+        if (!webContents.isDestroyed()) webContents.reload()
+      }, 1000)
+    }
   })
 
   // GPU / 网络等子进程异常

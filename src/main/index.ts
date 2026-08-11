@@ -13,7 +13,7 @@ import icon from '../../resources/icon.png?asset'
 import type { MainWindowGetter } from './types'
 
 // ── 特性模块（按需增删，每个 register 对应一个可复制的模块）──
-import { registerWindowManager } from './features/windowManager'
+import { registerWindowManager, attachWindowEvents } from './features/windowManager'
 import { registerIpcBridge } from './features/ipcBridge'
 import { registerTray } from './features/tray'
 import { registerNotification } from './features/notification'
@@ -41,13 +41,29 @@ import { registerGlassEffect } from './features/glassEffect'
 import { registerPowerBlocker } from './features/powerBlocker'
 import { registerFileIcon } from './features/fileIcon'
 import { showSplash, closeSplash, registerSplashReplay } from './features/splash'
+import { registerDownload } from './features/download'
+import { registerWebRequest } from './features/webRequest'
+import { registerProtocolSchemes, registerProtocolContent } from './features/protocolContent'
+import { registerCookies } from './features/cookies'
+import { registerShellOps } from './features/shellOps'
+import { registerRelaunch } from './features/relaunch'
+import { registerSqlite } from './features/sqlite'
+import { registerSystemAccess } from './features/systemAccess'
+import { registerNetStatus } from './features/netStatus'
+import { registerSessionCleanup } from './features/sessionCleanup'
+import { registerInputHook } from './features/inputHook'
+import { registerSystemInfo } from './features/systemInfo'
+import { registerZoom } from './features/zoom'
+import { registerSessionConfig } from './features/sessionConfig'
+import { registerCertificate } from './features/certificate'
+import { registerPartition } from './features/partition'
+import { registerQuitGuard, quitState } from './features/quitGuard'
+
+// ⚠️ 必须在 app ready 之前：声明 elec-fs 自定义协议特权（见 protocolContent.ts）
+registerProtocolSchemes()
 
 /** 主窗口引用（用 let 而非 const：窗口可能被销毁重建） */
 let mainWindow: BrowserWindow | null = null
-
-/** 退出标志：true 表示用户选择了真正退出（托盘菜单/系统退出），
- *  此时关闭窗口不再拦截；false 时关闭窗口 = 隐藏到托盘 */
-let isQuitting = false
 
 /** 提供给各特性模块的窗口获取函数 */
 const getMainWindow: MainWindowGetter = () => mainWindow
@@ -81,9 +97,9 @@ function createWindow(): void {
   })
 
   // 窗口关闭行为：默认"关闭 = 隐藏到托盘"（教学演示托盘常驻场景）
-  // 真正退出走托盘菜单"退出应用"或系统退出（此时 isQuitting = true，不拦截）
+  // 真正退出走托盘菜单"退出应用"或系统退出（此时 quitState.isQuitting = true，不拦截）
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (!quitState.isQuitting) {
       event.preventDefault()
       mainWindow?.hide()
     }
@@ -95,6 +111,8 @@ function createWindow(): void {
 
   // 窗口状态持久化：恢复上次位置/大小 + 自动保存
   attachWindowState(mainWindow)
+  // 窗口移动/缩放事件推送（演示用）
+  attachWindowEvents(mainWindow)
 
   // 开发环境加载 dev server（支持 HMR），生产加载打包文件
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -127,7 +145,7 @@ app.whenReady().then(() => {
   registerGlobalShortcut(getMainWindow) // 全局快捷键 Ctrl+Shift+1/2
   registerClipboard() // 剪贴板
   registerDialog(getMainWindow) // 文件对话框
-  registerFileSystem() // 文件系统读写
+  registerFileSystem(getMainWindow) // 文件系统读写
   registerMenu(getMainWindow) // 应用菜单 + 右键菜单
   registerScreenInfo(getMainWindow) // 屏幕信息
   registerTheme(getMainWindow) // 系统主题联动
@@ -147,6 +165,23 @@ app.whenReady().then(() => {
   registerPowerBlocker() // 阻止系统睡眠
   registerFileIcon() // 系统文件图标
   registerSplashReplay() // 闪屏重放（演示页按钮）
+  registerDownload(getMainWindow) // 下载管理
+  registerWebRequest(getMainWindow) // HTTP 请求拦截
+  registerProtocolContent() // 自定义协议内容（elec-fs:// 虚拟文件）
+  registerCookies() // Cookie 管理
+  registerShellOps() // shell 文件操作
+  registerRelaunch() // 应用重启
+  registerSqlite() // SQLite 数据库（node:sqlite）
+  registerSystemAccess() // 系统权限询问（macOS 摄像头/麦克风）
+  registerNetStatus() // 网络在线状态
+  registerSessionCleanup() // 会话缓存清理
+  registerInputHook(getMainWindow) // 按键拦截（吞键）
+  registerSystemInfo() // 系统语言/字体信息
+  registerZoom(getMainWindow) // 页面缩放控制
+  registerSessionConfig() // 会话配置（代理/UA）
+  registerCertificate() // 证书校验策略
+  registerPartition() // 会话分区（无痕/多账号）
+  registerQuitGuard(getMainWindow) // 退出前未保存询问
 
   // 启动闪屏（教学演示默认开启；主窗口 ready 后自动关闭）
   showSplash()
@@ -161,9 +196,9 @@ app.whenReady().then(() => {
 
 // 所有窗口关闭即退出（macOS 除外：保留 Dock 常驻）
 // 教学说明：正常关闭窗口已被拦截为"隐藏到托盘"（见 createWindow），
-// 走到这里说明是退出流程（托盘"退出应用"触发 before-quit → isQuitting=true）
+// 走到这里说明是退出流程（托盘"退出应用"触发 before-quit → quitState.isQuitting=true）
 app.on('before-quit', () => {
-  isQuitting = true
+  quitState.isQuitting = true
 })
 
 app.on('window-all-closed', () => {

@@ -118,4 +118,53 @@ export function registerWindowManager(getMainWindow: MainWindowGetter): void {
       icon: nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
     })
   })
+
+  // ── kiosk 模式（自助终端/大屏应用：锁定全屏，Esc 无法退出）──
+  ipcMain.handle('window:setKiosk', (_e, enabled: boolean) => {
+    const win = getMainWindow()
+    if (!win) return false
+    win.setKiosk(enabled)
+    return win.isKiosk()
+  })
+
+  // ── 窗口尺寸限制（最小/最大）──
+  ipcMain.handle('window:setMinSize', (_e, width: number, height: number) => {
+    const win = getMainWindow()
+    if (!win) return false
+    win.setMinimumSize(Math.max(0, width), Math.max(0, height))
+    return true
+  })
+
+  ipcMain.handle('window:setMaxSize', (_e, width: number, height: number) => {
+    const win = getMainWindow()
+    if (!win) return false
+    win.setMaximumSize(Math.max(0, width), Math.max(0, height))
+    return true
+  })
+
+  // ── 窗口透明度（0 完全透明 ~ 1 不透明）──
+  ipcMain.handle('window:setOpacity', (_e, opacity: number) => {
+    const win = getMainWindow()
+    if (!win) return null
+    const clamped = Math.min(1, Math.max(0, opacity))
+    win.setOpacity(clamped)
+    return win.getOpacity()
+  })
+}
+
+/**
+ * 窗口移动/缩放事件监听（附加到窗口实例，由 index.ts 在创建后调用）
+ * 演示：拖动窗口/调整大小时实时推送给页面（'window:event' 通道）
+ */
+export function attachWindowEvents(win: BrowserWindow): void {
+  const push = (event: string): void => {
+    const bounds = win.getBounds()
+    win.webContents.send('window:event', {
+      event,
+      time: new Date().toLocaleTimeString(),
+      bounds: `${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`
+    })
+  }
+  win.on('will-move', () => push('will-move')) // 窗口即将移动
+  win.on('will-resize', () => push('will-resize')) // 窗口即将调整大小
 }

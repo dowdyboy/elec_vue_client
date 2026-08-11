@@ -11,6 +11,7 @@ import {
   NDataTable,
   NAlert,
   useMessage,
+  useDialog,
   NText,
   NTag,
   type DataTableColumns
@@ -95,9 +96,53 @@ async function togglePowerBlocker(value: boolean): Promise<void> {
   )
 }
 
+// ── 应用重启（relaunch.ts）──
+const dialog = useDialog()
+
+function relaunchApp(): void {
+  dialog.warning({
+    title: '确认重启',
+    content: '应用将立即重启（当前未保存的内容会丢失），继续吗？',
+    positiveText: '重启',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      message.info('正在重启...')
+      window.api.relaunch.now()
+    }
+  })
+}
+
+// ── 崩溃自动恢复（errorHandler.ts）──
+const autoRecovery = ref(false)
+
+async function toggleAutoRecovery(value: boolean): Promise<void> {
+  autoRecovery.value = await window.api.error.setAutoRecovery(value)
+  message.info(autoRecovery.value ? '已开启：渲染进程崩溃后 1 秒自动 reload' : '已关闭自动恢复')
+}
+
+// ── 退出前未保存询问（quitGuard.ts）──
+const unsavedDirty = ref(false)
+
+async function toggleDirty(value: boolean): Promise<void> {
+  unsavedDirty.value = await window.api.quitGuard.setDirty(value)
+  message.info(unsavedDirty.value ? '已标记"有未保存修改"（退出时会弹确认框）' : '已清除未保存标记')
+}
+
+// ── 系统语言/字体（systemInfo.ts）──
+const sysInfo = ref<{
+  locale: string
+  languages: string[]
+  platform: string
+  arch: string
+  fonts: string[]
+} | null>(null)
+
 onMounted(() => {
   loadInfo()
   loadPowerStatus()
+  window.api.system.getInfo().then((info) => {
+    sysInfo.value = info
+  })
   disposers.push(
     window.api.app.onLifecycle(({ event }) => {
       lifecycleLog.value.unshift({ event, time: new Date().toLocaleTimeString() })
@@ -185,7 +230,31 @@ onUnmounted(() => disposers.forEach((d) => d()))
       </n-text>
     </n-card>
 
+    <n-card size="small" title="退出前未保存询问（主进程: quitGuard.ts）" style="margin-top: 12px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="font-size: 13px">模拟"有未保存修改"：</span>
+        <n-switch :value="unsavedDirty" @update:value="toggleDirty" />
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        开启后，通过托盘菜单"退出应用"或系统退出：会先弹出确认对话框。
+        选择"取消"则留在应用（关闭窗口仍是"隐藏到托盘"行为）。
+        这就是生产应用"有未保存修改，确定退出？"的标准实现。
+      </n-text>
+    </n-card>
+
+    <n-card size="small" title="应用重启（主进程: relaunch.ts）" style="margin-top: 12px">
+      <n-button type="warning" @click="relaunchApp">重启应用（app.relaunch）</n-button>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        典型场景：设置项"重启生效"、自动更新安装前重启。app.relaunch() 安排重启 + app.exit(0)
+        立即退出进程。
+      </n-text>
+    </n-card>
+
     <n-card size="small" title="全局错误日志（主进程: errorHandler.ts）" style="margin-top: 12px">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px">
+        <span style="font-size: 13px">崩溃自动恢复（reload）：</span>
+        <n-switch :value="autoRecovery" @update:value="toggleAutoRecovery" />
+      </div>
       <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
         主进程捕获的 uncaughtException / unhandledRejection / 渲染进程崩溃记录：
       </n-text>
@@ -196,6 +265,22 @@ onUnmounted(() => disposers.forEach((d) => d()))
         </div>
       </div>
       <n-text v-else depth="3" style="font-size: 12px">暂无错误记录（应用运行健康）</n-text>
+    </n-card>
+
+    <n-card size="small" title="系统语言与字体（主进程: systemInfo.ts）" style="margin-top: 12px">
+      <div v-if="sysInfo" style="font-size: 13px">
+        <div>
+          🌐 界面语言: <b>{{ sysInfo.locale }}</b
+          >（偏好: {{ sysInfo.languages.join('、') }}）
+        </div>
+        <div>🖥️ 平台: {{ sysInfo.platform }} ({{ sysInfo.arch }})</div>
+        <div v-if="sysInfo.fonts.length">
+          🔤 系统字体（前 {{ sysInfo.fonts.length }} 个）: {{ sysInfo.fonts.join(', ') }}
+        </div>
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        多语言应用初始化时用 getLocale 决定默认语言；字体选择器用 getFonts 列出可用字体。
+      </n-text>
     </n-card>
 
     <template #code>

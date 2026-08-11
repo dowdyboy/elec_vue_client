@@ -11,7 +11,8 @@
  */
 
 import { app, ipcMain, shell, WebContentsView } from 'electron'
-import { join } from 'path'
+import { isAbsolute, join } from 'path'
+import { existsSync } from 'fs'
 import type { MainWindowGetter } from '../types'
 
 /** 自定义协议名（注册为系统默认处理程序） */
@@ -61,6 +62,56 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
     return true
   })
 
+  // ── ③.5 文件关联（open-file）：双击文件用应用打开 ──
+  // 打包时声明文件关联（electron-builder fileAssociations），
+  // 用户双击 .md/.txt 等文件时：macOS 触发 open-file 事件；
+  // Windows/Linux 通过启动参数 argv 携带文件路径（second-instance 时处理）。
+  const handleFileOpen = (filePath: string): void => {
+    const win = getMainWindow()
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+    getMainWindow()?.webContents.send('protocol:file-open', filePath)
+  }
+
+  // macOS：双击关联文件时触发
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    handleFileOpen(filePath)
+  })
+
+  // Windows/Linux：从 second-instance 参数中识别文件路径
+  // 严格校验：绝对路径 + 文件真实存在（避免把 electron 自身参数误判为文件）
+  app.on('second-instance', (_event, argv) => {
+    const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
+    if (url) {
+      handleDeepLink(url)
+      return
+    }
+    // 开发模式参数混杂（electron.exe / 入口脚本等），不在此识别文件
+    if (process.defaultApp) return
+    const fileArg = argv.find((arg) => {
+      if (arg.startsWith('-') || arg.startsWith(PROTOCOL)) return false
+      // 需为绝对路径且文件真实存在（Windows 路径 / Unix 路径）
+      const normalized = arg.replace(/\\/g, '/')
+      if (!isAbsolute(normalized)) return false
+      try {
+        return existsSync(arg)
+      } catch {
+        return false
+      }
+    })
+    if (fileArg) handleFileOpen(fileArg)
+  })
+
+  // 演示按钮：模拟"收到一个文件打开请求"
+  ipcMain.handle('protocol:simulateOpenFile', (_e, filePath: string) => {
+    handleFileOpen(filePath)
+    return true
+  })
+
   // ── ④ WebContentsView：窗口内嵌第三方网页 ──
   let embeddedView: WebContentsView | null = null
   const resizeEmbedded = (): void => {
@@ -74,10 +125,11 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
   ipcMain.handle('view:open', (_e, url: string) => {
     const win = getMainWindow()
     if (!win) return { ok: false, error: '无主窗口' }
-    // 关闭旧的内嵌视图
+    // 关闭旧的内嵌视图（同时移除 resize 监听，避免监听器累积）
     if (embeddedView) {
       win.contentView.removeChildView(embeddedView)
       embeddedView.webContents.close()
+      win.removeListener('resize', resizeEmbedded)
       embeddedView = null
     }
     embeddedView = new WebContentsView({
@@ -87,18 +139,64 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
     win.contentView.addChildView(embeddedView)
     resizeEmbedded()
     win.on('resize', resizeEmbedded)
+
+    // 内嵌视图铺满窗口后，主页面按钮不可见 → 提供 ESC 关闭视图的退出途径
+    embeddedView.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      if (input.key === 'Escape') {
+        event.preventDefault()
+        ipcMain.emit('view:close-internal')
+      }
+      // 导航历史：Alt+← 返回 / Alt+→ 前进（浏览器标准快捷键）
+      if (input.key === 'ArrowLeft' && input.alt) {
+        event.preventDefault()
+        embeddedView?.webContents.goBack()
+      }
+      if (input.key === 'ArrowRight' && input.alt) {
+        event.preventDefault()
+        embeddedView?.webContents.goForward()
+      }
+    })
+
+    // 导航状态推送（did-navigate：页面跳转后更新 返回/前进 可用状态）
+    embeddedView.webContents.on('did-navigate', () => {
+      win.webContents.send('view:navigation', {
+        url: embeddedView?.webContents.getURL() ?? '',
+        canGoBack: embeddedView?.webContents.canGoBack() ?? false,
+        canGoForward: embeddedView?.webContents.canGoForward() ?? false
+      })
+    })
+
     embeddedView.webContents.loadURL(url)
     return { ok: true }
   })
 
-  ipcMain.handle('view:close', () => {
+  // ESC 关闭（与 view:close 相同的清理逻辑）
+  const closeEmbedded = (): void => {
     const win = getMainWindow()
     if (embeddedView && win) {
       win.contentView.removeChildView(embeddedView)
       embeddedView.webContents.close()
       embeddedView = null
       win.removeListener('resize', resizeEmbedded)
+      // 通知主页面同步按钮状态（view:close 的返回也能达成，但 ESC 场景需要推送）
+      win.webContents.send('view:closed-by-esc')
     }
+  }
+  ipcMain.on('view:close-internal', closeEmbedded)
+
+  ipcMain.handle('view:close', () => {
+    closeEmbedded()
     return { ok: true }
+  })
+
+  // ── 导航历史控制（教学完整：页面按钮调用；内嵌时主页面被覆盖，用 Alt+←/→ 操作）──
+  ipcMain.handle('view:goBack', () => {
+    embeddedView?.webContents.goBack()
+    return true
+  })
+  ipcMain.handle('view:goForward', () => {
+    embeddedView?.webContents.goForward()
+    return true
   })
 }

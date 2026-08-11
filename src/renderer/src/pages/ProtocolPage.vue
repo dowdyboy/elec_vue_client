@@ -16,6 +16,14 @@ const deepLinkLog = ref<{ url: string; time: string }[]>([])
 const viewUrl = ref('https://example.com')
 const viewOpen = ref(false)
 
+// ── 文件关联（open-file）──
+const fileOpenInput = ref('C:\\Users\\Public\\示例文档.md')
+const fileOpenLog = ref<{ time: string; path: string }[]>([])
+
+function simulateOpenFile(): void {
+  window.api.protocol.simulateOpenFile(fileOpenInput.value)
+}
+
 function openBySystem(): void {
   // 用系统默认程序打开该协议链接 → 唤起本应用（触发深链接）
   window.api.protocol.openUrl(deepLinkInput.value)
@@ -38,14 +46,35 @@ async function closeView(): Promise<void> {
   viewOpen.value = false
 }
 
+// ── 导航历史（did-navigate 状态推送）──
+const navState = ref({ url: '', canGoBack: false, canGoForward: false })
+
 let dispose: (() => void) | null = null
+let disposeFile: (() => void) | null = null
+let disposeViewClosed: (() => void) | null = null
+let disposeNav: (() => void) | null = null
 onMounted(() => {
   dispose = window.api.protocol.onDeepLink((url) => {
     deepLinkLog.value.unshift({ url, time: new Date().toLocaleTimeString() })
     message.success(`收到深链接: ${url}`)
   })
+  disposeFile = window.api.protocol.onFileOpen((path) => {
+    fileOpenLog.value.unshift({ path, time: new Date().toLocaleTimeString() })
+    message.info(`收到文件打开请求: ${path}`)
+  })
+  disposeViewClosed = window.api.protocol.onViewClosed(() => {
+    viewOpen.value = false
+  })
+  disposeNav = window.api.protocol.onNavigation((data) => {
+    navState.value = data
+  })
 })
-onUnmounted(() => dispose?.())
+onUnmounted(() => {
+  dispose?.()
+  disposeFile?.()
+  disposeViewClosed?.()
+  disposeNav?.()
+})
 </script>
 
 <template>
@@ -75,8 +104,42 @@ onUnmounted(() => dispose?.())
         <n-button :disabled="!viewOpen" @click="closeView">关闭内嵌</n-button>
       </div>
       <n-alert type="warning" :show-icon="true" style="margin-top: 8px" size="small">
-        内嵌视图会铺满整个窗口并覆盖当前内容；关闭后恢复。外链页面与主窗口互相隔离（独立渲染进程）。
+        内嵌视图会铺满整个窗口并覆盖当前内容；**按 ESC 键**或点击"关闭内嵌"退出。
+        外链页面与主窗口互相隔离（独立渲染进程）。
       </n-alert>
+      <div style="margin-top: 8px; font-size: 12px">
+        <n-text depth="3"
+          >导航历史（内嵌时按 <code>Alt+←</code> 返回 / <code>Alt+→</code> 前进）：</n-text
+        >
+        <div v-if="navState.url" style="margin-top: 4px">
+          <n-tag size="tiny" type="info" round
+            >可返回: {{ navState.canGoBack ? '是' : '否' }}</n-tag
+          >
+          <n-tag size="tiny" type="info" round style="margin-left: 6px"
+            >可前进: {{ navState.canGoForward ? '是' : '否' }}</n-tag
+          >
+          <div style="margin-top: 4px; word-break: break-all">{{ navState.url }}</div>
+        </div>
+      </div>
+    </n-card>
+
+    <n-card size="small" title="③ 文件关联（open-file）" style="margin-top: 12px">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+        <n-input
+          v-model:value="fileOpenInput"
+          placeholder="文件路径（模拟双击文件唤起应用）"
+          style="width: 320px"
+        />
+        <n-button @click="simulateOpenFile">模拟打开文件</n-button>
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        打包时在 electron-builder.yml 配置 <code>fileAssociations</code> 声明文件类型， 用户双击
+        .md/.txt 文件即唤起应用并触发 open-file 事件（macOS）或
+        启动参数携带路径（Windows/Linux）。收到的文件显示在下方：
+      </n-text>
+      <div v-if="fileOpenLog.length" style="margin-top: 8px; font-size: 13px">
+        <div v-for="(log, i) in fileOpenLog" :key="i">📂 {{ log.time }} {{ log.path }}</div>
+      </div>
     </n-card>
 
     <template #code>

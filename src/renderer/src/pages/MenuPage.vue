@@ -18,6 +18,14 @@ function showContext(): void {
   window.api.menu.showContext()
 }
 
+// ── 关于面板（macOS）──
+const isMac = window.electron.process.platform === 'darwin'
+
+async function showAbout(): Promise<void> {
+  const res = await window.api.menu.showAbout()
+  if (!res.ok) message.info(res.error ?? '')
+}
+
 onMounted(() => {
   dispose = window.api.menu.onItemClicked((label) => {
     clicked.value = label
@@ -45,6 +53,17 @@ onUnmounted(() => dispose?.())
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 13px">
         菜单包含内置复制/剪切/粘贴（role）与自定义菜单项。点击「自定义菜单项」后，
         主进程会把点击事件发回本页面：<b>{{ clicked }}</b>
+      </n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="关于面板（app.setAboutPanelOptions，macOS）"
+      style="margin-top: 12px"
+    >
+      <n-button :disabled="!isMac" @click="showAbout">打开原生"关于"窗口</n-button>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        macOS 原生关于面板（应用信息/版本/版权）；Windows/Linux 通常用窗口内对话框实现。
       </n-text>
     </n-card>
 

@@ -41,7 +41,18 @@ const featureTable = {
       api: 'utilityProcess / Web Worker',
       doc: 'docs/20-计算密集型与进程模型.md'
     },
-    { name: '进阶工程实践', api: 'sandbox / 调试 / 上报', doc: 'docs/21-进阶工程实践.md' }
+    { name: '进阶工程实践', api: 'sandbox / 调试 / 上报', doc: 'docs/21-进阶工程实践.md' },
+    { name: '下载管理', api: 'will-download / DownloadItem', doc: 'docs/22-下载管理.md' },
+    {
+      name: '会话管理',
+      api: 'session.cookies / webRequest',
+      doc: 'docs/23-网络会话（Cookie与请求拦截）.md'
+    },
+    { name: '自定义协议内容', api: 'protocol.handle', doc: 'docs/24-自定义协议内容.md' },
+    { name: 'SQLite 数据库', api: 'node:sqlite', doc: 'docs/25-数据库（SQLite）.md' },
+    { name: '平台特性', api: 'setJumpList / app.dock / kiosk', doc: 'docs/26-平台特性.md' },
+    { name: '系统集成', api: 'systemPreferences / net / inputHook', doc: 'docs/27-系统集成.md' },
+    { name: '会话配置与证书', api: 'setProxy / setUserAgent', doc: 'docs/28-会话配置与证书.md' }
   ]
 }
 </script>

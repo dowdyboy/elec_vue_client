@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
  * 全局快捷键演示页
- * 演示：系统级快捷键注册 / 注销 / 触发事件
+ * 演示：系统级快捷键注册 / 注销 / 触发事件 + 应用内按键拦截（before-input-event）
  */
 import { onMounted, onUnmounted, ref } from 'vue'
-import { NCard, NSwitch, useMessage, NAlert, NTag } from 'naive-ui'
+import { NCard, NSwitch, useMessage, NAlert, NTag, NText } from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
 import shortcutCode from '../../../main/features/globalShortcut.ts?raw'
@@ -18,14 +18,31 @@ async function toggleShortcuts(value: boolean): Promise<void> {
   message.success(enabled.value ? '快捷键已注册' : '快捷键已全部注销')
 }
 
+// ── 应用内按键拦截（inputHook.ts）──
+const blockF12 = ref(false)
+const keyLogs = ref<string[]>([])
+
+async function toggleBlockF12(value: boolean): Promise<void> {
+  blockF12.value = await window.api.inputHook.setBlockF12(value)
+  message.info(blockF12.value ? 'F12 已被吞掉（不再触发任何行为）' : 'F12 已恢复')
+}
+
 let dispose: (() => void) | null = null
+let disposeKey: (() => void) | null = null
 onMounted(() => {
   dispose = window.api.shortcut.onTriggered(({ accelerator }) => {
     triggered.value.unshift({ accelerator, time: new Date().toLocaleTimeString() })
     message.info(`快捷键 ${accelerator} 被触发（即使在后台也生效）`)
   })
+  disposeKey = window.api.inputHook.onKey(({ key }) => {
+    keyLogs.value.unshift(key)
+    if (keyLogs.value.length > 20) keyLogs.value.pop()
+  })
 })
-onUnmounted(() => dispose?.())
+onUnmounted(() => {
+  dispose?.()
+  disposeKey?.()
+})
 </script>
 
 <template>
@@ -54,6 +71,24 @@ onUnmounted(() => dispose?.())
       主窗口会收到触发事件（等回到窗口即可看到记录）。 Ctrl+Shift+2
       会直接把主窗口呼出/隐藏，适合体验"全局热键呼出应用"。
     </n-alert>
+
+    <n-card
+      size="small"
+      title="应用内按键拦截（before-input-event，主进程: inputHook.ts）"
+      style="margin-top: 12px"
+    >
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="font-size: 13px">吞掉 F12：</span>
+        <n-switch :value="blockF12" @update:value="toggleBlockF12" />
+      </div>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        与 globalShortcut 的区别：按键拦截仅在窗口聚焦时生效（应用内）， 常用于禁用用户快捷键（如
+        F12 调试）或自定义组合键。
+      </n-text>
+      <div v-if="keyLogs.length" style="margin-top: 8px; font-size: 13px">
+        <div v-for="(key, i) in keyLogs" :key="i">⌨️ 最近按键: {{ key }}</div>
+      </div>
+    </n-card>
 
     <template #code>
       <CodeBlock file="src/main/features/globalShortcut.ts" :code="shortcutCode" />

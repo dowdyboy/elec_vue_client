@@ -2,10 +2,11 @@
 /**
  * 网络通信演示页
  * 演示：① 主进程 HTTP 请求（axios，绕过 CORS）② WebSocket 概念说明
+ *       + 网络在线状态（netStatus.ts）
  * 注意：socket.io-client 需要配套服务器，本页以说明 + 代码展示为主
  */
-import { ref } from 'vue'
-import { NCard, NButton, NInput, useMessage, NAlert, NText } from 'naive-ui'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { NCard, NButton, NInput, useMessage, NAlert, NText, NTag } from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
 import networkCode from '../../../main/features/network.ts?raw'
@@ -32,6 +33,42 @@ async function doHttpGet(): Promise<void> {
   }
   result.value = `HTTP ${res.status}\n${res.data}`
 }
+
+// ── DNS 解析（network.ts 扩展）──
+const dnsInput = ref('github.com')
+const dnsLoading = ref(false)
+const dnsResult = ref('')
+
+async function resolveDns(): Promise<void> {
+  if (!dnsInput.value) {
+    message.warning('请输入域名')
+    return
+  }
+  dnsLoading.value = true
+  const res = await window.api.network.resolveDns(dnsInput.value)
+  dnsLoading.value = false
+  dnsResult.value = res.ok
+    ? `✅ ${dnsInput.value} → ${res.addresses.join('、')}`
+    : `❌ 解析失败: ${res.error}`
+}
+
+// ── 网络在线状态（netStatus.ts）──
+const online = ref(true)
+const onlineTime = ref('')
+
+let disposeNet: (() => void) | null = null
+onMounted(async () => {
+  const status = await window.api.net.getStatus()
+  online.value = status.online
+  disposeNet = window.api.net.onStatus((data) => {
+    online.value = data.online
+    onlineTime.value = data.time
+    message[data.online ? 'success' : 'error'](
+      `网络${data.online ? '已恢复' : '已断开'}（${data.time}）`
+    )
+  })
+})
+onUnmounted(() => disposeNet?.())
 </script>
 
 <template>
@@ -50,6 +87,33 @@ async function doHttpGet(): Promise<void> {
       <n-text style="display: block; margin-top: 8px; font-size: 12px; white-space: pre-wrap">{{
         result
       }}</n-text>
+    </n-card>
+
+    <n-card size="small" title="DNS 解析（net.resolveHost）" style="margin-bottom: 12px">
+      <div style="display: flex; gap: 8px">
+        <n-input v-model:value="dnsInput" placeholder="域名，如 github.com" />
+        <n-button type="primary" :loading="dnsLoading" @click="resolveDns">解析</n-button>
+      </div>
+      <n-text v-if="dnsResult" style="display: block; margin-top: 8px; font-size: 12px">{{
+        dnsResult
+      }}</n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="网络在线状态（net.online，主进程: netStatus.ts）"
+      style="margin-bottom: 12px"
+    >
+      <n-tag :type="online ? 'success' : 'error'" round size="medium">
+        {{ online ? '✅ 当前在线' : '❌ 当前离线' }}
+      </n-tag>
+      <n-text v-if="onlineTime" depth="3" style="margin-left: 8px; font-size: 12px">
+        最近状态变化: {{ onlineTime }}
+      </n-text>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        拔掉网线/关闭 WiFi 试试：事件实时推送，页面立即更新。注意 net.isOnline() 只反映系统网络
+        连通性（不等于能访问特定服务器），业务探测用 HTTP 请求。
+      </n-text>
     </n-card>
 
     <n-card size="small" title="WebSocket（socket.io-client）">

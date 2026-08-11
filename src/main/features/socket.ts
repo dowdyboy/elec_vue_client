@@ -130,6 +130,16 @@ export function registerSockets(getMainWindow: MainWindowGetter): void {
     return { ok: true }
   })
 
+  // 解绑端口：释放占用，可重新绑定其他端口
+  ipcMain.handle('udp:unbind', (_e, port: number) => {
+    const socket = udpSockets.get(port)
+    if (!socket) return { ok: false, error: `端口 ${port} 未绑定` }
+    socket.close()
+    udpSockets.delete(port)
+    push('socket:udp-log', { tag: `:${port}`, msg: '已解绑' })
+    return { ok: true }
+  })
+
   ipcMain.handle(
     'udp:send',
     (_e, options: { fromPort: number; targetPort: number; message: string }) => {

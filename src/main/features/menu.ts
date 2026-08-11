@@ -81,4 +81,17 @@ export function registerMenu(getMainWindow: MainWindowGetter): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) showContextMenu(win)
   })
+
+  // ── macOS 原生"关于"面板 ──
+  ipcMain.handle('menu:showAbout', () => {
+    if (process.platform !== 'darwin')
+      return { ok: false, error: '仅 macOS 支持（其他平台用窗口内对话框）' }
+    app.setAboutPanelOptions({
+      applicationName: 'Electron 教学项目',
+      applicationVersion: app.getVersion(),
+      copyright: 'Electron 教学与模板项目'
+    })
+    app.showAboutPanel()
+    return { ok: true }
+  })
 }

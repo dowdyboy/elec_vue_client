@@ -37,6 +37,17 @@ const api = {
     /** 通用窗口控制：作用于发起请求的窗口（无边框自定义标题栏用） */
     control: (channel: 'minimize' | 'maximize' | 'close') =>
       ipcRenderer.send('window:control', channel),
+    /** kiosk 模式（自助终端：锁定全屏） */
+    setKiosk: (enabled: boolean) => ipcRenderer.invoke('window:setKiosk', enabled),
+    /** 尺寸限制与透明度 */
+    setMinSize: (width: number, height: number) =>
+      ipcRenderer.invoke('window:setMinSize', width, height),
+    setMaxSize: (width: number, height: number) =>
+      ipcRenderer.invoke('window:setMaxSize', width, height),
+    setOpacity: (opacity: number) => ipcRenderer.invoke('window:setOpacity', opacity),
+    /** 窗口移动/缩放事件 */
+    onEvent: (cb: (data: { event: string; time: string; bounds: string }) => void) =>
+      on('window:event', cb),
     /** 窗口状态持久化：查询上次保存的位置/大小 */
     getPersistedState: () => ipcRenderer.invoke('window:getPersistedState')
   },
@@ -112,13 +123,18 @@ const api = {
     listDir: (dirPath: string) => ipcRenderer.invoke('fs:listDir', dirPath),
     joinPath: (base: string, name: string) => ipcRenderer.invoke('fs:joinPath', base, name),
     /** 拖拽文件 → 真实系统路径（webUtils 在 preload 中可用） */
-    getPathForFile: (file: File) => webUtils.getPathForFile(file)
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
+    /** 目录监听（fs.watch）：开始/停止 + 变化事件 */
+    watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),
+    unwatch: (id: number) => ipcRenderer.invoke('fs:unwatch', id),
+    onWatcherEvent: (cb: (data: unknown) => void) => on('fs:watcher-event', cb)
   },
 
   /** ── 原生菜单（主进程: menu.ts）── */
   menu: {
     showContext: () => ipcRenderer.send('menu:show-context'),
-    onItemClicked: (cb: (label: string) => void) => on('menu:item-clicked', cb)
+    onItemClicked: (cb: (label: string) => void) => on('menu:item-clicked', cb),
+    showAbout: () => ipcRenderer.invoke('menu:showAbout')
   },
 
   /** ── 屏幕信息（主进程: screenInfo.ts）── */
@@ -144,12 +160,14 @@ const api = {
 
   /** ── 网络（主进程: network.ts）── */
   network: {
-    httpGet: (url: string) => ipcRenderer.invoke('network:httpGet', url)
+    httpGet: (url: string) => ipcRenderer.invoke('network:httpGet', url),
+    resolveDns: (hostname: string) => ipcRenderer.invoke('network:resolveDns', hostname)
   },
 
   /** ── 安全（主进程: security.ts）── */
   security: {
-    onPermissionDenied: (cb: (permission: string) => void) => on('security:permission-denied', cb)
+    onPermissionDenied: (cb: (permission: string) => void) => on('security:permission-denied', cb),
+    setSilentCheck: (enabled: boolean) => ipcRenderer.invoke('security:setSilentCheck', enabled)
   },
 
   /** ── 自动更新（主进程: autoUpdater.ts）── */
@@ -166,7 +184,19 @@ const api = {
     openUrl: (url: string) => ipcRenderer.invoke('protocol:openUrl', url),
     onDeepLink: (cb: (url: string) => void) => on('protocol:deep-link', cb),
     openView: (url: string) => ipcRenderer.invoke('view:open', url),
-    closeView: () => ipcRenderer.invoke('view:close')
+    closeView: () => ipcRenderer.invoke('view:close'),
+    /** 导航历史控制 + 状态事件 */
+    goBack: () => ipcRenderer.invoke('view:goBack'),
+    goForward: () => ipcRenderer.invoke('view:goForward'),
+    onNavigation: (
+      cb: (data: { url: string; canGoBack: boolean; canGoForward: boolean }) => void
+    ) => on('view:navigation', cb),
+    /** 内嵌视图被 ESC 关闭时通知（同步按钮状态） */
+    onViewClosed: (cb: () => void) => on('view:closed-by-esc', cb),
+    /** 文件关联：模拟"双击文件唤起应用" */
+    simulateOpenFile: (filePath: string) =>
+      ipcRenderer.invoke('protocol:simulateOpenFile', filePath),
+    onFileOpen: (cb: (filePath: string) => void) => on('protocol:file-open', cb)
   },
 
   /** ── 桌面捕获（主进程: desktopCapture.ts）── */
@@ -191,13 +221,18 @@ const api = {
   taskbar: {
     setProgress: (value: number | null, mode?: 'normal' | 'error' | 'paused' | 'indeterminate') =>
       ipcRenderer.invoke('taskbar:setProgress', value, mode),
-    setBadge: (count: number) => ipcRenderer.invoke('taskbar:setBadge', count)
+    setBadge: (count: number) => ipcRenderer.invoke('taskbar:setBadge', count),
+    setJumpList: (files: string[]) => ipcRenderer.invoke('taskbar:setJumpList', files),
+    setOverlay: (enabled: boolean) => ipcRenderer.invoke('taskbar:setOverlay', enabled),
+    setDockMenu: () => ipcRenderer.invoke('taskbar:setDockMenu'),
+    addRecentDocument: () => ipcRenderer.invoke('taskbar:addRecentDocument')
   },
 
   /** ── 全局错误处理（主进程: errorHandler.ts）── */
   error: {
     getLogs: () => ipcRenderer.invoke('error:getLogs'),
-    onNew: (cb: (record: unknown) => void) => on('error:new', cb)
+    onNew: (cb: (record: unknown) => void) => on('error:new', cb),
+    setAutoRecovery: (enabled: boolean) => ipcRenderer.invoke('error:setAutoRecovery', enabled)
   },
 
   /** ── TCP / UDP 通信（主进程: socket.ts）── */
@@ -212,6 +247,7 @@ const api = {
     },
     udp: {
       bind: (port: number) => ipcRenderer.invoke('udp:bind', port),
+      unbind: (port: number) => ipcRenderer.invoke('udp:unbind', port),
       send: (options: { fromPort: number; targetPort: number; message: string }) =>
         ipcRenderer.invoke('udp:send', options)
     },
@@ -249,6 +285,131 @@ const api = {
   /** ── 闪屏页（主进程: splash.ts）── */
   splash: {
     replay: () => ipcRenderer.invoke('splash:replay')
+  },
+
+  /** ── 下载管理（主进程: download.ts）── */
+  download: {
+    start: (url: string) => ipcRenderer.invoke('download:start', url),
+    pause: (id: string) => ipcRenderer.invoke('download:pause', id),
+    resume: (id: string) => ipcRenderer.invoke('download:resume', id),
+    cancel: (id: string) => ipcRenderer.invoke('download:cancel', id),
+    onProgress: (cb: (data: unknown) => void) => on('download:progress', cb),
+    onDone: (cb: (data: unknown) => void) => on('download:done', cb)
+  },
+
+  /** ── 网络会话：Cookie + 请求拦截（主进程: cookies.ts / webRequest.ts / sessionCleanup.ts）── */
+  session: {
+    getAllCookies: () => ipcRenderer.invoke('cookies:getAll'),
+    setCookie: (options: { url: string; name: string; value: string }) =>
+      ipcRenderer.invoke('cookies:set', options),
+    removeCookie: (options: { url: string; name: string }) =>
+      ipcRenderer.invoke('cookies:remove', options),
+    onRequestLog: (cb: (data: unknown) => void) => on('webRequest:log', cb),
+    clearCache: () => ipcRenderer.invoke('session:clearCache'),
+    clearStorage: () => ipcRenderer.invoke('session:clearStorage'),
+    clearAll: () => ipcRenderer.invoke('session:clearAll')
+  },
+
+  /** ── 自定义协议内容（主进程: protocolContent.ts，渲染进程直接用 fetch）── */
+  protocolContent: {
+    /** 读取 elec-fs:// 虚拟文件（fetch 封装，CSP 已放行 connect-src elec-fs:） */
+    read: async (path: string): Promise<string> => {
+      const response = await fetch(`elec-fs://demo${path}`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.text()
+    }
+  },
+
+  /** ── shell 文件操作（主进程: shellOps.ts）── */
+  shell: {
+    openPath: (target: string) => ipcRenderer.invoke('shell:openPath', target),
+    showInFolder: (target: string) => ipcRenderer.invoke('shell:showInFolder', target),
+    trash: (target: string) => ipcRenderer.invoke('shell:trash', target),
+    beep: () => ipcRenderer.invoke('shell:beep')
+  },
+
+  /** ── 应用重启（主进程: relaunch.ts）── */
+  relaunch: {
+    now: () => ipcRenderer.invoke('app:relaunch')
+  },
+
+  /** ── SQLite 数据库（主进程: sqlite.ts，node:sqlite 内置模块）── */
+  db: {
+    list: () => ipcRenderer.invoke('db:list'),
+    add: (note: { title: string; content: string }) => ipcRenderer.invoke('db:add', note),
+    update: (note: { id: number; title: string; content: string }) =>
+      ipcRenderer.invoke('db:update', note),
+    remove: (id: number) => ipcRenderer.invoke('db:delete', id),
+    execute: (sql: string) => ipcRenderer.invoke('db:execute', sql),
+    transaction: () => ipcRenderer.invoke('db:transaction'),
+    /** safe=true 参数化查询（正确）；safe=false 字符串拼接（演示注入漏洞） */
+    search: (keyword: string, safe: boolean) => ipcRenderer.invoke('db:search', keyword, safe),
+    info: () => ipcRenderer.invoke('db:info')
+  },
+
+  /** ── 系统权限（主进程: systemAccess.ts）── */
+  system: {
+    getMediaAccessStatus: () => ipcRenderer.invoke('system:getMediaAccessStatus'),
+    askMediaAccess: (type: 'camera' | 'microphone') =>
+      ipcRenderer.invoke('system:askMediaAccess', type),
+    getInfo: () => ipcRenderer.invoke('system:getInfo')
+  },
+
+  /** ── 网络在线状态（主进程: netStatus.ts + 渲染进程浏览器事件）── */
+  net: {
+    getStatus: () => ipcRenderer.invoke('net:getStatus'),
+    /** 在线/离线事件：浏览器原生（window 事件），这里封装为统一 API */
+    onStatus: (cb: (data: { online: boolean; time: string }) => void) => {
+      const handler = (): void =>
+        cb({ online: navigator.onLine, time: new Date().toLocaleTimeString() })
+      window.addEventListener('online', handler)
+      window.addEventListener('offline', handler)
+      return () => {
+        window.removeEventListener('online', handler)
+        window.removeEventListener('offline', handler)
+      }
+    }
+  },
+
+  /** ── 按键拦截（主进程: inputHook.ts）── */
+  inputHook: {
+    setBlockF12: (enabled: boolean) => ipcRenderer.invoke('inputHook:setBlockF12', enabled),
+    onKey: (cb: (data: { key: string }) => void) => on('inputHook:key', cb)
+  },
+
+  /** ── 页面缩放（主进程: zoom.ts）── */
+  zoom: {
+    set: (factor: number) => ipcRenderer.invoke('zoom:set', factor),
+    reset: () => ipcRenderer.invoke('zoom:reset'),
+    get: () => ipcRenderer.invoke('zoom:get'),
+    onChanged: (cb: (factor: number) => void) => on('zoom:changed', cb)
+  },
+
+  /** ── 会话配置：代理 + UA（主进程: sessionConfig.ts）── */
+  sessionConfig: {
+    setProxy: (proxyRules: string) => ipcRenderer.invoke('sessionConfig:setProxy', proxyRules),
+    setProxyMode: (mode: 'direct' | 'system') =>
+      ipcRenderer.invoke('sessionConfig:setProxyMode', mode),
+    resolveProxy: (url: string) => ipcRenderer.invoke('sessionConfig:resolveProxy', url),
+    setUserAgent: (ua: string) => ipcRenderer.invoke('sessionConfig:setUserAgent', ua),
+    getUserAgent: () => ipcRenderer.invoke('sessionConfig:getUserAgent')
+  },
+
+  /** ── 证书校验（主进程: certificate.ts）── */
+  cert: {
+    setVerifyMode: (mode: 'default' | 'trustAll') => ipcRenderer.invoke('cert:setVerifyMode', mode)
+  },
+
+  /** ── 会话分区（主进程: partition.ts）── */
+  partition: {
+    openIncognito: () => ipcRenderer.invoke('partition:openIncognito'),
+    openPersistent: () => ipcRenderer.invoke('partition:openPersistent')
+  },
+
+  /** ── 退出前未保存询问（主进程: quitGuard.ts）── */
+  quitGuard: {
+    setDirty: (dirty: boolean) => ipcRenderer.invoke('quitGuard:setDirty', dirty),
+    getDirty: () => ipcRenderer.invoke('quitGuard:getDirty')
   }
 }
 
