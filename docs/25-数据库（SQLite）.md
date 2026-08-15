@@ -79,3 +79,31 @@ db.prepare('SELECT * FROM notes WHERE title LIKE ?').all(`%${keyword}%`)
 - **执行器限制**：生产环境的"SQL 执行器"应进一步限制（只读、白名单表），本工程演示了语句类型拦截
 - **备份**：定期 `VACUUM INTO` 或直接复制 .db 文件（WAL 模式需同时复制 -wal 文件）
 - **数据库关闭**：应用退出前 `db.close()`（可选，进程退出自动清理）
+
+## 六、关于 ExperimentalWarning（本工程实测确认）
+
+启动时打印的 `ExperimentalWarning: SQLite is an experimental feature...` 是**预期行为**：
+
+- node:sqlite 在 Node 22 的稳定性为 **1.1（Active development）**——含义是"未来版本
+  API 可能变更/移除"，**不表示当前不可用**（Electron 39 上 CRUD 等核心 API 工作正常）
+- **关键区别**：纯 Node 项目里用户机器 Node 版本各异，实验性 API 确实可能"环境不一致"；
+  但 Electron **把 Node 版本捆绑进安装包**——Electron 39.x 固定捆绑 Node 22.20，
+  所有机器运行的是同一个 node:sqlite，不存在运行期跨环境不一致
+- **真实风险只在升级时**：升级 Electron 大版本（捆绑新 Node）时，sqlite API 可能有
+  破坏性变更 → 按下方清单回归即可
+- 本工程**选择保留警告**（不静默过滤）：警告是实验性 API 的诚实提示，
+  配合 sqlite.ts 的启动兼容性自检（`assertSqliteApi`：关键 API 缺失时给出
+  "对照升级检查清单"的可操作错误），比隐藏警告更利于教学与排障
+
+## 七、升级检查清单（升级 Electron 大版本时执行）
+
+1. `npm run typecheck`——API 签名变更会直接报错
+2. 运行应用 → SQLite 数据库页：CRUD / 事务 / 注入对比全流程演练
+3. 对照 Node changelog 的 `node:sqlite` 变更记录（如
+   https://nodejs.org/en/download/releases 各版本的 sqlite 条目），确认
+   本工程用到的 API（prepare/run/get/all/exec/close）无破坏性调整
+4. 若 API 已变更：按报错信息调整 sqlite.ts；或此时再评估迁移 better-sqlite3
+   （见 [docs/34-第三方SQLite](./34-第三方SQLite（better-sqlite3）.md)）
+
+> 提示：`sqlite.ts` 的 `assertSqliteApi()` 自检会把"API 不匹配"转化为启动时的
+> 明确错误（含上述指引），而不是运行到一半的 TypeError。

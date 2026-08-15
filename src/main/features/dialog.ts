@@ -30,6 +30,21 @@ export function registerDialog(getMainWindow: MainWindowGetter): void {
     }
   )
 
+  // ── 打开目录选择框（目录监听/导出目录等场景）──
+  ipcMain.handle('dialog:openDirectory', async (_event, title?: string) => {
+    const win = getMainWindow() as BrowserWindow | undefined
+    const result = await dialog.showOpenDialog(win!, {
+      title: title ?? '选择一个目录',
+      // properties 决定对话框形态：
+      //   'openDirectory'    → 只能选目录（Windows 下文件项置灰）
+      //   'multiSelections'  → 多选（可同时用于 openFile/openDirectory）
+      //   'createDirectory'  → macOS 提供"新建文件夹"按钮
+      //   'promptToCreate'   → Windows 显示"新建文件夹"输入框
+      properties: ['openDirectory']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
   // ── 保存文件对话框 ──
   ipcMain.handle(
     'dialog:saveFile',

@@ -40,11 +40,37 @@ ipcMain.on('ipc:create-channel', (event) => {
 })
 ```
 
+**⚠️ contextIsolation 坑（本项目实测踩坑）**：MessagePort **不能**作为参数经
+`contextBridge` 传给页面——contextBridge 的参数会被结构化克隆，端口变成"断开连接"
+的克隆对象（postMessage 发出去无人接收、onmessage 永不触发，表现就是"建立成功但
+发送没反应"）。官方推荐模式：preload 收到端口后用 `window.postMessage` **转移**
+到主世界，页面监听 window 的 message 事件接收：
+
+```ts
+// preload（预注册，早于页面任何点击）
+ipcRenderer.on('ipc:channel-port', (event) => {
+  const port = event.ports[0]
+  if (port) window.postMessage('ipc:channel-port', '*', [port]) // 转移而非传递
+})
+
+// 页面（主世界）
+window.addEventListener('message', (event) => {
+  if (event.source !== window || event.data !== 'ipc:channel-port') return
+  const port = event.ports[0] // 拿到的是"原封不动"的端口
+  port.onmessage = (e) => console.log('回显:', e.data)
+  port.postMessage('hi')
+})
+```
+
+> 克隆 vs 转移：结构化克隆端口会新建一对纠缠端口（原端口与克隆断开）；
+> 而 postMessage 的 transfer 列表是"移交所有权"，端口保持连通。
+
 ## 三、复制到新工程的步骤
 
 1. 复制 `src/main/features/ipcBridge.ts`，在 `index.ts` 调用 `registerIpcBridge()`
 2. 复制 `src/preload/index.ts` 中 `ipc` 分组（定义了 `window.api.ipc.*`）
-3. 渲染进程使用：
+3. 复制 preload 文件底部的 `ipc:channel-port` 端口转移监听（④ 专用）
+4. 渲染进程使用：
 
 ```ts
 // 请求-响应
@@ -52,9 +78,8 @@ const res = await window.api.ipc.ping('hello')
 // 单向 + 事件回复
 window.api.ipc.sendEvent('hi')
 window.api.ipc.onEventReply((data) => console.log(data))
-// 管道
+// 管道：建立后监听 window 的 message 事件接收端口（见上文 contextIsolation 坑）
 window.api.ipc.createChannel()
-window.api.ipc.onChannelPort((port) => port.postMessage('hi'))
 ```
 
 ## 四、最佳实践

@@ -6,7 +6,7 @@
  */
 import { NCard, NButton, NText, NAlert } from 'naive-ui'
 import { useRoute } from 'vue-router'
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 const route = useRoute()
 
@@ -16,6 +16,27 @@ const isTransparent = route.query.transparent === '1'
 const received = ref<string[]>([])
 const channelPort = ref<MessagePort | null>(null)
 const channelLog = ref<string[]>([])
+
+/** MessageChannel 端口接收：preload 用 window.postMessage 转移（contextBridge 传参会克隆断开） */
+function onChannelPortMessage(event: MessageEvent): void {
+  if (event.source !== window || event.data !== 'ipc:channel-port') return
+  const port = event.ports[0]
+  if (!port) return
+  channelPort.value = port
+  port.onmessage = (e) => {
+    channelLog.value.push(`收到: ${e.data}`)
+  }
+  port.postMessage('子窗口: 管道已连接')
+  channelLog.value.push('已发送: 子窗口: 管道已连接')
+}
+
+onMounted(() => {
+  window.addEventListener('message', onChannelPortMessage)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('message', onChannelPortMessage)
+})
 
 function closeSelf(): void {
   // 子窗口没有自己的"关闭按钮"，通过 IPC 请主进程关闭主窗口没有意义；
@@ -39,14 +60,6 @@ function openBroadcastDemo(): void {
 
 function setupChannel(): void {
   window.api.ipc.createChannel()
-  window.api.ipc.onChannelPort((port) => {
-    channelPort.value = port
-    port.onmessage = (event) => {
-      channelLog.value.push(`收到: ${event.data}`)
-    }
-    port.postMessage('子窗口: 管道已连接')
-    channelLog.value.push('已发送: 子窗口: 管道已连接')
-  })
 }
 
 function sendViaChannel(): void {

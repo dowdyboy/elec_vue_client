@@ -42,8 +42,10 @@ export function registerIpcBridge(): void {
 
   // ── ④ MessageChannelMain 双向管道 ────────────────
   // 渲染进程: window.api.ipc.createChannel()
-  //          onChannelPort(port => port.onmessage = ...)
+  //          （端口经 preload 用 window.postMessage 转移到页面，见 preload/index.ts）
   // 建立后两端可通过 port.postMessage 双向收发，适合高频数据流
+  // ⚠️ contextIsolation 坑：MessagePort 不能经 contextBridge 参数传递（会被克隆断开），
+  //    必须用 postMessage 的 transfer 机制转移（详见 docs/02 第四节）
   ipcMain.on('ipc:create-channel', (event) => {
     const { port1, port2 } = new MessageChannelMain()
     // 主进程持有 port1：收到消息后原样回传（回显演示）

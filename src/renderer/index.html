@@ -4,9 +4,12 @@
     <meta charset="UTF-8" />
     <title>Electron 教学与模板项目</title>
     <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!-- CSP：connect-src 放行 127.0.0.1/localhost 回环地址——
+         渲染进程 fetch 本地 HTTP 服务器（httpServer.ts 演示）需要；
+         仅放行回环、不放行任意外网，保持最小权限（见 docs/14 第六节） -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; worker-src 'self' blob:; connect-src 'self' elec-fs:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' elec-fs: http://127.0.0.1:* http://localhost:*"
     />
   </head>
 

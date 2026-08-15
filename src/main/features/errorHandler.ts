@@ -12,7 +12,7 @@
  *         完整方案还应接入崩溃上报服务（如 sentry），本模块演示捕获链路。
  */
 
-import { app, ipcMain } from 'electron'
+import { app, crashReporter, ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
 
 interface ErrorRecord {
@@ -71,6 +71,22 @@ export function registerErrorHandler(getMainWindow: MainWindowGetter): void {
   app.on('child-process-gone', (_event, details) => {
     log('child-process-gone', `${details.type}: ${details.reason}（exitCode=${details.exitCode}）`)
   })
+
+  // ── 崩溃转储（crashReporter）：进程崩溃时生成 .dmp 文件 ──
+  // 生产环境通常配合 uploadToServer 上报到崩溃收集服务；本工程演示本地转储
+  crashReporter.start({
+    productName: 'elec_vue_client',
+    companyName: 'Electron 教学项目',
+    uploadToServer: false, // 不上报，仅本地生成 dump
+    submitURL: '' // uploadToServer=false 时无需真实地址
+  })
+
+  ipcMain.handle('error:getCrashInfo', () => ({
+    started: crashReporter.getLastCrashReport() !== null || true, // start 后即生效
+    dumpDir: app.getPath('crashDumps'),
+    // 已有崩溃转储文件列表（可能为空）
+    reports: crashReporter.getUploadedReports?.() ?? []
+  }))
 
   // 查询历史日志（页面初始化时加载）
   ipcMain.handle('error:getLogs', () => logs)

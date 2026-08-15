@@ -25,6 +25,21 @@ async function changeSource(source: 'system' | 'light' | 'dark'): Promise<void> 
   await getState()
 }
 
+// ── 系统强调色（theme.getAccentColor）──
+const accentColor = ref('')
+const accentError = ref('')
+
+async function getAccent(): Promise<void> {
+  accentError.value = ''
+  accentColor.value = ''
+  const res = await window.api.theme.getAccentColor()
+  if (res.ok) {
+    accentColor.value = res.color
+  } else {
+    accentError.value = `❌ ${res.error}`
+  }
+}
+
 getState()
 </script>
 
@@ -50,6 +65,38 @@ getState()
       选择「跟随系统」后，到系统设置里切换明暗主题（Windows: 设置 → 个性化 → 颜色）， 应用会通过
       nativeTheme 的 updated 事件实时跟随——这就是桌面应用"跟随系统外观"的标准实现。
     </n-alert>
+
+    <n-card
+      size="small"
+      title="系统强调色（systemPreferences.getAccentColor）"
+      style="margin-top: 12px"
+    >
+      <n-button @click="getAccent">获取系统强调色</n-button>
+      <div
+        v-if="accentColor"
+        style="display: flex; align-items: center; gap: 12px; margin-top: 8px"
+      >
+        <div
+          :style="{
+            width: '36px',
+            height: '36px',
+            borderRadius: '8px',
+            background: accentColor,
+            border: '1px solid var(--border-color)'
+          }"
+        />
+        <n-text style="font-size: 13px">{{ accentColor }}</n-text>
+        <n-text depth="3" style="font-size: 12px">
+          （Windows 主题色 / macOS 高亮色，可用于 UI 强调元素）
+        </n-text>
+      </div>
+      <n-text
+        v-else-if="accentError"
+        depth="3"
+        style="display: block; margin-top: 8px; font-size: 12px"
+        >{{ accentError }}</n-text
+      >
+    </n-card>
 
     <template #code>
       <CodeBlock file="src/main/features/theme.ts" :code="themeCode" />

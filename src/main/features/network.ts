@@ -42,13 +42,16 @@ export function registerNetwork(): void {
   ipcMain.handle('network:resolveDns', async (_event, hostname: string) => {
     if (!hostname) return { ok: false, error: '域名不能为空' }
     try {
-      // 类型声明未完全覆盖 ResolvedHost 结构，按官方 API 使用
-      const result = (await net.resolveHost(hostname)) as unknown as {
-        addresses: { address: string; family: number }[]
-      }
+      // ⚠️ Electron 30+ breaking change：net.resolveHost 返回结构从旧版
+      // { addresses: [{ address, family: number }] } 改为
+      // { endpoints: [{ address: string; family: 'ipv4' | 'ipv6' | 'unspec' }] }
+      // （本工程曾按旧结构转型，导致 result.addresses 为 undefined，
+      // 报 "Cannot read properties of undefined (reading 'map')"，见 docs/14）
+      const result = await net.resolveHost(hostname)
+      const list = result.endpoints.map((e) => `${e.address}（${e.family}）`)
       return {
         ok: true,
-        addresses: result.addresses.map((a) => `${a.address}（IPv${a.family}）`)
+        addresses: list.length > 0 ? list : ['（无解析结果，检查域名是否有效）']
       }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

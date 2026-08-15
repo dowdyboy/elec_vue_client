@@ -1,12 +1,14 @@
 /**
  * 【特性】任务栏与平台特性（Windows 任务栏 / macOS Dock）
  * 【API】BrowserWindow.setProgressBar / app.setBadgeCount / app.setJumpList /
- *        win.setOverlayIcon / app.dock.setMenu / app.addRecentDocument
+ *        win.setOverlayIcon / app.dock.setMenu / app.addRecentDocument /
+ *        win.setThumbarButtons / win.flashFrame
  * 【复制】1. 复制本文件到新工程 src/main/features/taskbar.ts
  *         2. 在 index.ts 中调用 registerTaskbar(getMainWindow)
  *         3. 渲染进程调用 window.api.taskbar.*
  * 【说明】桌面应用的"存在感"细节（按平台区分）：
- *         Windows：进度条、跳转列表（JumpList 最近文件）、图标叠加角标
+ *         Windows：进度条、跳转列表（JumpList 最近文件）、图标叠加角标、
+ *                  缩略图按钮（Thumbar，播放器式控制）、任务栏闪烁提醒
  *         macOS：Dock 角标数字、Dock 右键菜单、最近文档、bounce 动画
  */
 
@@ -82,5 +84,51 @@ export function registerTaskbar(getMainWindow: MainWindowGetter): void {
     app.addRecentDocument(join(app.getPath('documents'), '最近文档示例.txt'))
     app.dock?.bounce('informational') // Dock 图标弹跳提示
     return true
+  })
+
+  // ── Windows 任务栏缩略图按钮（Thumbar：悬停任务栏图标时出现）──
+  // 典型场景：媒体播放器的 播放/暂停/下一首，或下载器的 暂停/继续
+  ipcMain.handle('taskbar:setThumbar', (_e, enabled: boolean) => {
+    const win = getMainWindow()
+    if (!win) return { ok: false, error: '窗口不存在' }
+    if (process.platform !== 'win32') return { ok: false, error: '仅 Windows 支持' }
+    if (!enabled) {
+      win.setThumbarButtons([]) // 传空数组移除按钮
+      return { ok: true }
+    }
+    const icon = nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
+    win.setThumbarButtons([
+      {
+        tooltip: '播放 / 暂停',
+        icon,
+        click: () => {
+          if (!win.isDestroyed()) win.webContents.send('taskbar:thumbar-clicked', 'playpause')
+        }
+      },
+      {
+        tooltip: '下一首',
+        icon,
+        click: () => {
+          if (!win.isDestroyed()) win.webContents.send('taskbar:thumbar-clicked', 'next')
+        }
+      }
+    ])
+    return { ok: true }
+  })
+
+  // ── 任务栏图标闪烁（新消息提醒：应用在后台时引起注意）──
+  ipcMain.handle('taskbar:flashFrame', () => {
+    const win = getMainWindow()
+    if (!win) return { ok: false, error: '窗口不存在' }
+    if (process.platform === 'darwin') {
+      // macOS 没有任务栏闪烁，等价物是 Dock bounce（本页"添加最近文档"已演示）
+      return { ok: false, error: 'macOS 无任务栏闪烁，等价物为 Dock bounce' }
+    }
+    win.flashFrame(true)
+    // 3 秒后自动熄灭（教学演示；真实应用应在用户点击窗口时熄灭）
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) win.flashFrame(false)
+    }, 3000)
+    return { ok: true }
   })
 }

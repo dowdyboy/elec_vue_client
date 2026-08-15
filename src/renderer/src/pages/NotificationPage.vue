@@ -15,11 +15,21 @@ const body = ref('这是一条来自主进程的系统通知')
 const clicked = ref('')
 const actionResult = ref('')
 
+/** 平台通知能力（主进程 notification:getPlatformInfo） */
+const platformInfo = ref<{
+  platform: string
+  aumid?: string
+  shortcutExists?: boolean
+  actionsSupported: boolean
+  hint: string
+} | null>(null)
+const registering = ref(false)
+
 function send(): void {
   window.api.notification.show({ title: title.value, body: body.value })
 }
 
-/** 带动作按钮的通知（macOS 显示按钮；Windows 需打包后 toast 支持） */
+/** 带动作按钮的通知（Windows 需 AUMID 快捷方式注册，见上方平台状态卡） */
 function sendWithActions(): void {
   window.api.notification.show({
     title: '更新提示',
@@ -28,9 +38,26 @@ function sendWithActions(): void {
   })
 }
 
+/** Windows dev 一键解锁：创建带 AUMID 的开始菜单快捷方式 */
+async function registerShortcut(): Promise<void> {
+  registering.value = true
+  try {
+    const res = await window.api.notification.registerShortcut()
+    if (res.ok) {
+      message.success('快捷方式已创建，请重新点击"带动作按钮的通知"查看按钮')
+      platformInfo.value = await window.api.notification.getPlatformInfo()
+    } else {
+      message.error(res.error ?? '创建失败')
+    }
+  } finally {
+    registering.value = false
+  }
+}
+
 let dispose: (() => void) | null = null
 let disposeAction: (() => void) | null = null
-onMounted(() => {
+onMounted(async () => {
+  platformInfo.value = await window.api.notification.getPlatformInfo()
   // 点击通知 → 主进程聚焦窗口并回传事件
   dispose = window.api.notification.onClicked((options) => {
     clicked.value = `你点击了通知「${options.title}」，窗口已自动聚焦`
@@ -55,6 +82,37 @@ onUnmounted(() => {
     api="Notification"
     intro="系统通知由主进程创建（渲染进程的 web Notification 在 Electron 中默认不可用）。支持标题、正文、图标，并可监听点击事件做业务处理（如聚焦窗口、跳转页面）。在 Windows/macOS 上会显示为原生通知样式。"
   >
+    <n-alert
+      v-if="platformInfo"
+      :type="platformInfo.actionsSupported ? 'success' : 'warning'"
+      :show-icon="true"
+      style="margin-bottom: 12px"
+    >
+      <template #header>
+        动作按钮平台状态（{{ platformInfo.platform }}）:
+        {{ platformInfo.actionsSupported ? '可用 ✅' : '受限 ⚠️' }}
+      </template>
+      {{ platformInfo.hint }}
+      <template v-if="platformInfo.platform === 'win32' && !platformInfo.shortcutExists">
+        <div style="margin-top: 8px">
+          <n-button size="small" type="primary" :loading="registering" @click="registerShortcut">
+            一键创建开始菜单快捷方式（注册 AUMID）
+          </n-button>
+          <n-text depth="3" style="margin-left: 8px; font-size: 12px">
+            打包安装（build:win）时安装程序会自动创建，无需此步
+          </n-text>
+        </div>
+      </template>
+      <template v-if="platformInfo.platform === 'win32' && platformInfo.shortcutExists">
+        <div style="margin-top: 8px; font-size: 12px">
+          若按钮仍未出现，按顺序排查：① 重启应用后重试；② 仍无效 → 注销或重启一次 （Windows
+          推送通知平台 WpnUserService 缓存"快捷方式表"，程序化新建的 .lnk 需缓存刷新后才被 toast
+          按钮判定认可）；③ 检查通知右上角是否有 ∨ 展开箭头 （Win11
+          会把按钮折叠，点击展开可见）。打包安装后无此问题。
+        </div>
+      </template>
+    </n-alert>
+
     <n-card size="small" title="发送一条通知" style="margin-bottom: 12px">
       <n-input v-model:value="title" placeholder="标题" style="margin-bottom: 8px" />
       <n-input

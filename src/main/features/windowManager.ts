@@ -1,5 +1,5 @@
 /**
- * 【特性】窗口管理（多窗口、窗口控制、置顶、全屏、透明无边框窗口）
+ * 【特性】窗口管理（多窗口、窗口控制、置顶、全屏、透明无边框窗口、点击穿透）
  * 【API】BrowserWindow
  * 【复制】1. 复制本文件到新工程 src/main/features/windowManager.ts
  *         2. 复制 src/main/types.ts（MainWindowGetter 类型）
@@ -8,7 +8,8 @@
  * 【说明】本模块只依赖 Electron 内置 API，不含任何 UI 组件依赖
  */
 
-import { BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import type { MainWindowGetter } from '../types'
 
@@ -109,14 +110,47 @@ export function registerWindowManager(getMainWindow: MainWindowGetter): void {
 
   // ── 拖拽文件出窗口（webContents.startDrag）──
   // 把应用内的文件"拖到桌面/资源管理器"：必须在渲染进程的拖拽事件中调用
-  ipcMain.on('drag:start', (event, filePath: string) => {
+  // 【防御要点】startDrag 在 Windows 上有历史崩溃族（空 icon / 文件不存在 / 与 HTML5
+  // 拖拽并发都会触发，见 docs/08），因此这里做三道防御：
+  //   ① 文件存在性校验  ② icon 为空时降级为空图（规避 SetDragImage 崩溃路径）
+  //   ③ try/catch 兜底（异常时记录而非让主进程崩溃）
+  // 渲染进程侧必须配合 event.preventDefault()（见 FileSystemPage.vue）
+  // 【图标要点】startDrag 的 icon 不做缩放，按原始尺寸显示在光标下——
+  //   传大图会得到巨大的拖拽光标。因此优先用 app.getFileIcon 取系统文件图标
+  //   （32px，与 fileIcon.ts 同 API），兜底图标必须 resize 到小尺寸。
+  ipcMain.on('drag:start', async (event, filePath: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || !filePath) return
-    win.webContents.startDrag({
-      file: filePath,
-      // 拖动时显示的图标（可选：可改为文件自身的缩略图）
-      icon: nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
-    })
+
+    // ① 文件必须真实存在（否则原生拖拽可能崩溃）
+    if (!existsSync(filePath)) {
+      console.error(`[drag:start] 文件不存在，已拒绝拖拽: ${filePath}`)
+      return
+    }
+
+    // ② 拖拽图标：优先文件自身的系统图标（32x32）；失败降级资源图标并强制 resize
+    let icon = nativeImage.createEmpty()
+    try {
+      icon = await app.getFileIcon(filePath, { size: 'normal' })
+    } catch {
+      // 取系统图标失败（罕见）：走下方兜底
+    }
+    if (icon.isEmpty()) {
+      const fallbackPath = join(__dirname, '../../resources/icon.png')
+      const fallback = existsSync(fallbackPath)
+        ? nativeImage.createFromPath(fallbackPath)
+        : nativeImage.createEmpty()
+      icon = fallback.resize({ width: 32, height: 32 }) // 原始图 512x512，必须缩到小尺寸
+    }
+
+    try {
+      win.webContents.startDrag({
+        file: filePath,
+        icon
+      })
+    } catch (error) {
+      console.error('[drag:start] startDrag 调用异常:', error)
+    }
   })
 
   // ── kiosk 模式（自助终端/大屏应用：锁定全屏，Esc 无法退出）──
@@ -149,6 +183,16 @@ export function registerWindowManager(getMainWindow: MainWindowGetter): void {
     const clamped = Math.min(1, Math.max(0, opacity))
     win.setOpacity(clamped)
     return win.getOpacity()
+  })
+
+  // ── 点击穿透（桌面挂件/悬浮窗场景：鼠标事件穿过窗口，落到下层应用）──
+  // forward: true 时页面仍能收到 mousemove 事件，可据此实现"倒计时自动恢复"
+  // 教学警告：直接开启且不恢复会导致窗口点不回来（只能托盘菜单找回）
+  ipcMain.handle('window:setIgnoreMouseEvents', (_e, ignore: boolean, forward = true) => {
+    const win = getMainWindow()
+    if (!win) return false
+    win.setIgnoreMouseEvents(ignore, { forward })
+    return ignore
   })
 }
 

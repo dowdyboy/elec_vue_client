@@ -91,7 +91,8 @@ onUnmounted(() => dispose?.())
     <n-card size="small" title="① 权限白名单拦截" style="margin-bottom: 12px">
       <n-button type="primary" @click="triggerPermission">尝试请求弹窗权限（会被拦截）</n-button>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 13px">
-        主进程 security.ts 只放行 clipboard-read，其余权限一律拒绝。 被拒绝记录：
+        主进程 security.ts 白名单只放行 clipboard-read / media / display-capture / serial （media 与
+        display-capture 供"媒体捕获"页演示），其余权限一律拒绝。被拒绝记录：
       </n-text>
       <div v-if="deniedPermissions.length" style="margin-top: 4px; font-size: 13px">
         <div v-for="(p, i) in deniedPermissions" :key="i">🛡️ {{ p }}</div>
@@ -138,9 +139,9 @@ onUnmounted(() => dispose?.())
       </n-text>
       <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
         ⚠️ 注意两层权限是独立的关系：系统授权（本卡片，macOS 弹窗）允许操作系统层面使用摄像头；
-        但页面实际调用 getUserMedia 时还会经过本页 ① 的 Chromium 权限白名单 （当前只放行
-        clipboard-read，所以即使系统已授权，getUserMedia 仍会被主进程拒绝）——
-        生产应用需同时处理这两层。
+        页面实际调用 getUserMedia 时还会经过本页 ① 的 Chromium 权限白名单（白名单已放行
+        media，因此系统授权 + 白名单都通过后即可访问；在"媒体捕获"页可实测， 若把白名单中 media
+        注释掉，getUserMedia 将被主进程拒绝——两层权限缺一不可）。
       </n-alert>
     </n-card>
 

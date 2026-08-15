@@ -70,6 +70,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '文件系统', icon: '📁' }
   },
   {
+    path: '/paths',
+    name: 'paths',
+    component: () => import('../pages/AppPathsPage.vue'),
+    meta: { title: '数据目录', icon: '📂' }
+  },
+  {
     path: '/menu',
     name: 'menu',
     component: () => import('../pages/MenuPage.vue'),
@@ -92,6 +98,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'sockets',
     component: () => import('../pages/SocketPage.vue'),
     meta: { title: 'TCP/UDP 通信', icon: '🔌' }
+  },
+  {
+    path: '/serial',
+    name: 'serial',
+    component: () => import('../pages/SerialPage.vue'),
+    meta: { title: '串口通信', icon: '📟' }
   },
   {
     path: '/network',
@@ -118,6 +130,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'SQLite 数据库', icon: '🗄️' }
   },
   {
+    path: '/better-sqlite',
+    name: 'better-sqlite',
+    component: () => import('../pages/BetterSqlitePage.vue'),
+    meta: { title: '第三方 SQLite', icon: '⚙️' }
+  },
+  {
+    path: '/safe-storage',
+    name: 'safe-storage',
+    component: () => import('../pages/SafeStoragePage.vue'),
+    meta: { title: '加密存储', icon: '🔑' }
+  },
+  {
     path: '/platform',
     name: 'platform',
     component: () => import('../pages/PlatformPage.vue'),
@@ -128,6 +152,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'capture',
     component: () => import('../pages/CapturePage.vue'),
     meta: { title: '桌面捕获', icon: '📸' }
+  },
+  {
+    path: '/media',
+    name: 'media',
+    component: () => import('../pages/MediaCapturePage.vue'),
+    meta: { title: '媒体捕获', icon: '🎥' }
   },
   {
     path: '/print',
@@ -152,6 +182,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'performance',
     component: () => import('../pages/PerformancePage.vue'),
     meta: { title: '计算性能', icon: '⚡' }
+  },
+  {
+    path: '/gpu',
+    name: 'gpu',
+    component: () => import('../pages/GpuPage.vue'),
+    meta: { title: 'GPU 信息', icon: '🎮' }
   },
   {
     path: '/security',

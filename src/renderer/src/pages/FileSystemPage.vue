@@ -115,11 +115,16 @@ async function pickDragFile(): Promise<void> {
 
 function onDragFileStart(event: DragEvent): void {
   if (!dragOutFile.value) return
-  // 必须设置拖拽数据，dragstart 才会生效
-  event.dataTransfer?.setData('text/plain', dragOutFile.value)
-  event.dataTransfer?.setData('DownloadURL', `file:${dragOutFile.value}`)
-  // 关键：调用主进程的 webContents.startDrag 开始系统拖拽
+  // 关键：必须先 preventDefault 取消 HTML5 拖拽循环，把拖拽完全交给原生 startDrag。
+  // 若两个拖拽会话并发，Windows 上 drop 时 Chromium 同时收尾两个会话 → 竞态 → 应用闪退
+  // （Electron 已知崩溃族问题，官方 drag-and-drop 教程同款写法，见 docs/08）
+  event.preventDefault()
+  // 调用主进程的 webContents.startDrag 开始系统原生拖拽（不读 dataTransfer，无需 setData）
   window.api.drag.start(dragOutFile.value)
+}
+
+function onDragFileEnd(): void {
+  dragOutHint.value = `拖拽已结束（原生拖拽由主进程 startDrag 驱动，本事件仅用于状态复位）`
 }
 
 // ── 系统文件图标（app.getFileIcon）──
@@ -181,13 +186,9 @@ let watchId: number | null = null
 let disposeWatch: (() => void) | null = null
 
 async function pickWatchDir(): Promise<void> {
-  // 用现有"选择文件并浏览目录"的流程取目录
-  const file = await window.api.dialog.openFile([{ name: '所有文件', extensions: ['*'] }])
-  if (!file) return
-  const parts = file.split(/[\\/]/)
-  parts.pop()
-  let dir = parts.join('\\')
-  if (/^[A-Za-z]:$/.test(dir)) dir += '\\'
+  // 目录选择框（dialog:openDirectory，properties: ['openDirectory']——只能选目录）
+  const dir = await window.api.dialog.openDirectory('选择要监听的目录')
+  if (!dir) return
 
   disposeWatch?.()
   const res = await window.api.fs.watch(dir)
@@ -326,12 +327,19 @@ const columns: DataTableColumns<DirEntry> = [
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">{{
         dragOutHint
       }}</n-text>
-      <div v-if="dragOutFile" draggable="true" class="drag-out-item" @dragstart="onDragFileStart">
+      <div
+        v-if="dragOutFile"
+        draggable="true"
+        class="drag-out-item"
+        @dragstart="onDragFileStart"
+        @dragend="onDragFileEnd"
+      >
         📄 {{ dragOutFile.split(/[\\/]/).pop() }}
       </div>
       <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
         按住上面的文件项拖到桌面/资源管理器，即可复制文件到系统 —— 这依赖主进程的
         <code>webContents.startDrag({ file, icon })</code>。
+        拖拽光标显示的是该文件的系统图标（app.getFileIcon，与下方"系统文件图标"卡片同 API）。
       </n-alert>
     </n-card>
 

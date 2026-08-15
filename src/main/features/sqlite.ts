@@ -21,7 +21,31 @@ import { join } from 'path'
 /** 数据库实例（模块级单例） */
 let db: DatabaseSync | null = null
 
+/**
+ * 启动兼容性自检：node:sqlite 是实验性 API（Node 22 稳定性 1.1），
+ * 未来升级 Electron（捆绑新 Node 版本）时 API 可能变更。这里把"运行期摸不着
+ * 头脑的 TypeError"变成可操作的失败指引（对照 docs/25 升级检查清单）。
+ */
+function assertSqliteApi(): void {
+  const problems: string[] = []
+  if (typeof DatabaseSync !== 'function') problems.push('DatabaseSync 类不存在')
+  for (const method of ['prepare', 'exec', 'close'] as const) {
+    if (typeof DatabaseSync.prototype[method] !== 'function') {
+      problems.push(`DatabaseSync.${method} 方法不存在`)
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `node:sqlite API 与预期不符（${problems.join('；')}）。` +
+        '当前 Electron 捆绑的 Node 版本可能已变更实验性 sqlite API，' +
+        '请按 docs/25「升级检查清单」处理。'
+    )
+  }
+}
+
 export function registerSqlite(): void {
+  assertSqliteApi()
+
   // ── 初始化：打开数据库 + WAL 模式 + 建示例表 ──
   const dbPath = join(app.getPath('userData'), 'app.db')
   db = new DatabaseSync(dbPath)
@@ -34,6 +58,10 @@ export function registerSqlite(): void {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `)
+  // 性能基准专用表（独立于 notes，避免污染演示数据）
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS bench (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, n INTEGER)'
+  )
 
   // 退出前关闭数据库（WAL 模式更规范；进程退出也会自动释放）
   app.on('before-quit', () => {
@@ -123,5 +151,28 @@ export function registerSqlite(): void {
     }[]
     const count = db!.prepare('SELECT COUNT(*) AS total FROM notes').get() as { total: number }
     return { dbPath, tables: tables.map((t) => t.name), total: count.total }
+  })
+
+  // ── ⑥ 性能基准（与 betterSqlite.ts 的同名基准对比，见"第三方 SQLite"页）──
+  ipcMain.handle('db:benchmark', (_e, rows: number) => {
+    const n = Math.min(50000, Math.max(1, Math.floor(rows) || 1000))
+    db!.exec('DELETE FROM bench')
+    const stmt = db!.prepare('INSERT INTO bench (title, content, n) VALUES (?, ?, ?)')
+    // 单事务批量插入计时（事务是批量写入性能的关键）
+    db!.exec('BEGIN')
+    const t0 = process.hrtime.bigint()
+    for (let i = 0; i < n; i++) stmt.run(`记录 ${i}`, `内容 ${i}`, i)
+    db!.exec('COMMIT')
+    const t1 = process.hrtime.bigint()
+    // 全表聚合查询计时
+    const result = db!.prepare('SELECT COUNT(*) AS c FROM bench').get() as { c: number }
+    const t2 = process.hrtime.bigint()
+    return {
+      engine: 'node:sqlite',
+      rows: n,
+      insertMs: Number(t1 - t0) / 1e6,
+      queryMs: Number(t2 - t1) / 1e6,
+      total: Number(result.c)
+    }
   })
 }

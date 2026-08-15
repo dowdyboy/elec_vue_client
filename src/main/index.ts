@@ -28,6 +28,7 @@ import { registerSecurity } from './features/security'
 import { registerAppLifecycle } from './features/appLifecycle'
 import { registerNetwork } from './features/network'
 import { registerSockets } from './features/socket'
+import { registerSocketServer } from './features/socketServer'
 import { registerAutoUpdater } from './features/autoUpdater'
 import { registerProtocol } from './features/protocol'
 import { registerWindowState, attachWindowState } from './features/windowState'
@@ -58,9 +59,20 @@ import { registerSessionConfig } from './features/sessionConfig'
 import { registerCertificate } from './features/certificate'
 import { registerPartition } from './features/partition'
 import { registerQuitGuard, quitState } from './features/quitGuard'
+import { registerHttpServer } from './features/httpServer'
+import { registerScriptInjection } from './features/scriptInjection'
+import { registerLoadState } from './features/loadState'
+import { registerSafeStorage } from './features/safeStorage'
+import { registerSerialPort } from './features/serialPort'
+import { registerGpuInfo, applyGpuCommandLine } from './features/gpuInfo'
+import { registerAppPaths } from './features/appPaths'
+import { registerBetterSqlite } from './features/betterSqlite'
 
 // ⚠️ 必须在 app ready 之前：声明 elec-fs 自定义协议特权（见 protocolContent.ts）
 registerProtocolSchemes()
+
+// ⚠️ 必须在 app ready 之前：按标记追加 disable-gpu 开关（见 gpuInfo.ts）
+applyGpuCommandLine()
 
 /** 主窗口引用（用 let 而非 const：窗口可能被销毁重建） */
 let mainWindow: BrowserWindow | null = null
@@ -132,9 +144,13 @@ app.whenReady().then(() => {
   // ── 单实例锁必须先注册：若已有实例在运行，直接退出不再初始化 ──
   if (!registerAppLifecycle(getMainWindow)) return
 
-  // 开发环境 F12 开 DevTools / 生产屏蔽 Ctrl+R
+  // 生产环境：屏蔽 Ctrl+R / Ctrl+Shift+I 等调试快捷键
+  // dev 下不启用：F12 的 DevTools 开关由 inputHook.ts 统一接管
+  // （optimizer 不检查 defaultPrevented，两者共存会导致"吞掉 F12"失效，见 inputHook.ts 头部说明）
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    if (!is.dev) {
+      optimizer.watchWindowShortcuts(window)
+    }
   })
 
   // ── 特性注册表 ──
@@ -152,6 +168,7 @@ app.whenReady().then(() => {
   registerSecurity() // 安全策略（权限/导航拦截）
   registerNetwork() // HTTP 请求封装
   registerSockets(getMainWindow) // TCP / UDP 原生通信
+  registerSocketServer() // WebSocket 服务器（socket.io 自闭环演示）
   registerAutoUpdater(getMainWindow) // 自动更新（electron-updater）
   registerProtocol(getMainWindow) // 自定义协议 + 深链接 + 内嵌网页
   registerWindowState() // 窗口状态持久化（attach 见 createWindow）
@@ -182,6 +199,14 @@ app.whenReady().then(() => {
   registerCertificate() // 证书校验策略
   registerPartition() // 会话分区（无痕/多账号）
   registerQuitGuard(getMainWindow) // 退出前未保存询问
+  registerHttpServer() // HTTP 服务器（node:http）
+  registerScriptInjection(getMainWindow) // 脚本注入
+  registerLoadState(getMainWindow) // 页面加载状态监控
+  registerSafeStorage() // 加密存储（safeStorage）
+  registerSerialPort() // 串口通信（Web Serial）
+  registerGpuInfo() // GPU 信息与硬件加速开关
+  registerAppPaths() // 应用数据目录（getPath/setPath）
+  registerBetterSqlite() // 第三方 SQLite（better-sqlite3）
 
   // 启动闪屏（教学演示默认开启；主窗口 ready 后自动关闭）
   showSplash()

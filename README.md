@@ -25,9 +25,15 @@
 | **下载管理** | will-download / DownloadItem | 进度/暂停/恢复/取消 | [docs/22](./docs/22-下载管理.md) |
 | **会话管理** | session.cookies / webRequest | Cookie 读写/请求拦截/虚拟协议 | [docs/23](./docs/23-网络会话（Cookie与请求拦截）.md) + [docs/24](./docs/24-自定义协议内容.md) |
 | **SQLite 数据库** | node:sqlite（零依赖） | CRUD/事务/注入对比 | [docs/25](./docs/25-数据库（SQLite）.md) |
+| **第三方 SQLite** | better-sqlite3（原生模块） | 对比教学/transaction/性能基准 | [docs/34](./docs/34-第三方SQLite（better-sqlite3）.md) |
 | **平台特性** | setJumpList / app.dock / kiosk | Windows 任务栏/macOS Dock/媒体控制 | [docs/26](./docs/26-平台特性.md) |
 | **系统集成** | systemPreferences / net / inputHook | 权限/在线状态/缓存/按键拦截 | [docs/27](./docs/27-系统集成.md) |
 | **会话配置与证书** | setProxy / setUserAgent / 证书 | 代理 / UA / 证书校验 | [docs/28](./docs/28-会话配置与证书.md) |
+| **媒体捕获** | getUserMedia / getDisplayMedia / MediaRecorder | 摄像头/麦克风预览录制 + 桌面录屏 | [docs/29](./docs/29-媒体捕获（摄像头麦克风录屏）.md) |
+| **串口通信（Web Serial）** | setDevicePermissionHandler / select-serial-port | 权限放行 + 应用内端口选择 + 读写 | [docs/30](./docs/30-串口通信（Web%20Serial）.md) |
+| **GPU 信息与硬件加速** | getGPUFeatureStatus / getGPUInfo / appendSwitch | 特性状态表 / 软渲染开关（重启生效） | [docs/31](./docs/31-GPU信息与硬件加速.md) |
+| **应用数据目录** | getPath / setPath | 目录全景 / 运行期修改下载目录 | [docs/32](./docs/32-应用数据目录（getPath%20setPath）.md) |
+| **加密存储** | safeStorage（DPAPI/Keychain） | OS 级加密往返 / 敏感数据落盘方案 | [docs/33](./docs/33-安全存储（safeStorage）.md) |
 | **桌面捕获** | desktopCapturer | 屏幕源/窗口截图 | [docs/17](./docs/17-桌面捕获.md) |
 | **打印** | printToPDF | 页面导出 PDF | [docs/18](./docs/18-打印.md) |
 | **协议与深链接** | setAsDefaultProtocolClient | 唤起应用/内嵌网页 | [docs/16](./docs/16-自定义协议与深链接.md) |
@@ -36,7 +42,7 @@
 | 安全实践 | session / webContents | 权限/导航拦截 | [docs/12](./docs/12-安全实践.md) |
 | 生命周期 | app | 单实例/自启/事件 | [docs/13](./docs/13-生命周期.md) |
 
-**扩展特性**（并入既有页面与文档）：任务栏进度条、应用角标、窗口状态持久化、无边框窗口拖拽区与自定义标题栏、毛玻璃/亚克力、启动闪屏、页面缩放、窗口尺寸限制与透明度、窗口事件、内置 PDF 查看、会话分区（无痕/多账号）、目录监听、内嵌网页导航历史、退出前未保存询问、静默权限检查、电源监控、阻止系统睡眠、全局错误处理、崩溃自动恢复、通知动作按钮、文件拖出窗口、系统文件图标、shell 文件操作、应用重启、文件关联、DNS 解析、BroadcastChannel 直连、系统语言与字体、会话缓存清理、关于面板。
+**扩展特性**（并入既有页面与文档）：任务栏进度条、应用角标、窗口状态持久化、无边框窗口拖拽区与自定义标题栏、毛玻璃/亚克力、启动闪屏、页面缩放、窗口尺寸限制与透明度、窗口事件、点击穿透、内置 PDF 查看、会话分区（无痕/多账号）、目录监听、内嵌网页导航历史、页面加载状态监控、脚本注入、HTTP 本地服务器、系统强调色、崩溃转储、退出前未保存询问、静默权限检查、电源监控、阻止系统睡眠、全局错误处理、崩溃自动恢复、通知动作按钮、文件拖出窗口、系统文件图标、shell 文件操作、应用重启、文件关联、DNS 解析、BroadcastChannel 直连、系统语言与字体、会话缓存清理、关于面板、Thumbar 缩略图按钮、任务栏闪烁提醒。
 
 **进阶实践**：[docs/21](./docs/21-进阶工程实践.md)（sandbox 生产切换、远程调试、Sentry 崩溃上报、contentTracing、electron-store、electron-log 等）。
 
@@ -56,14 +62,14 @@ npm run build:win  # 打包 Windows 安装包
 src/
 ├── main/
 │   ├── index.ts          # 入口：特性注册表（每行一个特性，注释即停用）
-│   └── features/         # ★ 14 个可独立复制的特性模块
+│   └── features/         # ★ 52 个可独立复制的特性模块
 ├── preload/
 │   └── index.ts          # 安全桥：window.api.<分组>.<方法>
 └── renderer/src/
     ├── App.vue           # Naive UI 主题 + 侧边导航 + 内容区
     ├── router/           # vue-router（hash 模式）
     ├── stores/theme.ts   # 主题状态（与 nativeTheme 联动）
-    └── pages/            # 14 个特性演示页 + 子窗口演示页
+    └── pages/            # 31 个特性演示页 + 子窗口演示页
 docs/                     # 教学文档（每特性一篇，含复制步骤）
 ```
 

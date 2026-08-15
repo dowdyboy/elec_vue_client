@@ -174,8 +174,12 @@ onMounted(async () => {
   <FeatureLayout
     title="SQLite 数据库"
     api="node:sqlite（Node 内置，零依赖）"
-    intro="Electron 39 内置 Node 22.20，自带 node:sqlite 模块（DatabaseSync）——与生产标准库 better-sqlite3 同底层 SQLite，同步 API、无需编译。数据文件存放在 userData/app.db。本页演示完整 CRUD、SQL 执行器、事务原子性，以及最关键的：参数化查询防 SQL 注入。"
+    intro="Electron 39 内置 Node 22.20，自带 node:sqlite 模块（DatabaseSync）——与生产标准库 better-sqlite3 同底层 SQLite，同步 API、无需编译。数据文件存放在 userData/app.db。本页演示完整 CRUD、SQL 执行器、事务原子性，以及最关键的：参数化查询防 SQL 注入。注意：node:sqlite 是实验性 API（启动的 ExperimentalWarning 属预期，含义见 docs/25）；第三方库对比见「第三方 SQLite」页。"
   >
+    <n-alert type="info" :show-icon="true" size="small" style="margin-bottom: 12px">
+      想了解内置库与 better-sqlite3 的取舍？左菜单「第三方 SQLite」页提供同口径对比
+      （API/构建链路/性能基准），选择依据见 docs/34。
+    </n-alert>
     <n-card size="small" title="① 笔记 CRUD（参数化查询）" style="margin-bottom: 12px">
       <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap">
         <n-input v-model:value="formTitle" placeholder="标题" style="width: 200px" />

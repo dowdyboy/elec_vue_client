@@ -22,6 +22,34 @@ function on<T>(channel: string, callback: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
+/** 串口设备信息（主进程 select-serial-port 事件推送，见 serialPort.ts） */
+export interface SerialPortInfo {
+  portId: string
+  portName: string
+  displayName: string
+  vendorId: string
+  productId: string
+}
+
+/** 端口选择事件载荷：token 用于回传时关联主进程对应请求（见 serialPort.ts） */
+export interface SerialPortsPayload {
+  token: string
+  ports: SerialPortInfo[]
+}
+
+/** 录屏源（主进程 desktopCapturer 枚举后推送，见 desktopCapture.ts） */
+export interface DisplaySourceInfo {
+  id: string
+  name: string
+  thumbnail: string | null
+}
+
+/** 录屏源选择事件载荷：token 用于回传时关联主进程对应请求 */
+export interface DisplaySourcesPayload {
+  token: string
+  sources: DisplaySourceInfo[]
+}
+
 // ──────────────────────────────────────────────────
 // 自定义 API：按特性分组，类型定义见 index.d.ts
 // ──────────────────────────────────────────────────
@@ -45,6 +73,9 @@ const api = {
     setMaxSize: (width: number, height: number) =>
       ipcRenderer.invoke('window:setMaxSize', width, height),
     setOpacity: (opacity: number) => ipcRenderer.invoke('window:setOpacity', opacity),
+    /** 点击穿透：窗口对鼠标事件"视而不见"，事件落到下层应用（forward 时页面仍收 mousemove） */
+    setIgnoreMouseEvents: (ignore: boolean, forward = true) =>
+      ipcRenderer.invoke('window:setIgnoreMouseEvents', ignore, forward),
     /** 窗口移动/缩放事件 */
     onEvent: (cb: (data: { event: string; time: string; bounds: string }) => void) =>
       on('window:event', cb),
@@ -67,17 +98,8 @@ const api = {
     /** ③ 广播（所有窗口都会收到） */
     broadcast: (payload: string) => ipcRenderer.send('ipc:broadcast', payload),
     onBroadcastReceived: (cb: (data: string) => void) => on('ipc:broadcast-received', cb),
-    /** ④ MessageChannel 双向管道 */
-    createChannel: () => ipcRenderer.send('ipc:create-channel'),
-    onChannelPort: (cb: (port: MessagePort) => void) => {
-      // MessagePort 通过事件的 ports 字段传递，需单独处理
-      const listener = (event: IpcRendererEvent): void => {
-        const port = event.ports[0]
-        if (port) cb(port)
-      }
-      ipcRenderer.on('ipc:channel-port', listener)
-      return () => ipcRenderer.removeListener('ipc:channel-port', listener)
-    }
+    /** ④ MessageChannel 双向管道：createChannel 后端口经下方预注册监听转移（见文件底部） */
+    createChannel: () => ipcRenderer.send('ipc:create-channel')
   },
 
   /** ── 系统通知（主进程: notification.ts）── */
@@ -85,7 +107,9 @@ const api = {
     show: (options: NotificationOptions) => ipcRenderer.invoke('notification:show', options),
     onClicked: (cb: (options: NotificationOptions) => void) => on('notification:clicked', cb),
     onAction: (cb: (data: { options: NotificationOptions; index: number }) => void) =>
-      on('notification:action', cb)
+      on('notification:action', cb),
+    getPlatformInfo: () => ipcRenderer.invoke('notification:getPlatformInfo'),
+    registerShortcut: () => ipcRenderer.invoke('notification:registerShortcut')
   },
 
   /** ── 全局快捷键（主进程: globalShortcut.ts）── */
@@ -109,6 +133,8 @@ const api = {
   dialog: {
     openFile: (filters?: { name: string; extensions: string[] }[]) =>
       ipcRenderer.invoke('dialog:openFile', filters),
+    /** 目录选择框（properties: ['openDirectory']，目录监听等场景用） */
+    openDirectory: (title?: string) => ipcRenderer.invoke('dialog:openDirectory', title),
     saveFile: (options?: { defaultName?: string }) =>
       ipcRenderer.invoke('dialog:saveFile', options),
     showMessage: (options?: { title?: string; message?: string; buttons?: string[] }) =>
@@ -147,7 +173,8 @@ const api = {
   theme: {
     getState: () => ipcRenderer.invoke('theme:getState'),
     setSource: (source: ThemeSource) => ipcRenderer.invoke('theme:setSource', source),
-    onUpdated: (cb: (data: { shouldUseDarkColors: boolean }) => void) => on('theme:updated', cb)
+    onUpdated: (cb: (data: { shouldUseDarkColors: boolean }) => void) => on('theme:updated', cb),
+    getAccentColor: () => ipcRenderer.invoke('theme:getAccentColor')
   },
 
   /** ── 应用信息 / 生命周期（主进程: appLifecycle.ts）── */
@@ -203,7 +230,13 @@ const api = {
   capture: {
     getSources: () => ipcRenderer.invoke('capture:getSources'),
     capturePage: () => ipcRenderer.invoke('capture:capturePage'),
-    savePng: (dataUrl: string) => ipcRenderer.invoke('capture:savePng', dataUrl)
+    savePng: (dataUrl: string) => ipcRenderer.invoke('capture:savePng', dataUrl),
+    /** 录屏源选择事件：getDisplayMedia 触发，主进程推送 { token, sources } */
+    onDisplaySources: (cb: (payload: DisplaySourcesPayload) => void) =>
+      on('capture:display-sources', cb),
+    selectDisplaySource: (token: string, sourceId: string, sourceName: string) =>
+      ipcRenderer.send('capture:display-select', token, sourceId, sourceName),
+    cancelDisplaySource: (token: string) => ipcRenderer.send('capture:display-cancel', token)
   },
 
   /** ── 打印（主进程: print.ts）── */
@@ -225,14 +258,20 @@ const api = {
     setJumpList: (files: string[]) => ipcRenderer.invoke('taskbar:setJumpList', files),
     setOverlay: (enabled: boolean) => ipcRenderer.invoke('taskbar:setOverlay', enabled),
     setDockMenu: () => ipcRenderer.invoke('taskbar:setDockMenu'),
-    addRecentDocument: () => ipcRenderer.invoke('taskbar:addRecentDocument')
+    addRecentDocument: () => ipcRenderer.invoke('taskbar:addRecentDocument'),
+    /** Windows 任务栏缩略图按钮（Thumbar） */
+    setThumbar: (enabled: boolean) => ipcRenderer.invoke('taskbar:setThumbar', enabled),
+    onThumbarClicked: (cb: (action: string) => void) => on('taskbar:thumbar-clicked', cb),
+    /** 任务栏图标闪烁提醒（Windows/Linux） */
+    flashFrame: () => ipcRenderer.invoke('taskbar:flashFrame')
   },
 
   /** ── 全局错误处理（主进程: errorHandler.ts）── */
   error: {
     getLogs: () => ipcRenderer.invoke('error:getLogs'),
     onNew: (cb: (record: unknown) => void) => on('error:new', cb),
-    setAutoRecovery: (enabled: boolean) => ipcRenderer.invoke('error:setAutoRecovery', enabled)
+    setAutoRecovery: (enabled: boolean) => ipcRenderer.invoke('error:setAutoRecovery', enabled),
+    getCrashInfo: () => ipcRenderer.invoke('error:getCrashInfo')
   },
 
   /** ── TCP / UDP 通信（主进程: socket.ts）── */
@@ -294,7 +333,9 @@ const api = {
     resume: (id: string) => ipcRenderer.invoke('download:resume', id),
     cancel: (id: string) => ipcRenderer.invoke('download:cancel', id),
     onProgress: (cb: (data: unknown) => void) => on('download:progress', cb),
-    onDone: (cb: (data: unknown) => void) => on('download:done', cb)
+    onDone: (cb: (data: unknown) => void) => on('download:done', cb),
+    /** 暂停/恢复状态推送（Electron 事件不映射 paused，主进程主动推送，见 download.ts） */
+    onState: (cb: (data: { id: string; state: string }) => void) => on('download:state', cb)
   },
 
   /** ── 网络会话：Cookie + 请求拦截（主进程: cookies.ts / webRequest.ts / sessionCleanup.ts）── */
@@ -344,7 +385,23 @@ const api = {
     transaction: () => ipcRenderer.invoke('db:transaction'),
     /** safe=true 参数化查询（正确）；safe=false 字符串拼接（演示注入漏洞） */
     search: (keyword: string, safe: boolean) => ipcRenderer.invoke('db:search', keyword, safe),
-    info: () => ipcRenderer.invoke('db:info')
+    info: () => ipcRenderer.invoke('db:info'),
+    benchmark: (rows: number) => ipcRenderer.invoke('db:benchmark', rows)
+  },
+
+  /** ── 第三方 SQLite（主进程: betterSqlite.ts，better-sqlite3 原生模块）── */
+  betterDb: {
+    list: () => ipcRenderer.invoke('betterDb:list'),
+    add: (note: { title: string; content: string }) => ipcRenderer.invoke('betterDb:add', note),
+    update: (note: { id: number; title: string; content: string }) =>
+      ipcRenderer.invoke('betterDb:update', note),
+    remove: (id: number) => ipcRenderer.invoke('betterDb:delete', id),
+    /** safe=true 参数化查询（正确）；safe=false 字符串拼接（演示注入漏洞） */
+    search: (keyword: string, safe: boolean) =>
+      ipcRenderer.invoke('betterDb:search', keyword, safe),
+    transaction: () => ipcRenderer.invoke('betterDb:transaction'),
+    benchmark: (rows: number) => ipcRenderer.invoke('betterDb:benchmark', rows),
+    info: () => ipcRenderer.invoke('betterDb:info')
   },
 
   /** ── 系统权限（主进程: systemAccess.ts）── */
@@ -410,6 +467,61 @@ const api = {
   quitGuard: {
     setDirty: (dirty: boolean) => ipcRenderer.invoke('quitGuard:setDirty', dirty),
     getDirty: () => ipcRenderer.invoke('quitGuard:getDirty')
+  },
+
+  /** ── HTTP 服务器（主进程: httpServer.ts，node:http）── */
+  httpServer: {
+    start: (port?: number) => ipcRenderer.invoke('httpServer:start', port),
+    stop: () => ipcRenderer.invoke('httpServer:stop'),
+    getStatus: () => ipcRenderer.invoke('httpServer:getStatus')
+  },
+
+  /** ── WebSocket 服务器（主进程: socketServer.ts，socket.io 自闭环演示）── */
+  socketServer: {
+    start: (port?: number) => ipcRenderer.invoke('socketServer:start', port),
+    stop: () => ipcRenderer.invoke('socketServer:stop'),
+    getStatus: () => ipcRenderer.invoke('socketServer:getStatus')
+  },
+
+  /** ── 脚本注入（主进程: scriptInjection.ts）── */
+  inject: {
+    execute: (code: string) => ipcRenderer.invoke('inject:execute', code)
+  },
+
+  /** ── 页面加载状态（主进程: loadState.ts）── */
+  web: {
+    getLoadState: () => ipcRenderer.invoke('web:getLoadState'),
+    onLoadState: (cb: (data: unknown) => void) => on('web:load-state', cb)
+  },
+
+  /** ── 加密存储（主进程: safeStorage.ts）── */
+  safeStorage: {
+    isAvailable: () => ipcRenderer.invoke('safeStorage:isAvailable'),
+    encrypt: (plainText: string) => ipcRenderer.invoke('safeStorage:encrypt', plainText),
+    decrypt: (base64Cipher: string) => ipcRenderer.invoke('safeStorage:decrypt', base64Cipher)
+  },
+
+  /** ── 串口通信（主进程: serialPort.ts；数据读写用浏览器 navigator.serial）── */
+  serial: {
+    /** 端口选择事件：requestPort() 触发，主进程推送 { token, ports }（token 用于回传关联） */
+    onPorts: (cb: (payload: SerialPortsPayload) => void) => on('serial:ports', cb),
+    selectPort: (token: string, portId: string) => ipcRenderer.send('serial:select', token, portId),
+    cancel: (token: string) => ipcRenderer.send('serial:cancel', token)
+  },
+
+  /** ── GPU 信息与硬件加速（主进程: gpuInfo.ts）── */
+  gpu: {
+    getFeatureStatus: () => ipcRenderer.invoke('gpu:getFeatureStatus'),
+    getInfo: () => ipcRenderer.invoke('gpu:getInfo'),
+    setAcceleration: (enabled: boolean) => ipcRenderer.invoke('gpu:setAcceleration', enabled),
+    getAccelerationState: () => ipcRenderer.invoke('gpu:getAccelerationState')
+  },
+
+  /** ── 应用数据目录（主进程: appPaths.ts）── */
+  paths: {
+    getAll: () => ipcRenderer.invoke('paths:getAll'),
+    set: (key: string, value: string) => ipcRenderer.invoke('paths:set', key, value),
+    getAppPath: () => ipcRenderer.invoke('paths:getAppPath')
   }
 }
 
@@ -430,5 +542,21 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.api = api
 }
+
+// ──────────────────────────────────────────────────
+// ④ MessageChannel 端口转移（contextIsolation 专用，见 ipcBridge.ts ④）
+// 关键坑：MessagePort 不能作为参数经 contextBridge 传给页面——
+// contextBridge 的参数会做结构化克隆，端口会被克隆成"断开连接"的新对象
+// （postMessage 发出去无人接收）。正确做法是"转移"（transfer）：
+// 在 preload 收到端口后，用 window.postMessage 把它转移到主世界，
+// 页面用 window.addEventListener('message') 接收（官方推荐模式，见 docs/02）。
+// 预注册时机：preload 加载即注册，早于页面任何点击，无时序问题。
+// ──────────────────────────────────────────────────
+ipcRenderer.on('ipc:channel-port', (event) => {
+  const port = event.ports[0]
+  if (port) {
+    window.postMessage('ipc:channel-port', '*', [port])
+  }
+})
 
 export type Api = typeof api

@@ -49,10 +49,36 @@ async function closeView(): Promise<void> {
 // ── 导航历史（did-navigate 状态推送）──
 const navState = ref({ url: '', canGoBack: false, canGoForward: false })
 
+// ── 加载状态监控（loadState.ts）──
+interface LoadLog {
+  state: string
+  time: string
+  url: string
+  errorDescription?: string
+}
+const loadLogs = ref<LoadLog[]>([])
+
+const loadTagType = (state: string): 'success' | 'error' | 'warning' | 'info' => {
+  if (state === 'loaded') return 'success'
+  if (state === 'failed') return 'error'
+  if (state === 'loading') return 'warning'
+  return 'info'
+}
+
+// ── 脚本注入（scriptInjection.ts）──
+const injectCode = ref("document.title = '被注入的标题'")
+const injectResult = ref('')
+
+async function runInject(): Promise<void> {
+  const res = await window.api.inject.execute(injectCode.value)
+  injectResult.value = res.ok ? `✅ 执行成功，返回值: ${res.result}` : `❌ ${res.error}`
+}
+
 let dispose: (() => void) | null = null
 let disposeFile: (() => void) | null = null
 let disposeViewClosed: (() => void) | null = null
 let disposeNav: (() => void) | null = null
+let disposeLoad: (() => void) | null = null
 onMounted(() => {
   dispose = window.api.protocol.onDeepLink((url) => {
     deepLinkLog.value.unshift({ url, time: new Date().toLocaleTimeString() })
@@ -68,12 +94,18 @@ onMounted(() => {
   disposeNav = window.api.protocol.onNavigation((data) => {
     navState.value = data
   })
+  disposeLoad = window.api.web.onLoadState((raw) => {
+    const data = raw as LoadLog
+    loadLogs.value.unshift(data)
+    if (loadLogs.value.length > 20) loadLogs.value.pop()
+  })
 })
 onUnmounted(() => {
   dispose?.()
   disposeFile?.()
   disposeViewClosed?.()
   disposeNav?.()
+  disposeLoad?.()
 })
 </script>
 
@@ -140,6 +172,47 @@ onUnmounted(() => {
       <div v-if="fileOpenLog.length" style="margin-top: 8px; font-size: 13px">
         <div v-for="(log, i) in fileOpenLog" :key="i">📂 {{ log.time }} {{ log.path }}</div>
       </div>
+    </n-card>
+
+    <n-card size="small" title="④ 页面加载状态监控（loadState.ts）" style="margin-top: 12px">
+      <div v-if="loadLogs.length" style="font-size: 12px; max-height: 140px; overflow-y: auto">
+        <div v-for="(log, i) in loadLogs" :key="i">
+          <n-tag size="tiny" :type="loadTagType(log.state)" round>{{ log.state }}</n-tag>
+          <span style="margin-left: 6px">{{ log.time }} {{ log.url.slice(0, 60) }}</span>
+          <span v-if="log.errorDescription" style="color: #e5484d"
+            >（{{ log.errorDescription }}）</span
+          >
+        </div>
+      </div>
+      <n-text v-else depth="3" style="font-size: 12px"
+        >暂无记录——"内嵌打开"网页时可看到 loading → loaded 事件</n-text
+      >
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        did-start-loading / did-finish-load /
+        did-fail-load：用于加载指示器与失败错误页（断网时加载失败会显示 failed）。
+      </n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="⑤ 脚本注入（webContents.executeJavaScript）"
+      style="margin-top: 12px"
+    >
+      <div style="display: flex; gap: 8px">
+        <n-input
+          v-model:value="injectCode"
+          placeholder="JS 表达式，如 document.title = '被注入的标题'"
+        />
+        <n-button type="primary" @click="runInject">执行</n-button>
+      </div>
+      <n-text v-if="injectResult" style="display: block; margin-top: 8px; font-size: 12px">{{
+        injectResult
+      }}</n-text>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        主进程可在任意时刻向页面执行脚本并取回结果（调试/自动化/埋点）。 试试
+        <code>document.querySelector('.feature-title')?.textContent</code> 读取页面内容； 对内嵌
+        WebContentsView 页面同样适用。
+      </n-text>
     </n-card>
 
     <template #code>

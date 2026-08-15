@@ -4,7 +4,17 @@
  * 演示：下载进度/暂停/恢复/取消 + 完成后 shell 文件操作联动
  */
 import { onMounted, onUnmounted, ref } from 'vue'
-import { NCard, NButton, NInput, NProgress, useMessage, NText, NTag, NAlert } from 'naive-ui'
+import {
+  NCard,
+  NButton,
+  NInput,
+  NProgress,
+  NSpace,
+  useMessage,
+  NText,
+  NTag,
+  NAlert
+} from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
 import downloadCode from '../../../main/features/download.ts?raw'
@@ -22,9 +32,35 @@ interface DownloadRow {
   savePath: string
 }
 
-const url = ref('https://speed.hetzner.de/10MB.bin')
+const url = ref('http://127.0.0.1:8765/download?size=20')
 const downloads = ref<DownloadRow[]>([])
 const log = ref<string[]>([])
+const serverStarting = ref(false)
+
+/** 预设下载地址（自闭环本地源 > 外网演示源） */
+const presetUrls = [
+  { label: '本地 20MB（约3秒，可演示暂停/恢复）', value: 'http://127.0.0.1:8765/download?size=20' },
+  {
+    label: '本地 50MB（无延迟，测大文件）',
+    value: 'http://127.0.0.1:8765/download?size=50&delay=0'
+  },
+  {
+    label: 'Hetzner 10MB（外网，国内可能 interrupted）',
+    value: 'https://speed.hetzner.de/10MB.bin'
+  }
+]
+
+/** 自闭环下载源：复用 httpServer.ts 的本地服务器（/download 端点，见 docs/22） */
+async function startLocalServer(): Promise<void> {
+  serverStarting.value = true
+  try {
+    const res = await window.api.httpServer.start(8765)
+    if (res.ok) message.success(`本地下载服务器已启动（端口 ${res.port}）`)
+    else message.info(res.error ?? '启动失败')
+  } finally {
+    serverStarting.value = false
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B'
@@ -39,6 +75,12 @@ function upsert(row: DownloadRow): void {
   else downloads.value.unshift(row)
 }
 
+/** 仅更新已有行的状态（upsert 会合并整行，不适用于只有 id+state 的推送） */
+function setState(id: string, state: string): void {
+  const index = downloads.value.findIndex((d) => d.id === id)
+  if (index >= 0) downloads.value[index] = { ...downloads.value[index], state }
+}
+
 async function startDownload(): Promise<void> {
   if (!url.value) {
     message.warning('请输入下载 URL')
@@ -46,7 +88,7 @@ async function startDownload(): Promise<void> {
   }
   const res = await window.api.download.start(url.value)
   if (!res.ok) message.error(res.error ?? '启动失败')
-  else message.success('下载已开始（默认保存到 userData/downloads）')
+  else message.success('下载已开始（保存到系统下载目录，可在"数据目录"页修改）')
 }
 
 async function pause(id: string): Promise<void> {
@@ -86,6 +128,13 @@ onMounted(() => {
     window.api.download.onProgress((raw) => {
       const data = raw as DownloadRow & { state: 'progressing' | 'interrupted' }
       upsert(data)
+    })
+  )
+  disposers.push(
+    // 暂停/恢复状态推送：Electron 的 updated 事件不映射 paused（会收到空串），
+    // 主进程在 pause/resume 成功后经 download:state 通道主动推送（见 download.ts）
+    window.api.download.onState((data) => {
+      setState(data.id, data.state)
     })
   )
   disposers.push(
@@ -134,15 +183,25 @@ const stateTag = (state: string): 'success' | 'warning' | 'error' | 'info' => {
   >
     <n-card size="small" title="开始下载" style="margin-bottom: 12px">
       <div style="display: flex; gap: 8px">
-        <n-input
-          v-model:value="url"
-          placeholder="下载 URL（如 https://speed.hetzner.de/10MB.bin）"
-        />
+        <n-input v-model:value="url" placeholder="下载 URL" />
         <n-button type="primary" @click="startDownload">开始下载</n-button>
+        <n-button :loading="serverStarting" @click="startLocalServer">启动本地下载服务器</n-button>
       </div>
+      <n-space style="margin-top: 8px">
+        <n-button
+          v-for="preset in presetUrls"
+          :key="preset.value"
+          size="small"
+          secondary
+          @click="url = preset.value"
+        >
+          {{ preset.label }}
+        </n-button>
+      </n-space>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
-        默认保存到 userData/downloads 目录（不弹保存框，教学更顺滑）；
-        可换任意直链测试，无网络时下载会以 interrupted 结束（同样是真实的失败链路）。
+        自闭环推荐：先点「启动本地下载服务器」再下载默认地址（主进程 /download 端点，可调大小与
+        速度，支持 Range → 暂停/恢复可实测）。状态 interrupted = 网络不可达，国内访问外网演示源
+        （Hetzner）常见。默认保存到系统下载目录（app.getPath('downloads')，可在"数据目录"页修改）。
       </n-text>
     </n-card>
 
@@ -167,7 +226,12 @@ const stateTag = (state: string): 'success' | 'warning' | 'error' | 'info' => {
             <n-button size="tiny" :disabled="row.state !== 'progressing'" @click="pause(row.id)"
               >暂停</n-button
             >
-            <n-button size="tiny" @click="resume(row.id)">恢复</n-button>
+            <n-button
+              size="tiny"
+              :disabled="!['paused', 'interrupted'].includes(row.state)"
+              @click="resume(row.id)"
+              >恢复</n-button
+            >
             <n-button size="tiny" :disabled="row.state === 'completed'" @click="cancel(row.id)"
               >取消</n-button
             >

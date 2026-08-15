@@ -54,7 +54,7 @@ async function saveCapture(): Promise<void> {
   <FeatureLayout
     title="桌面捕获"
     api="desktopCapturer / webContents.capturePage"
-    intro="desktopCapturer 枚举系统所有屏幕与窗口源（带缩略图），是录屏、屏幕共享类应用（OBS、视频会议）的基础；capturePage 截取当前窗口内容。注意：展示桌面共享/录屏需要 getDisplayMedia 类的持续捕获，本页演示静态截图链路。"
+    intro="desktopCapturer 枚举系统所有屏幕与窗口源（带缩略图），是录屏、屏幕共享类应用（OBS、视频会议）的基础；capturePage 截取当前窗口内容。注意：展示桌面共享/录屏需要 getDisplayMedia 类的持续捕获（完整链路见「媒体捕获」页），本页演示静态截图链路。"
   >
     <n-card size="small" title="① 枚举屏幕 / 窗口源" style="margin-bottom: 12px">
       <n-button type="primary" :loading="loading" @click="getSources">获取屏幕源</n-button>

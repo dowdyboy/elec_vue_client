@@ -128,6 +128,14 @@ async function toggleDirty(value: boolean): Promise<void> {
   message.info(unsavedDirty.value ? '已标记"有未保存修改"（退出时会弹确认框）' : '已清除未保存标记')
 }
 
+// ── 崩溃转储信息（crashReporter）──
+const crashInfo = ref<{ dumpDir: string } | null>(null)
+
+async function loadCrashInfo(): Promise<void> {
+  crashInfo.value = await window.api.error.getCrashInfo()
+  message.success('已查询崩溃转储配置')
+}
+
 // ── 系统语言/字体（systemInfo.ts）──
 const sysInfo = ref<{
   locale: string
@@ -248,6 +256,23 @@ onUnmounted(() => disposers.forEach((d) => d()))
         典型场景：设置项"重启生效"、自动更新安装前重启。app.relaunch() 安排重启 + app.exit(0)
         立即退出进程。
       </n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="崩溃转储（crashReporter，主进程: errorHandler.ts）"
+      style="margin-top: 12px"
+    >
+      <n-button size="small" @click="loadCrashInfo">查询崩溃转储信息</n-button>
+      <div v-if="crashInfo" style="margin-top: 8px; font-size: 12px">
+        <div>
+          📁 转储目录: <span style="word-break: break-all">{{ crashInfo.dumpDir }}</span>
+        </div>
+        <n-text depth="3" style="display: block; margin-top: 4px">
+          crashReporter 已启动（本地转储，不上报）：渲染进程崩溃时会生成 .dmp 文件。
+          生产环境通常配合 uploadToServer 上报到崩溃收集服务。
+        </n-text>
+      </div>
     </n-card>
 
     <n-card size="small" title="全局错误日志（主进程: errorHandler.ts）" style="margin-top: 12px">

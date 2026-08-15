@@ -61,9 +61,15 @@ onMounted(() => {
       broadcastReceived.value.push(data)
     })
   )
+  // ④ MessageChannel 端口接收：preload 收到端口后经 window.postMessage 转移，
+  //    页面在此接收（contextBridge 参数会被结构化克隆，端口必须"转移"而非"传递"，见 docs/02）
+  window.addEventListener('message', onChannelPortMessage)
 })
 
-onUnmounted(() => disposers.forEach((dispose) => dispose()))
+onUnmounted(() => {
+  disposers.forEach((dispose) => dispose())
+  window.removeEventListener('message', onChannelPortMessage)
+})
 
 // ① 请求-响应：渲染进程等待主进程返回结果
 async function doPing(): Promise<void> {
@@ -85,17 +91,21 @@ function doBroadcast(): void {
 // ④ MessageChannel：建立双向管道
 function setupChannel(): void {
   window.api.ipc.createChannel()
-  subscribe(() =>
-    window.api.ipc.onChannelPort((port) => {
-      channelPort.value = port
-      port.onmessage = (event) => {
-        channelLog.value.push(`📥 ${event.data}`)
-      }
-      port.postMessage('你好，主进程管道！')
-      channelLog.value.push('📤 已发送: 你好，主进程管道！')
-      message.success('管道已建立')
-    })
-  )
+}
+
+/** ④ 接收 preload 转移过来的 MessagePort（preload 用 window.postMessage 转移，见 preload/index.ts） */
+function onChannelPortMessage(event: MessageEvent): void {
+  // event.source === window：消息来自 preload（而非 iframe 等外部源）
+  if (event.source !== window || event.data !== 'ipc:channel-port') return
+  const port = event.ports[0]
+  if (!port) return
+  channelPort.value = port
+  port.onmessage = (e) => {
+    channelLog.value.push(`📥 ${e.data}`)
+  }
+  port.postMessage('你好，主进程管道！')
+  channelLog.value.push('📤 已发送: 你好，主进程管道！')
+  message.success('管道已建立')
 }
 
 function sendViaChannel(): void {
@@ -156,6 +166,11 @@ function sendViaChannel(): void {
         <n-input v-model:value="channelInput" placeholder="输入管道消息" :disabled="!channelPort" />
         <n-button :disabled="!channelPort" @click="sendViaChannel">发送</n-button>
       </div>
+      <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
+        关键坑：contextIsolation 下 MessagePort 不能作为参数经 contextBridge 传给页面
+        （结构化克隆会断开端口连接）。本页采用官方模式：preload 用 window.postMessage
+        把端口"转移"到主世界，页面监听 window 的 message 事件接收。
+      </n-alert>
       <div v-if="channelLog.length" style="margin-top: 8px; font-size: 13px">
         <div v-for="(log, i) in channelLog" :key="i">{{ log }}</div>
       </div>

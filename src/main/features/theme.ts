@@ -11,7 +11,7 @@
  *         教学价值：实现"亮/暗/跟随系统"三档切换，且能感知 OS 级变化
  */
 
-import { ipcMain, nativeTheme } from 'electron'
+import { ipcMain, nativeTheme, systemPreferences } from 'electron'
 import type { MainWindowGetter } from '../types'
 
 export type ThemeSource = 'system' | 'light' | 'dark'
@@ -34,5 +34,15 @@ export function registerTheme(getMainWindow: MainWindowGetter): void {
     getMainWindow()?.webContents.send('theme:updated', {
       shouldUseDarkColors: nativeTheme.shouldUseDarkColors
     })
+  })
+
+  // ── 系统强调色（Windows 主题色 / macOS 高亮色）──
+  // 格式：'#RRGGBB'（无 # 前缀需要补）；Linux 不支持
+  ipcMain.handle('theme:getAccentColor', () => {
+    if (process.platform === 'linux') {
+      return { ok: false, error: '当前平台不支持获取系统强调色' }
+    }
+    const hex = systemPreferences.getAccentColor()
+    return { ok: true, color: `#${hex}` }
   })
 }

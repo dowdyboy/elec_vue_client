@@ -16,8 +16,12 @@ import { app, ipcMain, session, shell } from 'electron'
 export function registerSecurity(): void {
   // ── ① 权限请求白名单 ───────────────────────────────
   // 页面请求任何浏览器权限（摄像头/麦克风/剪贴板/通知等）都会走到这里
-  // 教学演示：只放行剪贴板读取，其余一律拒绝并记录
-  const allowedPermissions = new Set(['clipboard-read'])
+  // 教学演示：放行剪贴板读取、媒体访问（摄像头/麦克风，见 docs/29）与
+  // 录屏（display-capture，getDisplayMedia 走此权限）；其余一律拒绝并记录。
+  // 'serial' 供"静默检查处理器"使用（见下方 ①.5，串口走 devicePermissionHandler + 检查处理器）
+  // 注意：'media' 放行后，macOS 还需通过 systemPreferences.askForMediaAccess
+  // 获得系统级授权（见 systemAccess.ts 与 docs/29 的"双重权限"说明）
+  const allowedPermissions = new Set(['clipboard-read', 'media', 'display-capture', 'serial'])
 
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     if (allowedPermissions.has(permission)) {

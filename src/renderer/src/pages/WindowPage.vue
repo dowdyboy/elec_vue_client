@@ -135,6 +135,41 @@ async function applyOpacity(value: number): Promise<void> {
 const windowEvents = ref<{ event: string; time: string; bounds: string }[]>([])
 let disposeWinEvents: (() => void) | null = null
 
+// ── 点击穿透（setIgnoreMouseEvents）──
+const ignoring = ref(false)
+const ignoreCountdown = ref(0)
+let ignoreTimer: ReturnType<typeof setInterval> | null = null
+
+async function toggleIgnoreMouse(): Promise<void> {
+  if (ignoring.value) {
+    // 手动恢复（通常倒计时自动恢复）
+    await window.api.window.setIgnoreMouseEvents(false)
+    stopIgnoreCountdown()
+    message.info('已恢复鼠标交互')
+    return
+  }
+  // forward: true → 页面仍能收到 mousemove（本演示用它倒计时，生产可实现"悬停即恢复"）
+  await window.api.window.setIgnoreMouseEvents(true, true)
+  ignoring.value = true
+  ignoreCountdown.value = 5
+  message.warning('窗口已"点不中"：现在点击窗口会穿过窗口落到下层应用（试试点左侧菜单）')
+  ignoreTimer = setInterval(async () => {
+    ignoreCountdown.value -= 1
+    if (ignoreCountdown.value <= 0) {
+      await window.api.window.setIgnoreMouseEvents(false)
+      stopIgnoreCountdown()
+      message.success('倒计时结束，已自动恢复鼠标交互')
+    }
+  }, 1000)
+}
+
+function stopIgnoreCountdown(): void {
+  if (ignoreTimer) clearInterval(ignoreTimer)
+  ignoreTimer = null
+  ignoring.value = false
+  ignoreCountdown.value = 0
+}
+
 onMounted(async () => {
   const state = await window.api.window.getPersistedState()
   if (state) {
@@ -148,7 +183,11 @@ onMounted(async () => {
     if (windowEvents.value.length > 10) windowEvents.value.pop()
   })
 })
-onUnmounted(() => disposeWinEvents?.())
+onUnmounted(() => {
+  disposeWinEvents?.()
+  stopIgnoreCountdown()
+  window.api.window.setIgnoreMouseEvents(false) // 页面离开时兜底恢复
+})
 </script>
 
 <template>
@@ -283,6 +322,19 @@ onUnmounted(() => disposeWinEvents?.())
       </div>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
         拖动窗口/调整大小会实时推送 will-move / will-resize 事件（上方日志）。
+      </n-text>
+    </n-card>
+
+    <n-card size="small" title="点击穿透（setIgnoreMouseEvents）" style="margin-top: 12px">
+      <n-space align="center">
+        <n-button :type="ignoring ? 'error' : 'default'" @click="toggleIgnoreMouse">
+          {{ ignoring ? `穿透中… ${ignoreCountdown} 秒后恢复` : '开启点击穿透（5 秒自动恢复）' }}
+        </n-button>
+      </n-space>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        悬浮窗/桌面挂件场景：鼠标事件"穿过"窗口落到下层应用。forward: true 时页面仍能收到
+        mousemove，可实现"悬停即恢复交互"。教学警告：不设自动恢复会导致窗口点不回来 （本演示 5
+        秒倒计时兜底，也可点按钮立即恢复）。
       </n-text>
     </n-card>
 

@@ -4,7 +4,7 @@
  * 演示：Windows 任务栏高级（JumpList/OverlayIcon）+ macOS Dock（菜单/最近文档/bounce）
  *       + kiosk 模式 + MediaSession 媒体控制
  */
-import { onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { NCard, NButton, NSwitch, NAlert, useMessage, NText, NInput } from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
@@ -77,14 +77,47 @@ function togglePlay(): void {
 // 页面卸载时复位播放状态
 onUnmounted(() => {
   if (hasMediaSession) navigator.mediaSession.playbackState = 'none'
+  disposeThumbar?.() // 移除缩略图按钮点击监听（防重复进入页面叠加监听）
 })
+
+// ── Windows Thumbar 缩略图按钮 ──
+const thumbarOn = ref(false)
+const thumbarLog = ref('')
+let disposeThumbar: (() => void) | null = null
+
+async function toggleThumbar(value: boolean): Promise<void> {
+  const res = await window.api.taskbar.setThumbar(value)
+  if (res.ok) {
+    thumbarOn.value = value
+    message.success(value ? '已添加缩略图按钮（悬停任务栏图标查看）' : '已移除缩略图按钮')
+  } else {
+    message.error(res.error ?? '仅 Windows 支持')
+  }
+}
+
+onMounted(() => {
+  // Thumbar 按钮点击事件（点击缩略图上的按钮时触发）
+  disposeThumbar = window.api.taskbar.onThumbarClicked((action) => {
+    thumbarLog.value = `${new Date().toLocaleTimeString()} 缩略图按钮被点击: ${
+      action === 'playpause' ? '播放/暂停' : '下一首'
+    }`
+    if (action === 'playpause') togglePlay()
+  })
+})
+
+// ── 任务栏闪烁 ──
+async function flashFrame(): Promise<void> {
+  const res = await window.api.taskbar.flashFrame()
+  if (res.ok) message.success('任务栏图标闪烁 3 秒（最小化窗口后效果更明显）')
+  else message.error(res.error ?? '失败')
+}
 </script>
 
 <template>
   <FeatureLayout
     title="平台特性"
     api="setJumpList / setOverlayIcon / app.dock / setKiosk / MediaSession"
-    intro="桌面应用与操作系统深度集成的平台特性：Windows 任务栏跳转列表与图标叠加、macOS Dock 菜单与最近文档、kiosk 锁定全屏（自助终端），以及系统媒体控制（MediaSession）。各能力均有平台限制，代码里已做检测与提示。"
+    intro="桌面应用与操作系统深度集成的平台特性：Windows 任务栏跳转列表与图标叠加、macOS Dock 菜单与最近文档、kiosk 锁定全屏（自助终端）、系统媒体控制（MediaSession）、任务栏缩略图按钮（Thumbar）与闪烁提醒。各能力均有平台限制，代码里已做检测与提示。"
   >
     <n-card size="small" title="Windows 任务栏高级" style="margin-bottom: 12px">
       <n-alert type="info" :show-icon="true" size="small" style="margin-bottom: 8px">
@@ -131,7 +164,7 @@ onUnmounted(() => {
       </n-alert>
     </n-card>
 
-    <n-card size="small" title="系统媒体控制（MediaSession）">
+    <n-card size="small" title="系统媒体控制（MediaSession）" style="margin-bottom: 12px">
       <n-button :type="playing ? 'error' : 'primary'" @click="togglePlay">
         {{ playing ? '⏸ 暂停演示曲目' : '▶ 播放演示曲目' }}
       </n-button>
@@ -139,6 +172,30 @@ onUnmounted(() => {
         {{ hasMediaSession ? '✅ 当前平台支持系统媒体控制' : '❌ 当前环境不支持 MediaSession' }}
         <br />
         播放后：Windows 按 Win+G 或音量浮出控件可看到媒体卡片；macOS 在控制中心可控制播放/暂停。
+      </n-text>
+    </n-card>
+
+    <n-card
+      size="small"
+      title="Windows 缩略图按钮（Thumbar）+ 任务栏闪烁"
+      style="margin-bottom: 12px"
+    >
+      <n-alert type="info" :show-icon="true" size="small" style="margin-bottom: 8px">
+        当前平台:
+        {{ isWin ? 'Windows ✅' : 'Windows ❌（Thumbar 仅 Windows；闪烁在 Windows/Linux 可用）' }}
+      </n-alert>
+      <n-space wrap>
+        <span style="font-size: 13px">缩略图按钮：</span>
+        <n-switch :value="thumbarOn" :disabled="!isWin" @update:value="toggleThumbar" />
+        <n-button size="small" @click="flashFrame">任务栏图标闪烁 3 秒</n-button>
+      </n-space>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        缩略图按钮：鼠标悬停任务栏图标时，缩略图下方出现 播放/暂停、下一首 两个按钮 （点击会联动上方
+        MediaSession）。闪烁：应用在后台时引起注意的经典提醒方式 （macOS 等价物是 Dock
+        bounce，见上方演示）。
+      </n-text>
+      <n-text v-if="thumbarLog" depth="2" style="display: block; margin-top: 4px; font-size: 12px">
+        {{ thumbarLog }}
       </n-text>
     </n-card>
 

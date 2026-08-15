@@ -1,5 +1,5 @@
 /**
- * 【特性】按键拦截（webContents before-input-event）
+ * 【特性】按键拦截（webContents before-input-event）+ dev 模式 F12 DevTools 开关
  * 【API】webContents.on('before-input-event')
  * 【复制】1. 复制本文件到新工程 src/main/features/inputHook.ts
  *         2. 在 index.ts 中调用 registerInputHook(getMainWindow)
@@ -10,13 +10,20 @@
  *         与 globalShortcut（docs/05）的区别：
  *         globalShortcut 是"系统级"（应用失焦也生效）；
  *         before-input-event 是"应用内"（仅窗口聚焦时）。
+ * 【重要】dev 的 F12"开关 DevTools"行为由本模块统一接管（见下方 ①）：
+ *         官方模板常用 @electron-toolkit/utils 的 optimizer.watchWindowShortcuts
+ *         处理 F12，但它不检查 event.defaultPrevented，会无条件 openDevTools——
+ *         即使本模块先 preventDefault 也拦不住（before-input-event 所有监听器
+ *         都会执行）。因此使用本模块时，dev 下不要再对同一窗口调用
+ *         optimizer.watchWindowShortcuts（本工程 index.ts 已改为仅生产启用），
+ *         否则"吞掉 F12"会失效（F12 仍会打开 DevTools）。
  */
 
 import { app, ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
 
 export function registerInputHook(getMainWindow: MainWindowGetter): void {
-  // 吞掉 F12（演示"吞键"；dev 模式 F12 原本用于打开 DevTools）
+  // 吞掉 F12（演示"吞键"；dev 模式 F12 原本用于打开 DevTools，见下方 ①）
   let blockF12 = false
 
   // 按键日志：限流推送（按键频率高，合并为每 300ms 一条）
@@ -27,9 +34,23 @@ export function registerInputHook(getMainWindow: MainWindowGetter): void {
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
 
-      // 吞键：F12 不再触发任何行为（包括默认的 DevTools 快捷键）
-      if (blockF12 && input.key === 'F12') {
-        event.preventDefault()
+      // ── ① F12 统一处理（吞键开关 + dev 的 DevTools 开关，二者互斥不冲突）──
+      if (input.key === 'F12') {
+        // 吞键开启：F12 彻底失效（包括 DevTools）
+        if (blockF12) {
+          event.preventDefault()
+          return
+        }
+        // 吞键关闭且为开发模式：维持 dev 惯例——F12 开关 DevTools
+        // （接管 optimizer.watchWindowShortcuts 的原行为，见文件头【重要】说明）
+        if (!app.isPackaged) {
+          event.preventDefault()
+          if (contents.isDevToolsOpened()) {
+            contents.closeDevTools()
+          } else {
+            contents.openDevTools({ mode: 'undocked' })
+          }
+        }
         return
       }
 

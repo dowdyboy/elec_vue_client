@@ -83,7 +83,8 @@ onUnmounted(() => {
       </div>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
         与 globalShortcut 的区别：按键拦截仅在窗口聚焦时生效（应用内）， 常用于禁用用户快捷键（如
-        F12 调试）或自定义组合键。
+        F12 调试）或自定义组合键。dev 下 F12 原本用于开关 DevTools（由 inputHook.ts
+        统一接管，见源码说明）：吞掉后两者一并禁用；生产环境 Ctrl+R 等由 optimizer 屏蔽。
       </n-text>
       <div v-if="keyLogs.length" style="margin-top: 8px; font-size: 13px">
         <div v-for="(key, i) in keyLogs" :key="i">⌨️ 最近按键: {{ key }}</div>

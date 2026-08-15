@@ -35,6 +35,12 @@
 | 26 | [平台特性](./26-平台特性.md) | `taskbar.ts`（JumpList/Dock）+ kiosk + 媒体控制 | ⭐⭐ |
 | 27 | [系统集成](./27-系统集成.md) | 权限/在线状态/缓存/按键/语言/崩溃恢复 | ⭐⭐ |
 | 28 | [会话配置与证书](./28-会话配置与证书.md) | 代理 / UA / 证书校验 | ⭐⭐ |
+| 29 | [媒体捕获（摄像头/麦克风/录屏）](./29-媒体捕获（摄像头麦克风录屏）.md) | `security.ts` 权限白名单 + getUserMedia/getDisplayMedia/MediaRecorder | ⭐⭐ |
+| 30 | [串口通信（Web Serial）](./30-串口通信（Web%20Serial）.md) | `src/main/features/serialPort.ts` | ⭐⭐⭐ |
+| 31 | [GPU 信息与硬件加速](./31-GPU信息与硬件加速.md) | `src/main/features/gpuInfo.ts` | ⭐⭐ |
+| 32 | [应用数据目录](./32-应用数据目录（getPath%20setPath）.md) | `src/main/features/appPaths.ts` | ⭐⭐ |
+| 33 | [安全存储（safeStorage）](./33-安全存储（safeStorage）.md) | `src/main/features/safeStorage.ts` | ⭐⭐ |
+| 34 | [第三方 SQLite（better-sqlite3）](./34-第三方SQLite（better-sqlite3）.md) | `src/main/features/betterSqlite.ts` | ⭐⭐⭐ |
 
 ## 扩展特性（并入既有文档）
 
@@ -44,13 +50,16 @@
 | BroadcastChannel 多窗口直连 | 02-IPC通信 第五节 |
 | 通知动作按钮 | 04-系统通知 第五节 |
 | 目录监听（fs.watch） | 08-文件系统 第八节 |
-| DNS 解析 / 在线状态 | 14-网络通信 第五节 |
-| 文件关联（open-file） / 内嵌网页导航历史 | 16-自定义协议与深链接 第五、六节 |
+| DNS 解析 / 在线状态 / HTTP 服务器 / WebSocket 自闭环演示 | 14-网络通信 第五~七节 |
+| 文件关联（open-file） / 内嵌网页导航历史 / 加载状态与脚本注入 | 16-自定义协议与深链接 第五~七节 |
 | 静默权限检查 | 12-安全实践（两个权限处理器） |
-| 退出前未保存询问 | 13-生命周期 第九节 |
+| 退出前未保存询问 / 崩溃转储 | 13-生命周期 第九、十节 |
+| 系统强调色 | 11-系统主题 第五节 |
 | 会话分区（无痕/多账号） | 23-网络会话 第四节 |
 | 拖拽文件真实路径 / 拖出窗口 / 系统文件图标 / shell 文件操作 | 08-文件系统 第四~七节 |
 | 电源监控 / 全局错误处理 / 阻止系统睡眠 / 应用重启 | 13-生命周期 第五~八节 |
+| 点击穿透（setIgnoreMouseEvents） | 01-窗口管理 第八节 |
+| 缩略图按钮（Thumbar） / 任务栏闪烁 | 26-平台特性 第六、七节 |
 
 ## 每篇文档的结构
 

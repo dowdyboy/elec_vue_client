@@ -50,9 +50,35 @@ const featureTable = {
     },
     { name: '自定义协议内容', api: 'protocol.handle', doc: 'docs/24-自定义协议内容.md' },
     { name: 'SQLite 数据库', api: 'node:sqlite', doc: 'docs/25-数据库（SQLite）.md' },
+    {
+      name: '第三方 SQLite',
+      api: 'better-sqlite3',
+      doc: 'docs/34-第三方SQLite（better-sqlite3）.md'
+    },
     { name: '平台特性', api: 'setJumpList / app.dock / kiosk', doc: 'docs/26-平台特性.md' },
     { name: '系统集成', api: 'systemPreferences / net / inputHook', doc: 'docs/27-系统集成.md' },
-    { name: '会话配置与证书', api: 'setProxy / setUserAgent', doc: 'docs/28-会话配置与证书.md' }
+    { name: '会话配置与证书', api: 'setProxy / setUserAgent', doc: 'docs/28-会话配置与证书.md' },
+    {
+      name: '媒体捕获',
+      api: 'getUserMedia / getDisplayMedia',
+      doc: 'docs/29-媒体捕获（摄像头麦克风录屏）.md'
+    },
+    {
+      name: '串口通信',
+      api: 'setDevicePermissionHandler',
+      doc: 'docs/30-串口通信（Web Serial）.md'
+    },
+    {
+      name: 'GPU 信息与硬件加速',
+      api: 'getGPUFeatureStatus / getGPUInfo',
+      doc: 'docs/31-GPU信息与硬件加速.md'
+    },
+    {
+      name: '应用数据目录',
+      api: 'getPath / setPath',
+      doc: 'docs/32-应用数据目录（getPath setPath）.md'
+    },
+    { name: '加密存储', api: 'safeStorage', doc: 'docs/33-安全存储（safeStorage）.md' }
   ]
 }
 </script>
