@@ -4,12 +4,23 @@
  * 演示：GPU 特性状态表、基本信息查询、硬件加速开关（标记 + 重启生效）
  */
 import { onMounted, ref } from 'vue'
-import { NCard, NButton, NSpace, NAlert, NText, NSwitch, NCode, useDialog } from 'naive-ui'
+import {
+  NCard,
+  NButton,
+  NSpace,
+  NAlert,
+  NText,
+  NSwitch,
+  NCode,
+  useDialog,
+  useMessage
+} from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
 import CodeBlock from '../components/CodeBlock.vue'
 import gpuInfoCode from '../../../main/features/gpuInfo.ts?raw'
 
 const dialog = useDialog()
+const message = useMessage()
 
 const featureRows = ref<{ feature: string; status: string }[]>([])
 const basicInfo = ref('')
@@ -69,7 +80,12 @@ async function toggleAcceleration(value: boolean): Promise<void> {
     negativeText: '取消',
     onPositiveClick: async () => {
       await window.api.gpu.setAcceleration(value)
-      await window.api.relaunch.now()
+      const res = await window.api.relaunch.now()
+      // 开发模式自动重启会杀掉 electron-vite 的 dev server → 白屏，提示手动重启
+      if (res.devMode) {
+        message.info('已写入硬件加速标记，开发模式请手动重启 npm run dev 生效')
+        return
+      }
     }
   })
 }

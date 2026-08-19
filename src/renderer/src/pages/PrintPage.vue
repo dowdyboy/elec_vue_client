@@ -38,10 +38,11 @@ async function viewPdf(): Promise<void> {
     .map((part, i) => (i === 0 ? part : encodeURIComponent(part)))
     .join('/')
   const fileUrl = 'file:///' + encoded
-  const res = await window.api.protocol.openView(fileUrl)
+  // topInset=36：预留顶部条，PDF 视图不覆盖它 → 顶部"返回本页"按钮始终可见可点
+  const res = await window.api.protocol.openView(fileUrl, { topInset: 36 })
   if (res.ok) {
     pdfViewed.value = true
-    message.info('已在窗口内打开 PDF（按 ESC 或点击"关闭 PDF 视图"返回本页）')
+    message.info('已在窗口内打开 PDF（按 ESC 或点顶部"返回本页"退出）')
   } else {
     message.error(res.error ?? '打开失败')
   }
@@ -68,6 +69,11 @@ async function closePdfView(): Promise<void> {
     api="webContents.printToPDF"
     intro="把窗口内容导出为 PDF：printToPDF 返回 PDF 二进制（Buffer），配合保存对话框落盘。若需直接调用系统打印机，使用 webContents.print()（参数类似：silent、printBackground 等）。报表、票据、网页存档类应用常用。"
   >
+    <!-- 固定顶部返回条：PDF 视图通过 topInset=36 不覆盖此区域，始终可见可点 -->
+    <div v-if="pdfViewed" class="pdf-top-bar">
+      <n-text style="font-size: 13px; color: var(--text-color)">正在查看 PDF</n-text>
+      <n-button size="small" type="warning" @click="closePdfView">返回本页</n-button>
+    </div>
     <n-card size="small" title="导出当前页面为 PDF">
       <n-input v-model:value="fileName" placeholder="文件名" style="margin-bottom: 8px" />
       <n-button type="primary" :loading="loading" @click="exportPdf"
@@ -81,7 +87,8 @@ async function closePdfView(): Promise<void> {
     <n-card size="small" title="在窗口内查看 PDF（内置 PDF 查看器）" style="margin-top: 12px">
       <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 13px">
         先生成 PDF，再点击查看：通过 WebContentsView 加载 file:// PDF， Chromium 内置 PDF
-        查看器直接渲染（缩放/翻页/打印）。**按 ESC 键**或点击按钮关闭后回到本页。
+        查看器直接渲染（缩放/翻页/打印）。退出方式：按 **ESC 键**，或点击窗口顶部的 **"返回本页"**
+        横条。
       </n-text>
       <n-button type="warning" :disabled="!pdfPath" @click="viewPdf">在窗口内查看 PDF</n-button>
       <n-button :disabled="!pdfViewed" style="margin-left: 8px" @click="closePdfView"
@@ -100,3 +107,20 @@ async function closePdfView(): Promise<void> {
     </template>
   </FeatureLayout>
 </template>
+
+<style scoped>
+.pdf-top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--card-color, #fff);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 1000;
+}
+</style>

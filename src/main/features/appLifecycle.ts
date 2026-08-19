@@ -50,6 +50,7 @@ export function registerAppLifecycle(getMainWindow: MainWindowGetter): boolean {
 
   // ── ③ 开机自启 ───────────────────────────────────
   // 注意：macOS 上通过登录项实现，Windows 通过注册表实现
+  ipcMain.handle('app:getLoginItem', () => app.getLoginItemSettings().openAtLogin)
   ipcMain.handle('app:setLoginItem', (_e, openAtLogin: boolean) => {
     app.setLoginItemSettings({ openAtLogin })
     return app.getLoginItemSettings().openAtLogin
@@ -62,10 +63,52 @@ export function registerAppLifecycle(getMainWindow: MainWindowGetter): boolean {
       win.webContents.send('app:lifecycle', { event })
     }
   }
-  app.on('before-quit', () => broadcast('before-quit')) // 用户选择退出时最先触发
-  app.on('will-quit', () => broadcast('will-quit')) // 所有窗口关闭后触发
-  app.on('window-all-closed', () => broadcast('window-all-closed')) // 所有窗口被关闭时触发
-  app.on('activate', () => broadcast('activate')) // macOS 点击 Dock 图标时触发
+
+  // ── 合并降噪通道（app:lifecycle-merged）──
+  // 一个用户操作往往联动触发多个窗口事件（如还原 → restore+show+focus），
+  // 未合并通道会各推一条导致刷屏。这里在 300ms 窗口内把同一批事件去重合并为一条
+  // （window.api.app.onLifecycleMerged() 订阅），未合并通道保留供对照。
+  const MERGE_WINDOW_MS = 300
+  const mergedBuffer: string[] = []
+  let mergedTimer: NodeJS.Timeout | null = null
+  const pushMerged = (event: string): void => {
+    if (!mergedBuffer.includes(event)) mergedBuffer.push(event)
+    if (mergedTimer) return
+    mergedTimer = setTimeout(() => {
+      mergedTimer = null
+      const events = mergedBuffer.splice(0)
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('app:lifecycle-merged', { events })
+      }
+    }, MERGE_WINDOW_MS)
+  }
+  // 同一事件同时喂给"未合并"与"合并"两个通道
+  const pushBoth = (event: string): void => {
+    broadcast(event)
+    pushMerged(event)
+  }
+
+  // 退出类事件（页面在事件前后销毁，页内通常观察不到，保留用于概念完整）：
+  app.on('before-quit', () => pushBoth('before-quit')) // 用户选择退出时最先触发
+  app.on('will-quit', () => pushBoth('will-quit')) // 所有窗口关闭后触发
+  app.on('window-all-closed', () => pushBoth('window-all-closed')) // 所有窗口被关闭时触发
+  app.on('activate', () => pushBoth('activate')) // macOS 点击 Dock 图标时触发
+
+  // 窗口级生命周期事件：正常使用即可观察（最小化/还原/最大化/全屏/聚焦/失焦/隐藏到托盘）
+  // ⚠️ 教学要点：只广播退出类事件，页面上日志会"永远为空"——那些事件发生时页面已被销毁
+  // （或仅 macOS 触发）。必须补充窗口级事件才能实时演示。
+  app.on('browser-window-created', (_event, win) => {
+    win.on('show', () => pushBoth('window-show'))
+    win.on('hide', () => pushBoth('window-hide')) // 关窗=隐藏到托盘（见 index.ts）
+    win.on('minimize', () => pushBoth('window-minimize'))
+    win.on('restore', () => pushBoth('window-restore'))
+    win.on('maximize', () => pushBoth('window-maximize'))
+    win.on('unmaximize', () => pushBoth('window-unmaximize'))
+    win.on('focus', () => pushBoth('window-focus'))
+    win.on('blur', () => pushBoth('window-blur'))
+    win.on('enter-full-screen', () => pushBoth('window-fullscreen'))
+    win.on('leave-full-screen', () => pushBoth('window-leave-fullscreen'))
+  })
 
   return true // 单实例锁获取成功，可继续初始化
 }

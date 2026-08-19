@@ -13,7 +13,7 @@
  */
 
 import { app, ipcMain, Menu, nativeImage } from 'electron'
-import { join } from 'path'
+import { basename, join } from 'path'
 import type { MainWindowGetter } from '../types'
 
 export function registerTaskbar(getMainWindow: MainWindowGetter): void {
@@ -40,15 +40,44 @@ export function registerTaskbar(getMainWindow: MainWindowGetter): void {
   })
 
   // ── Windows 跳转列表（JumpList：右键任务栏图标的最近文件/任务）──
+  // ⚠️ API 语义（Electron 39 类型定义/源码确认）：
+  //   ① recent/frequent 分类不能带 items（由 Windows 自己管理，内容来自
+  //      app.addRecentDocument 写入的系统"最近使用"），带 items 会被整体拒绝
+  //   ② setJumpList 返回结果码（ok/error/invalidSeparatorError/
+  //      fileTypeRegistrationError/customCategoryAccessDeniedError），必须检查
+  //   ③ file 类型条目要求应用注册对应扩展名（否则 fileTypeRegistrationError，
+  //      dev 下 electron.exe 未注册 .txt），task 类型（program+args）无此要求，最稳定
+  //   ④ customCategoryAccessDeniedError = Windows 隐私设置（"让 Windows 通过跟踪
+  //      应用启动来改进'开始'菜单和搜索结果"被关闭/组策略）拒绝自定义分类
+  //      （AppendCategory 返回 E_ACCESSDENIED）；标准 tasks 分类走 AddUserTasks，
+  //      不受此限制 → 可回退
   ipcMain.handle('taskbar:setJumpList', (_e, files: string[]) => {
     if (process.platform !== 'win32') return { ok: false, error: '仅 Windows 支持' }
-    app.setJumpList([
-      {
-        type: 'recent',
-        items: files.map((file) => ({ type: 'file', path: file }))
+    if (!files.length) return { ok: false, error: '请先输入文件路径' }
+    // ① 写入系统"最近使用"（资源管理器最近文档 / JumpList"最近"区）
+    files.forEach((file) => app.addRecentDocument(file))
+    const items = files.map((file) => ({
+      type: 'task' as const,
+      title: `打开 ${basename(file)}`,
+      program: process.execPath,
+      args: `"${file}"`
+    }))
+    // ② 优先自定义分类"最近文件"
+    let result = app.setJumpList([{ type: 'custom', name: '最近文件', items }])
+    if (result === 'ok') return { ok: true }
+    if (result === 'customCategoryAccessDeniedError') {
+      // ③ 隐私设置禁止自定义分类 → 回退标准"任务"分类（AddUserTasks 不受该限制）
+      result = app.setJumpList([{ type: 'tasks', items }])
+      if (result === 'ok') return { ok: true, fallback: 'tasks' }
+      return {
+        ok: false,
+        error:
+          'Windows 隐私设置禁止添加 JumpList 分类：请打开"设置 → 隐私和安全性 → 常规 → ' +
+          `让 Windows 通过跟踪应用启动来改进"开始"菜单和搜索结果"（组策略关闭需管理员解除）。${result}`
       }
-    ])
-    return { ok: true }
+    }
+    // ④ 其他失败把结果码透出给页面（如 fileTypeRegistrationError 需要注册文件关联）
+    return { ok: false, error: `setJumpList 失败: ${result}` }
   })
 
   // ── Windows 任务栏图标叠加角标（OverlayIcon）──
@@ -61,7 +90,8 @@ export function registerTaskbar(getMainWindow: MainWindowGetter): void {
     } else {
       win.setOverlayIcon(null, '')
     }
-    return true
+    // 返回实际应用状态（而非恒 true）：关闭时若返回 true，页面开关会被弹回"开"位
+    return enabled
   })
 
   // ── macOS Dock 右键菜单 ──

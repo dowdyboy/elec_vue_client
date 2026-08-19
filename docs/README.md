@@ -1,6 +1,7 @@
 # 📚 教学文档索引
 
 > 本项目是 **Electron 教学 + 模板** 项目。每个特性对应一篇文档，同时对应源码中的一个可复制模块。
+> TypeScript 惯用法板块（TS-00~12）教 TS 类型能力与惯用法，并给出本工程真实出处。
 
 ## 推荐阅读顺序
 
@@ -42,6 +43,26 @@
 | 33 | [安全存储（safeStorage）](./33-安全存储（safeStorage）.md) | `src/main/features/safeStorage.ts` | ⭐⭐ |
 | 34 | [第三方 SQLite（better-sqlite3）](./34-第三方SQLite（better-sqlite3）.md) | `src/main/features/betterSqlite.ts` | ⭐⭐⭐ |
 
+## TypeScript 惯用法文档（TS-00~12）
+
+> 对应侧边栏「TypeScript 惯用法」板块；每篇对应一个演示页（路由见「对应演示页」）。
+
+| # | 文档 | 对应演示页 |
+|---|------|-----------|
+| 00 | [TS 总览](./TS-00-总览.md) | /ts（学习路径与 Electron 对照） |
+| 01 | [类型标注与推断](./TS-01-类型标注与推断.md) | /ts/intro |
+| 02 | [interface 与 type](./TS-02-interface与type.md) | /ts/interface-type |
+| 03 | [联合类型与收窄](./TS-03-联合类型与收窄.md) | /ts/narrowing |
+| 04 | [泛型](./TS-04-泛型.md) | /ts/generics |
+| 05 | [工具类型](./TS-05-工具类型.md) | /ts/utility |
+| 06 | [映射与条件类型](./TS-06-映射与条件类型.md) | /ts/mapped-conditional |
+| 07 | [函数惯用法](./TS-07-函数惯用法.md) | /ts/function |
+| 08 | [枚举与常量断言](./TS-08-枚举与常量断言.md) | /ts/enum-literal |
+| 09 | [异步惯用法](./TS-09-异步惯用法.md) | /ts/async |
+| 10 | [模块与导入导出](./TS-10-模块与导入导出.md) | /ts/module |
+| 11 | [类与面向对象](./TS-11-类与面向对象.md) | /ts/oop |
+| 12 | [与 Electron 结合（IPC 类型安全）](./TS-12-与Electron结合（IPC类型安全）.md) | /ts/electron-bridge |
+
 ## 扩展特性（并入既有文档）
 
 | 特性 | 文档位置 |
@@ -66,6 +87,8 @@
 1. **原理**：这个特性是什么、解决什么问题
 2. **关键代码**：核心片段 + 逐行说明
 3. **复制到新工程的步骤**：从本工程复制哪些文件、如何接入
+
+> TypeScript 文档（TS-00~12）结构变体：① 惯用法是什么 → ② 关键代码 → ③ 常见陷阱 → ④ 与 Electron 实例对照（无"复制到新工程"）。
 
 ## 模板使用的核心约定
 

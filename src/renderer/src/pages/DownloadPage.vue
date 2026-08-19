@@ -123,7 +123,14 @@ async function trashFile(row: DownloadRow): Promise<void> {
 }
 
 let disposers: (() => void)[] = []
-onMounted(() => {
+onMounted(async () => {
+  // 回放主进程缓存（活动 + 历史）：此前完成的下载（如媒体捕获页"保存录屏"）
+  // 不会因页面未挂载而丢失；按完成时间升序 upsert，最新记录落在列表顶部
+  const records = (await window.api.download.list()) as Array<DownloadRow & { finishedAt?: number }>
+  records
+    .slice()
+    .sort((a, b) => (a.finishedAt ?? 0) - (b.finishedAt ?? 0))
+    .forEach((r) => upsert(r))
   disposers.push(
     window.api.download.onProgress((raw) => {
       const data = raw as DownloadRow & { state: 'progressing' | 'interrupted' }

@@ -36,6 +36,11 @@ session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
 
 **注意**：拦截的是 **Chromium 网络栈**（渲染进程 fetch、下载、页面资源）；主进程的 axios 请求不走此栈，拦截不到。
 
+**演示源**：演示页默认用本地自闭环下载源 `http://127.0.0.1:8765/download`（httpServer.ts 的
+`/download` 端点，进入页面自动启动，见 docs/22）。webRequest 的 `isTrackable` 只过滤应用自身
+dev server 资源，因此本地源请求同样能被拦截记录。若换用外网源（如 Hetzner 测速文件），部分网络
+下会 TLS 握手失败、终端出现 SSL 报错且下载 interrupted——属预期，非代码问题。
+
 ## 三、复制到新工程的步骤
 
 1. 复制 `cookies.ts` + `webRequest.ts`，`index.ts` 中调用 `registerCookies()` + `registerWebRequest(getMainWindow)`

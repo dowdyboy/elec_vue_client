@@ -20,8 +20,13 @@ const jumpFile = ref('C:\\Users\\Public\\示例文档.txt')
 
 async function setJumpList(): Promise<void> {
   const res = await window.api.taskbar.setJumpList([jumpFile.value])
-  if (res.ok) message.success('已设置 JumpList 最近文件（右键任务栏图标查看）')
-  else message.error(res.error ?? '仅 Windows 支持')
+  if (!res.ok) {
+    message.error(res.error ?? '仅 Windows 支持')
+    return
+  }
+  // 系统隐私设置禁止自定义分类时，主进程已回退到标准"任务"分类
+  if (res.fallback === 'tasks') message.info('系统隐私设置禁止自定义分类，已改用标准"任务"分类显示')
+  else message.success('已设置 JumpList 最近文件（右键任务栏图标查看）')
 }
 
 // ── Windows：OverlayIcon ──
@@ -55,11 +60,51 @@ async function toggleKiosk(value: boolean): Promise<void> {
 }
 
 // ── MediaSession 媒体控制（系统媒体面板）──
+// 真实发声：Web Audio 合成提示音（自闭环，无需音频文件）；
+// MediaSession 只负责把播放状态同步到系统面板，本身不产生声音
 const playing = ref(false)
 const hasMediaSession = typeof navigator !== 'undefined' && 'mediaSession' in navigator
 
+let audioCtx: AudioContext | null = null
+let toneOscillators: OscillatorNode[] = []
+let toneGain: GainNode | null = null
+
+function startTone(): void {
+  if (!audioCtx) audioCtx = new AudioContext()
+  // 自动播放策略：在用户手势内 resume（点击/系统面板触发均来自用户操作）
+  if (audioCtx.state === 'suspended') void audioCtx.resume()
+  toneGain = audioCtx.createGain()
+  toneGain.gain.value = 0.04 // 低音量柔和音，避免刺耳
+  toneGain.connect(audioCtx.destination)
+  // 双音叠合（A4 440Hz + C5 523Hz），比单音更温和
+  for (const freq of [440, 523]) {
+    const osc = audioCtx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    osc.connect(toneGain)
+    osc.start()
+    toneOscillators.push(osc)
+  }
+}
+
+function stopTone(): void {
+  toneOscillators.forEach((osc) => {
+    try {
+      osc.stop()
+    } catch {
+      // 已停止的振荡器再 stop 会抛错，忽略即可
+    }
+    osc.disconnect()
+  })
+  toneOscillators = []
+  toneGain?.disconnect()
+  toneGain = null
+}
+
 function togglePlay(): void {
   playing.value = !playing.value
+  if (playing.value) startTone()
+  else stopTone()
   if (!hasMediaSession) return
   if (playing.value) {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -74,8 +119,17 @@ function togglePlay(): void {
   }
 }
 
-// 页面卸载时复位播放状态
+// 系统面板的播放/暂停按钮与页面按钮双向同步（注册一次即可）
+function setupMediaSessionHandlers(): void {
+  navigator.mediaSession.setActionHandler('play', togglePlay)
+  navigator.mediaSession.setActionHandler('pause', togglePlay)
+}
+
+// 页面卸载时停止发声并复位播放状态
 onUnmounted(() => {
+  stopTone()
+  void audioCtx?.close()
+  audioCtx = null
   if (hasMediaSession) navigator.mediaSession.playbackState = 'none'
   disposeThumbar?.() // 移除缩略图按钮点击监听（防重复进入页面叠加监听）
 })
@@ -96,6 +150,8 @@ async function toggleThumbar(value: boolean): Promise<void> {
 }
 
 onMounted(() => {
+  // 系统媒体面板的播放/暂停按钮与页面按钮联动
+  if (hasMediaSession) setupMediaSessionHandlers()
   // Thumbar 按钮点击事件（点击缩略图上的按钮时触发）
   disposeThumbar = window.api.taskbar.onThumbarClicked((action) => {
     thumbarLog.value = `${new Date().toLocaleTimeString()} 缩略图按钮被点击: ${
@@ -134,7 +190,8 @@ async function flashFrame(): Promise<void> {
         <n-switch :value="overlayOn" :disabled="!isWin" @update:value="toggleOverlay" />
       </div>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
-        JumpList = 右键任务栏图标弹出的最近文件/任务；OverlayIcon =
+        JumpList = 右键任务栏图标弹出的最近文件/任务。设置后任务栏右键会出现"最近文件"分类
+        （任务项，dev 下无需文件关联即可显示）；路径同时写入系统"最近使用"。OverlayIcon =
         图标右下角小角标（如"新消息"红点）。
       </n-text>
     </n-card>
@@ -171,7 +228,8 @@ async function flashFrame(): Promise<void> {
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
         {{ hasMediaSession ? '✅ 当前平台支持系统媒体控制' : '❌ 当前环境不支持 MediaSession' }}
         <br />
-        播放后：Windows 按 Win+G 或音量浮出控件可看到媒体卡片；macOS 在控制中心可控制播放/暂停。
+        播放后会发出柔和提示音（Web Audio 合成，自闭环无音频文件）；Windows 按 Win+G 或音量浮出控件
+        可看到媒体卡片并可播放/暂停；macOS 在控制中心可控制。
       </n-text>
     </n-card>
 

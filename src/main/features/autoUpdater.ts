@@ -8,7 +8,12 @@
  * 【说明】自动更新是生产应用的标配能力：
  *         - 开发模式读取 dev-app-update.yml（指向本地/测试更新服务器）
  *         - 生产模式读取打包时生成的 app-update.yml
- *         教学演示默认 dev-app-update.yml 指向 example.com（必然失败），
+ *         ⚠️ 注意：electron-updater 在**未打包（dev）环境默认直接跳过检查**
+ *         （日志打印 "Skip checkForUpdates because application is not packed and
+ *         dev update config is not forced"，且不触发任何事件 → 页面点了没反应）。
+ *         必须设置 autoUpdater.forceDevUpdateConfig = true 才会读 dev-app-update.yml
+ *         真实走一遍检查流程。
+ *         教学演示 dev-app-update.yml 指向 example.com（必然失败），
  *         页面会完整展示"检查失败"的错误链路 —— 这是真实场景的必经之路。
  */
 
@@ -20,6 +25,11 @@ export function registerAutoUpdater(getMainWindow: MainWindowGetter): void {
   // 下载策略：不自动下载，由用户确认后再下载（教学演示更可控）
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+
+  // ⚠️ dev 模式强制走 dev-app-update.yml：不设此项时 electron-updater 在未打包环境
+  // 直接跳过检查（仅打印日志、无任何事件，页面点击无反应）。打包后此项不影响
+  // （该守卫只在 isPackaged === false 时生效，生产仍读构建生成的 app-update.yml）。
+  autoUpdater.forceDevUpdateConfig = true
 
   const push = (data: unknown): void => {
     getMainWindow()?.webContents.send('update:status', data)

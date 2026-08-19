@@ -45,23 +45,10 @@ async function toggleLoginItem(value: boolean): Promise<void> {
 
 // ── 生命周期事件日志 ──
 const lifecycleLog = ref<{ event: string; time: string }[]>([])
+/** 合并降噪版（300ms 窗口内去重合并，每个操作约 1 条） */
+const lifecycleMergedLog = ref<{ text: string; time: string }[]>([])
 
 let disposers: (() => void)[] = []
-onMounted(() => {
-  loadInfo()
-  disposers.push(
-    window.api.app.onLifecycle(({ event }) => {
-      lifecycleLog.value.unshift({ event, time: new Date().toLocaleTimeString() })
-      message.info(`生命周期事件: ${event}`)
-    })
-  )
-  disposers.push(
-    window.api.app.onSecondInstance(() => {
-      message.warning('检测到应用被再次启动（单实例锁生效），本窗口已聚焦')
-    })
-  )
-})
-onUnmounted(() => disposers.forEach((d) => d()))
 
 const columns: DataTableColumns<{ event: string; time: string }> = [
   { title: '时间', key: 'time', width: 100 },
@@ -77,6 +64,12 @@ async function loadPowerStatus(): Promise<void> {
   powerStatus.value = `电源: ${status.onBatteryPower ? '🔋 电池供电' : '🔌 外接电源'}，系统空闲 ${status.idleTimeSeconds} 秒`
 }
 
+/** 模拟推送电源事件（教学演示：与 OS 事件同一通道，无需真锁屏/睡眠） */
+async function simulatePower(event: string): Promise<void> {
+  const res = await window.api.power.simulate(event)
+  if (!res.ok) message.warning(res.error ?? '模拟失败')
+}
+
 // ── 全局错误日志（errorHandler）──
 interface ErrorRecord {
   time: string
@@ -84,6 +77,18 @@ interface ErrorRecord {
   message: string
 }
 const errorLogs = ref<ErrorRecord[]>([])
+
+/** 模拟触发主进程错误（走真实 uncaughtException 捕获链路） */
+function simulateError(): void {
+  void window.api.error.simulateError()
+  message.info('已触发主进程异常，等待 errorHandler 捕获...')
+}
+
+/** 模拟渲染进程崩溃（触发 render-process-gone + 自动恢复） */
+function crashRenderer(): void {
+  void window.api.error.crashRenderer()
+  message.warning('已触发渲染进程崩溃（开启自动恢复则 1 秒后 reload）')
+}
 
 // ── 阻止系统睡眠（powerBlocker）──
 const blockingSleep = ref(false)
@@ -105,9 +110,14 @@ function relaunchApp(): void {
     content: '应用将立即重启（当前未保存的内容会丢失），继续吗？',
     positiveText: '重启',
     negativeText: '取消',
-    onPositiveClick: () => {
+    onPositiveClick: async () => {
+      const res = await window.api.relaunch.now()
+      // 开发模式自动重启会杀掉 electron-vite 的 dev server → 白屏，需手动重启
+      if (res.devMode) {
+        message.warning('开发模式自动重启会杀掉 dev server 导致白屏，请手动重启 npm run dev')
+        return
+      }
       message.info('正在重启...')
-      window.api.relaunch.now()
     }
   })
 }
@@ -145,16 +155,28 @@ const sysInfo = ref<{
   fonts: string[]
 } | null>(null)
 
-onMounted(() => {
+onMounted(async () => {
   loadInfo()
   loadPowerStatus()
+  // 开关回显真实状态（开机自启 / 阻止睡眠），避免"恒为默认值"误导
+  loginItem.value = await window.api.app.getLoginItem()
+  blockingSleep.value = (await window.api.powerBlocker.getState()).active
   window.api.system.getInfo().then((info) => {
     sysInfo.value = info
   })
+  // 生命周期事件（只订阅一次，勿重复注册）
   disposers.push(
     window.api.app.onLifecycle(({ event }) => {
       lifecycleLog.value.unshift({ event, time: new Date().toLocaleTimeString() })
       message.info(`生命周期事件: ${event}`)
+    })
+  )
+  disposers.push(
+    window.api.app.onLifecycleMerged(({ events }) => {
+      lifecycleMergedLog.value.unshift({
+        text: events.join(' + '),
+        time: new Date().toLocaleTimeString()
+      })
     })
   )
   disposers.push(
@@ -204,25 +226,76 @@ onUnmounted(() => disposers.forEach((d) => d()))
 
     <n-card size="small" title="单实例锁演示" style="margin-bottom: 12px">
       <n-alert type="warning" :show-icon="true">
-        在打包后的 exe 上双击启动第二次（开发模式可执行 <code>npm run dev</code> 再开一个终端），
+        保持本应用运行，另起一个第二实例即可验证：<br />
+        ① dev 模式：新开一个终端执行 <code>npx electron .</code>（用已构建的 out/main 直接启动，
+        不要再用 <code>npm run dev</code>——会与当前 dev server 抢 5173 端口）<br />
+        ② 打包后：直接双击 exe 再启动一次<br />
         第二次启动会立即退出，第一次启动的窗口会被聚焦，并收到 second-instance 事件。
       </n-alert>
     </n-card>
 
+    <n-card size="small" title="生命周期事件日志（合并 · 300ms 去重降噪）">
+      <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+        一个操作联动触发的多个事件在 300ms 窗口内去重合并为一条（如还原 → window-restore +
+        window-show + window-focus）。未合并的原始日志见上一张卡片。
+      </n-text>
+      <n-button size="tiny" :disabled="!lifecycleMergedLog.length" @click="lifecycleMergedLog = []"
+        >清空</n-button
+      >
+      <div v-if="lifecycleMergedLog.length" style="margin-top: 8px; font-size: 13px">
+        <div v-for="(e, i) in lifecycleMergedLog" :key="i">🔀 {{ e.time }} {{ e.text }}</div>
+      </div>
+      <n-text v-else depth="3" style="display: block; margin-top: 8px; font-size: 12px">
+        暂无合并事件，尝试最小化 / 还原 / 最大化 / 关窗（隐藏到托盘）
+      </n-text>
+    </n-card>
+
     <n-card size="small" title="生命周期事件日志">
       <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
-        关闭窗口或退出应用时，主进程会广播以下事件（顺序：before-quit → will-quit →
-        window-all-closed）
+        窗口级事件实时广播：最小化 / 还原 / 最大化 / 全屏 / 聚焦 / 失焦 / 关闭窗口（隐藏到托盘）
+        等操作即可触发。退出类事件（before-quit → will-quit → window-all-closed）发生在页面
+        销毁前后，页内通常观察不到；activate 仅 macOS 触发。
       </n-text>
-      <n-data-table :columns="columns" :data="lifecycleLog" size="small" :bordered="false" />
+      <n-button size="tiny" :disabled="!lifecycleLog.length" @click="lifecycleLog = []"
+        >清空</n-button
+      >
+      <n-data-table
+        :columns="columns"
+        :data="lifecycleLog"
+        size="small"
+        :bordered="false"
+        style="margin-top: 8px"
+      />
     </n-card>
 
     <n-card size="small" title="电源监控（主进程: powerMonitor.ts）" style="margin-top: 12px">
-      <n-tag size="small" type="info" round>{{ powerStatus }}</n-tag>
-      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
-        锁屏 / 解锁 / 睡眠 / 唤醒 / 电源切换时，主进程推送事件到本页。可 Win+L 锁屏测试：
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px">
+        <n-tag size="small" type="info" round>{{ powerStatus }}</n-tag>
+        <n-button size="tiny" @click="loadPowerStatus">刷新状态</n-button>
+      </div>
+      <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+        锁屏 / 解锁 / 睡眠 / 唤醒 / 电源切换时，主进程推送事件到本页。可 Win+L 锁屏实测；
+        不便实测时可点下方按钮<strong>模拟推送</strong>（走同一通道，仅演示管线）：
       </n-text>
-      <div v-if="powerEvents.length" style="margin-top: 8px; font-size: 13px">
+      <n-space wrap style="margin-bottom: 8px">
+        <n-button
+          v-for="evt in [
+            'lock-screen',
+            'unlock-screen',
+            'suspend',
+            'resume',
+            'on-ac',
+            'on-battery'
+          ]"
+          :key="evt"
+          size="tiny"
+          secondary
+          @click="simulatePower(evt)"
+        >
+          模拟 {{ evt }}
+        </n-button>
+      </n-space>
+      <div v-if="powerEvents.length" style="font-size: 13px">
         <div v-for="(e, i) in powerEvents" :key="i">⚡ {{ e.time }} {{ e.event }}</div>
       </div>
     </n-card>
@@ -244,9 +317,8 @@ onUnmounted(() => disposers.forEach((d) => d()))
         <n-switch :value="unsavedDirty" @update:value="toggleDirty" />
       </div>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 12px">
-        开启后，通过托盘菜单"退出应用"或系统退出：会先弹出确认对话框。
-        选择"取消"则留在应用（关闭窗口仍是"隐藏到托盘"行为）。
-        这就是生产应用"有未保存修改，确定退出？"的标准实现。
+        测试步骤：开启此开关 → 托盘图标右键 → "退出应用" → 弹出确认框；选"取消"则留在应用
+        （关闭窗口仍是"隐藏到托盘"行为）。这就是生产应用"有未保存修改，确定退出？"的标准实现。
       </n-text>
     </n-card>
 
@@ -280,8 +352,13 @@ onUnmounted(() => disposers.forEach((d) => d()))
         <span style="font-size: 13px">崩溃自动恢复（reload）：</span>
         <n-switch :value="autoRecovery" @update:value="toggleAutoRecovery" />
       </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px">
+        <n-button size="small" @click="simulateError">模拟触发主进程错误</n-button>
+        <n-button size="small" type="warning" @click="crashRenderer">模拟渲染进程崩溃</n-button>
+      </div>
       <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
-        主进程捕获的 uncaughtException / unhandledRejection / 渲染进程崩溃记录：
+        主进程捕获的 uncaughtException / unhandledRejection / 渲染进程崩溃记录。崩溃按钮会真实杀掉
+        渲染进程：日志出现 render-process-gone，开启自动恢复则 1 秒后 reload。
       </n-text>
       <div v-if="errorLogs.length" style="font-size: 12px">
         <div v-for="(e, i) in errorLogs" :key="i" style="padding: 3px 0">

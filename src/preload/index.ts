@@ -180,8 +180,11 @@ const api = {
   /** ── 应用信息 / 生命周期（主进程: appLifecycle.ts）── */
   app: {
     getInfo: () => ipcRenderer.invoke('app:getInfo'),
+    getLoginItem: () => ipcRenderer.invoke('app:getLoginItem'),
     setLoginItem: (openAtLogin: boolean) => ipcRenderer.invoke('app:setLoginItem', openAtLogin),
     onLifecycle: (cb: (data: { event: string }) => void) => on('app:lifecycle', cb),
+    /** 合并降噪版生命周期事件（300ms 窗口内同一操作联动的事件去重合并为一条） */
+    onLifecycleMerged: (cb: (data: { events: string[] }) => void) => on('app:lifecycle-merged', cb),
     onSecondInstance: (cb: () => void) => on('app:second-instance', cb)
   },
 
@@ -210,7 +213,8 @@ const api = {
   protocol: {
     openUrl: (url: string) => ipcRenderer.invoke('protocol:openUrl', url),
     onDeepLink: (cb: (url: string) => void) => on('protocol:deep-link', cb),
-    openView: (url: string) => ipcRenderer.invoke('view:open', url),
+    openView: (url: string, options?: { topInset?: number }) =>
+      ipcRenderer.invoke('view:open', url, options),
     closeView: () => ipcRenderer.invoke('view:close'),
     /** 导航历史控制 + 状态事件 */
     goBack: () => ipcRenderer.invoke('view:goBack'),
@@ -247,6 +251,8 @@ const api = {
   /** ── 电源监控（主进程: powerMonitor.ts）── */
   power: {
     getStatus: () => ipcRenderer.invoke('power:getStatus'),
+    /** 模拟推送电源事件（教学演示，与 OS 事件同一通道） */
+    simulate: (event: string) => ipcRenderer.invoke('power:simulate', event),
     onEvent: (cb: (data: { event: string; time: string }) => void) => on('power:event', cb)
   },
 
@@ -271,7 +277,11 @@ const api = {
     getLogs: () => ipcRenderer.invoke('error:getLogs'),
     onNew: (cb: (record: unknown) => void) => on('error:new', cb),
     setAutoRecovery: (enabled: boolean) => ipcRenderer.invoke('error:setAutoRecovery', enabled),
-    getCrashInfo: () => ipcRenderer.invoke('error:getCrashInfo')
+    getCrashInfo: () => ipcRenderer.invoke('error:getCrashInfo'),
+    /** 模拟触发主进程错误（教学演示，走真实 uncaughtException 捕获链路） */
+    simulateError: () => ipcRenderer.invoke('error:simulateError'),
+    /** 模拟渲染进程崩溃（触发 render-process-gone + 自动恢复 reload） */
+    crashRenderer: () => ipcRenderer.invoke('error:crashRenderer')
   },
 
   /** ── TCP / UDP 通信（主进程: socket.ts）── */
@@ -332,6 +342,8 @@ const api = {
     pause: (id: string) => ipcRenderer.invoke('download:pause', id),
     resume: (id: string) => ipcRenderer.invoke('download:resume', id),
     cancel: (id: string) => ipcRenderer.invoke('download:cancel', id),
+    /** 回放下载列表（活动 + 历史缓存，页面挂载时拉取，见 download.ts） */
+    list: () => ipcRenderer.invoke('download:list'),
     onProgress: (cb: (data: unknown) => void) => on('download:progress', cb),
     onDone: (cb: (data: unknown) => void) => on('download:done', cb),
     /** 暂停/恢复状态推送（Electron 事件不映射 paused，主进程主动推送，见 download.ts） */

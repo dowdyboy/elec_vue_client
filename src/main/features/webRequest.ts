@@ -21,10 +21,13 @@ const INJECTED_HEADER = 'X-Demo-Header'
 const INJECTED_VALUE = 'injected-by-webRequest'
 
 export function registerWebRequest(getMainWindow: MainWindowGetter): void {
-  // 只记录 http(s) 请求，并过滤本机/开发服务器请求（避免应用自身资源刷屏）
+  // 只记录 http(s) 请求，并过滤应用自身资源（避免 dev server 页面/热更请求刷屏）。
+  // 注意：不能按 localhost/127.0.0.1 一刀切过滤——会话管理页用本地自闭环
+  // 下载源 http://127.0.0.1:8765 触发请求，需保留拦截记录。
   const isTrackable = (url: string): boolean => {
     if (!(url.startsWith('http://') || url.startsWith('https://'))) return false
-    if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return false
+    const devOrigin = process.env['ELECTRON_RENDERER_URL'] // 开发模式渲染层来源，如 http://localhost:5173
+    if (devOrigin && url.startsWith(devOrigin)) return false
     return true
   }
 

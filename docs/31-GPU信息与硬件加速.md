@@ -22,8 +22,9 @@ const status = app.getGPUFeatureStatus()
 const info = await app.getGPUInfo('basic')
 // { auxAttributes: { amdSwitchable: false, ... }, gpuDevice: [{ vendorId, deviceId, driverVersion, ... }] }
 
-// ③ 禁用硬件加速：必须在 app ready 之前追加开关
-app.commandLine.appendSwitch('disable-gpu')
+// ③ 禁用硬件加速：官方 API，必须在 app ready 之前调用（内部含完整的软件回退配置，
+//    比裸 appendSwitch('disable-gpu') 更稳；二者等价可互换）
+app.disableHardwareAcceleration()
 ```
 
 常用状态值对照：
@@ -37,12 +38,17 @@ app.commandLine.appendSwitch('disable-gpu')
 
 ## 三、"禁用后重启生效"的实现模式
 
-`appendSwitch` 必须在 ready 前调用 → 运行时切换只能"标记 + 重启"：
+`disableHardwareAcceleration` 必须在 ready 前调用 → 运行时切换只能"标记 + 重启"：
 
 ```ts
 // 启动阶段（index.ts，app ready 之前）
 export function applyGpuCommandLine(): void {
-  if (existsSync(flagFile())) app.commandLine.appendSwitch('disable-gpu')
+  if (existsSync(flagFile())) {
+    app.disableHardwareAcceleration()
+    // ⚠️ relaunch 白屏踩坑：关闭加速后立即重启，旧实例 GPUCache 残留可能
+    // 导致新实例软件合成初始化失败 → 白屏；启动前清除（仅缓存，安全）
+    rmSync(join(app.getPath('userData'), 'GPUCache'), { recursive: true, force: true })
+  }
 }
 
 // 运行期（IPC）：写标记文件，页面调 app.relaunch() 重启
@@ -55,6 +61,11 @@ ipcMain.handle('gpu:setAcceleration', (_e, enabled: boolean) => {
 
 本工程把标记文件放在 `userData/disable-gpu.flag`，重启按钮复用 relaunch.ts——
 这也是"运行期配置 → 持久化 → 启动时应用"这一通用模式的实例。
+
+⚠️ **dev 模式重启注意（electron-vite）**：开发时 vite dev server 在 electron-vite 进程内，
+`app.relaunch()` 后旧进程退出会把整个 dev 进程（含 dev server）杀掉，新实例加载
+`ELECTRON_RENDERER_URL` 失败 → **白屏**（与 GPU 无关，任何 dev 自动重启都如此）。
+本工程 dev 模式不自动重启，页面会提示**手动重启 `npm run dev`** 生效；打包后自动重启正常。
 
 ## 四、复制到新工程的步骤
 

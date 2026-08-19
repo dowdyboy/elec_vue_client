@@ -114,17 +114,24 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
 
   // ── ④ WebContentsView：窗口内嵌第三方网页 ──
   let embeddedView: WebContentsView | null = null
+  /** 顶部预留高度（px）：页面需在视图上方显示固定控件（如 PDF 返回条）时传入 */
+  let viewTopInset = 0
+  /** 主页面 ESC 兜底是否已挂载（只挂一次） */
+  let mainEscFallbackAttached = false
+
   const resizeEmbedded = (): void => {
     const win = getMainWindow()
     if (!win || !embeddedView) return
-    // 让内嵌视图铺满整个窗口内容区
+    // 铺满窗口内容区；topInset > 0 时预留顶部条（WebContentsView 是原生叠加层，
+    // CSS z-index 盖不住它，可见 UI 只能放在视图边界之外）
     const { width, height } = win.getContentBounds()
-    embeddedView.setBounds({ x: 0, y: 0, width, height })
+    embeddedView.setBounds({ x: 0, y: viewTopInset, width, height: height - viewTopInset })
   }
 
-  ipcMain.handle('view:open', (_e, url: string) => {
+  ipcMain.handle('view:open', (_e, url: string, options?: { topInset?: number }) => {
     const win = getMainWindow()
     if (!win) return { ok: false, error: '无主窗口' }
+    viewTopInset = options?.topInset ?? 0
     // 关闭旧的内嵌视图（同时移除 resize 监听，避免监听器累积）
     if (embeddedView) {
       win.contentView.removeChildView(embeddedView)
@@ -140,7 +147,25 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
     resizeEmbedded()
     win.on('resize', resizeEmbedded)
 
-    // 内嵌视图铺满窗口后，主页面按钮不可见 → 提供 ESC 关闭视图的退出途径
+    // 兜底①：主页面 webContents 的 ESC 处理——无论焦点落在哪个 webContents 都能关
+    // （addChildView 不转移焦点；新视图渲染进程未就绪时 focus() 是空操作，焦点可能仍
+    // 在主页面上，因此主页面也要能响应 ESC）
+    if (!mainEscFallbackAttached) {
+      win.webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || input.key !== 'Escape') return
+        if (!embeddedView) return
+        event.preventDefault()
+        ipcMain.emit('view:close-internal')
+      })
+      mainEscFallbackAttached = true
+    }
+
+    // 兜底②：渲染就绪后再移交键盘焦点给内嵌视图（Alt+←/→ 与内嵌页面按键才能生效）
+    embeddedView.webContents.on('did-finish-load', () => {
+      embeddedView?.webContents.focus()
+    })
+
+    // 内嵌视图覆盖窗口后，主页面按钮不可见 → 提供 ESC 关闭视图的退出途径
     embeddedView.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return
       if (input.key === 'Escape') {
@@ -179,6 +204,8 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
       embeddedView.webContents.close()
       embeddedView = null
       win.removeListener('resize', resizeEmbedded)
+      // 把键盘焦点还给主页面（否则关闭后主页面无法输入）
+      win.webContents.focus()
       // 通知主页面同步按钮状态（view:close 的返回也能达成，但 ESC 场景需要推送）
       win.webContents.send('view:closed-by-esc')
     }

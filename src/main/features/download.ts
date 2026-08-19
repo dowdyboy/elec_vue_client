@@ -12,6 +12,9 @@
  *         可通过 appPaths.ts 的"数据目录"页运行期修改（setPath('downloads')）后立即生效；
  *         生产可用 setSaveDialogOptions 弹窗让用户选择。
  *         注意：每个下载生成唯一 id（同一 URL 可重复下载，互不干扰）。
+ *         主进程缓存最近 50 条完成记录（download:list 回放）：下载事件是
+ *         fire-and-forget 推送，页面未挂载时完成的事件会丢失（如媒体捕获页
+ *         "保存录屏"后切到本页），需用缓存补回。
  */
 
 import { app, ipcMain, session, type DownloadItem } from 'electron'
@@ -19,9 +22,43 @@ import { mkdirSync } from 'fs'
 import { join } from 'path'
 import type { MainWindowGetter } from '../types'
 
+/** 下载记录（活动表与历史缓存共用的结构化数据） */
+interface DownloadRecord {
+  id: string
+  url: string
+  filename: string
+  state: string
+  percent: number
+  receivedBytes: number
+  totalBytes: number
+  savePath: string
+  /** 完成时间戳；0 = 进行中 */
+  finishedAt: number
+}
+
 /** 活动下载表：key = 下载唯一 id */
 const activeDownloads = new Map<string, DownloadItem>()
+/** 已完成/中断下载的历史缓存（供 download:list 回放：页面未挂载时完成的事件不会丢） */
+const recentDownloads: DownloadRecord[] = []
+const HISTORY_LIMIT = 50
 let downloadSeq = 0
+
+/** 从 DownloadItem 生成结构化记录（活动表与历史共用） */
+function toRecord(id: string, item: DownloadItem, state: string, finishedAt = 0): DownloadRecord {
+  const received = item.getReceivedBytes()
+  const total = item.getTotalBytes()
+  return {
+    id,
+    url: item.getURL(),
+    filename: item.getFilename(),
+    state,
+    percent: state === 'completed' ? 100 : total > 0 ? Math.round((received / total) * 100) : 0,
+    receivedBytes: received,
+    totalBytes: total,
+    savePath: item.getSavePath(),
+    finishedAt
+  }
+}
 
 export function registerDownload(getMainWindow: MainWindowGetter): void {
   const push = (channel: string, data: unknown): void => {
@@ -36,36 +73,25 @@ export function registerDownload(getMainWindow: MainWindowGetter): void {
     // 默认保存目录：系统下载目录（数据目录页 setPath('downloads') 可运行期修改）
     const dir = app.getPath('downloads')
     mkdirSync(dir, { recursive: true }) // 目录不存在时兜底创建
-    item.setSavePath(join(dir, item.getFilename()))
+    // 兜底文件名：blob:// 等下载在某些平台 getFilename() 可能为空
+    const filename = item.getFilename() || `download-${Date.now()}`
+    item.setSavePath(join(dir, filename))
 
     activeDownloads.set(id, item)
 
     // 进度更新：percent / 字节数 / 状态（progressing | interrupted）
     item.on('updated', (_e, state) => {
-      const received = item.getReceivedBytes()
-      const total = item.getTotalBytes()
-      push('download:progress', {
-        id,
-        url: item.getURL(),
-        filename: item.getFilename(),
-        state,
-        percent: total > 0 ? Math.round((received / total) * 100) : 0,
-        receivedBytes: received,
-        totalBytes: total,
-        savePath: item.getSavePath()
-      })
+      push('download:progress', toRecord(id, item, state))
     })
 
     // 下载结束：completed | cancelled | interrupted
     item.on('done', (_e, state) => {
       activeDownloads.delete(id)
-      push('download:done', {
-        id,
-        url: item.getURL(),
-        filename: item.getFilename(),
-        state,
-        savePath: item.getSavePath()
-      })
+      const record = toRecord(id, item, state, Date.now())
+      // 写入历史缓存（供 download:list 回放，页面未挂载时推送的事件不会丢）
+      recentDownloads.unshift(record)
+      if (recentDownloads.length > HISTORY_LIMIT) recentDownloads.pop()
+      push('download:done', record)
     })
   })
 
@@ -76,6 +102,17 @@ export function registerDownload(getMainWindow: MainWindowGetter): void {
     if (!win) return { ok: false, error: '无主窗口' }
     win.webContents.downloadURL(url)
     return { ok: true }
+  })
+
+  // ── 回放下载列表（活动 + 历史缓存）──
+  // 页面挂载时先拉一次：此前完成/进行中的下载（如媒体捕获页"保存录屏"）不会丢失
+  ipcMain.handle('download:list', () => {
+    const active: DownloadRecord[] = []
+    activeDownloads.forEach((item, id) => {
+      active.push(toRecord(id, item, item.isPaused() ? 'paused' : 'progressing'))
+    })
+    // 活动下载在前（进行中），历史缓存在后（最新在前）
+    return [...active, ...recentDownloads]
   })
 
   // ── 暂停 / 恢复 / 取消（按下载 id）──

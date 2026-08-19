@@ -13,6 +13,7 @@ import {
   NText,
   NTag,
   NAlert,
+  NSpace,
   type DataTableColumns
 } from 'naive-ui'
 import FeatureLayout from '../components/FeatureLayout.vue'
@@ -88,11 +89,37 @@ async function removeCookie(name: string): Promise<void> {
 }
 
 // ── ② webRequest 请求拦截 ──
-const interceptUrl = ref('https://speed.hetzner.de/1MB.bin')
+// 默认用本地自闭环下载源（httpServer.ts 的 /download 端点），避免外网源不可达
+const interceptUrl = ref('http://127.0.0.1:8765/download?size=1')
 const requestLogs = ref<{ time: string; method: string; url: string; injected: boolean }[]>([])
+const interceptPresets = [
+  { label: '本地 1MB（自闭环，推荐）', value: 'http://127.0.0.1:8765/download?size=1' },
+  { label: 'Hetzner 1MB（外网，可能不可达）', value: 'https://speed.hetzner.de/1MB.bin' }
+]
+const localServerRunning = ref(false)
+const serverStarting = ref(false)
+
+async function startLocalServer(): Promise<void> {
+  serverStarting.value = true
+  try {
+    const res = await window.api.httpServer.start(8765)
+    if (res.ok) {
+      localServerRunning.value = true
+      message.success(`本地下载服务器已启动（端口 ${res.port}）`)
+    } else if (!res.error?.includes('已在运行')) {
+      message.info(res.error ?? '启动失败')
+    }
+  } finally {
+    serverStarting.value = false
+  }
+}
 
 function triggerRequest(): void {
   // 通过下载触发 Chromium 栈请求（主进程 axios 不走 Chromium 栈，拦不到）
+  if (interceptUrl.value.includes('127.0.0.1') && !localServerRunning.value) {
+    message.warning('本地源需要先启动服务器（点击上方「启动本地服务器」）')
+    return
+  }
   window.api.download.start(interceptUrl.value)
   message.info('已触发下载请求（下载也会被 webRequest 记录）')
 }
@@ -128,7 +155,7 @@ async function clearAll(): Promise<void> {
 }
 
 // ── ⑤ 代理与 UA（sessionConfig.ts）──
-const proxyRules = ref('http=127.0.0.1:8888;https=127.0.0.1:8888')
+const proxyRules = ref('http=127.0.0.1:7897;https=127.0.0.1:7897')
 const proxyResult = ref('')
 const uaInput = ref('')
 const uaResult = ref('')
@@ -178,6 +205,10 @@ async function openPersistent(): Promise<void> {
 let dispose: (() => void) | null = null
 onMounted(async () => {
   await loadCookies()
+  // 自动确保本地自闭环下载源可用（已运行则跳过）
+  const status = await window.api.httpServer.getStatus()
+  localServerRunning.value = status.running
+  if (!status.running) await startLocalServer()
   dispose = window.api.session.onRequestLog((raw) => {
     const log = raw as { time: string; method: string; url: string; injected: boolean }
     requestLogs.value.unshift(log)
@@ -220,10 +251,25 @@ onUnmounted(() => dispose?.())
       <div style="display: flex; gap: 8px">
         <n-input v-model:value="interceptUrl" placeholder="输入 URL 触发一次下载请求" />
         <n-button type="warning" @click="triggerRequest">触发请求</n-button>
+        <n-button :loading="serverStarting" @click="startLocalServer">启动本地服务器</n-button>
+        <n-tag v-if="localServerRunning" size="small" type="success" round>已运行</n-tag>
       </div>
+      <n-space style="margin-top: 8px">
+        <n-button
+          v-for="preset in interceptPresets"
+          :key="preset.value"
+          size="small"
+          secondary
+          @click="interceptUrl = preset.value"
+        >
+          {{ preset.label }}
+        </n-button>
+      </n-space>
       <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
         拦截的是 Chromium 网络栈请求（下载/页面 fetch）。主进程 axios 不走此栈，所以用下载触发。
-        主进程会向请求注入 <code>X-Demo-Header</code> 头。
+        主进程会向请求注入 <code>X-Demo-Header</code> 头。默认走本地自闭环源 （httpServer.ts 的
+        /download 端点，进入本页会自动启动）；若换用外网源 （如 Hetzner 测速文件）在部分网络会 TLS
+        握手失败、终端出现 SSL 报错且下载 interrupted——属预期，非代码问题。
       </n-alert>
       <div
         v-if="requestLogs.length"
@@ -276,7 +322,7 @@ onUnmounted(() => dispose?.())
       <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
         <n-input
           v-model:value="proxyRules"
-          placeholder="代理规则，如 http=127.0.0.1:8888;https=127.0.0.1:8888"
+          placeholder="代理规则，如 http=127.0.0.1:7897;https=127.0.0.1:7897"
           style="width: 360px"
         />
         <n-button type="primary" @click="setProxy">应用代理</n-button>
@@ -301,7 +347,7 @@ onUnmounted(() => dispose?.())
         >{{ uaResult }}</n-text
       >
       <n-alert type="info" :show-icon="true" size="small" style="margin-top: 8px">
-        代理典型场景：抓包调试（Fiddler/Charles 默认监听 127.0.0.1:8888）、公司内网。 "测试解析"用
+        代理典型场景：抓包调试（Fiddler/Charles 默认监听 127.0.0.1:7897）、公司内网。 "测试解析"用
         resolveProxy 查看某 URL 实际走的代理。
       </n-alert>
     </n-card>

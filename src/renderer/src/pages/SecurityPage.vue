@@ -12,19 +12,28 @@ import securityCode from '../../../main/features/security.ts?raw'
 const message = useMessage()
 const deniedPermissions = ref<string[]>([])
 
-/** ① 演示权限/弹窗拦截：window.open 会被 setWindowOpenHandler 拦下转交系统浏览器 */
-async function triggerPermission(): Promise<void> {
-  try {
-    // 尝试打开外部站点：setWindowOpenHandler 会拦截，改为系统浏览器打开，
-    // 应用内不会出现新窗口
-    window.open('https://example.com', '_blank')
-    message.info('窗口打开请求已发出（会被 setWindowOpenHandler 拦截并转交系统浏览器）')
-  } catch (err) {
-    message.error(String(err))
-  }
+/** ① 演示权限白名单拒绝：请求白名单外的浏览器权限（geolocation）→ 主进程拒绝并记录 */
+function triggerBlockedPermission(): void {
+  // geolocation 不在白名单（clipboard-read/media/display-capture/serial），
+  // 会被 security.ts 的 setPermissionRequestHandler 拒绝，无需真实定位（拒绝发生在联网前）
+  navigator.geolocation.getCurrentPosition(
+    (pos) => message.info(`意外的定位成功: ${pos.coords.latitude}`),
+    (err) =>
+      message.info(
+        `定位请求被拒绝（${err.code === 1 ? 'PERMISSION_DENIED' : err.message}），属预期`
+      )
+  )
+  message.info('已请求地理位置权限（白名单外 → 将被主进程拒绝并记录）')
 }
 
-/** ② 演示导航拦截：点击按钮让页面尝试跳转外部站点 */
+/** ② 演示窗口打开拦截（setWindowOpenHandler）：转交系统浏览器，应用内不开新窗口 */
+function triggerWindowOpen(): void {
+  // setWindowOpenHandler 拦截 window.open：外部链接交给系统默认浏览器打开
+  window.open('https://example.com', '_blank')
+  message.info('已触发 window.open，由 setWindowOpenHandler 转交系统浏览器打开（应用内不开新窗口）')
+}
+
+/** ③ 演示导航拦截：点击按钮让页面尝试跳转外部站点 */
 function triggerNavigation(): void {
   // 通过 window.location 跳转外部站点会触发 will-navigate 拦截
   message.info('尝试跳转外部站点（会被 will-navigate 拦截，转交系统浏览器）')
@@ -86,20 +95,32 @@ onUnmounted(() => dispose?.())
   <FeatureLayout
     title="安全实践"
     api="session / webContents"
-    intro="Electron 安全三件套：① contextIsolation + sandbox（渲染进程与 Node 隔离，本工程 webPreferences 已开启 contextIsolation，preload 只暴露白名单 API）；② 权限白名单：页面请求摄像头/麦克风/剪贴板等权限必须经主进程裁决；③ 导航拦截：防止页面被钓鱼跳转到外部网站。"
+    intro="Electron 安全要点：① contextIsolation + sandbox（渲染进程与 Node 隔离，本工程 webPreferences 已开启 contextIsolation，preload 只暴露白名单 API）；② 权限白名单：页面请求摄像头/麦克风/剪贴板/地理位置等权限必须经主进程裁决，白名单外一律拒绝；③ 窗口与导航拦截：外部链接转交系统浏览器（setWindowOpenHandler / will-navigate），防止应用内被钓鱼跳转。"
   >
     <n-card size="small" title="① 权限白名单拦截" style="margin-bottom: 12px">
-      <n-button type="primary" @click="triggerPermission">尝试请求弹窗权限（会被拦截）</n-button>
+      <n-button type="primary" @click="triggerBlockedPermission"
+        >尝试请求地理位置权限（白名单外，会被拒绝）</n-button
+      >
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 13px">
         主进程 security.ts 白名单只放行 clipboard-read / media / display-capture / serial （media 与
-        display-capture 供"媒体捕获"页演示），其余权限一律拒绝。被拒绝记录：
+        display-capture 供"媒体捕获"页演示），其余权限（如 geolocation / notifications）一律拒绝。
+        被拒绝记录：
       </n-text>
       <div v-if="deniedPermissions.length" style="margin-top: 4px; font-size: 13px">
         <div v-for="(p, i) in deniedPermissions" :key="i">🛡️ {{ p }}</div>
       </div>
     </n-card>
 
-    <n-card size="small" title="② 外部导航拦截" style="margin-bottom: 12px">
+    <n-card size="small" title="② 窗口打开拦截（setWindowOpenHandler）" style="margin-bottom: 12px">
+      <n-button @click="triggerWindowOpen">尝试 window.open 打开 example.com</n-button>
+      <n-text depth="3" style="display: block; margin-top: 8px; font-size: 13px">
+        这是"外部链接转交系统浏览器"的安全设计（index.ts setWindowOpenHandler）——点击后由系统
+        默认浏览器打开 example.com，应用内不会新开窗口。⚠️ 它与 ① 的权限白名单是两套机制，
+        "打开浏览器"是预期行为，而非拦截失效。
+      </n-text>
+    </n-card>
+
+    <n-card size="small" title="③ 外部导航拦截" style="margin-bottom: 12px">
       <n-button @click="triggerNavigation">尝试跳转到 example.com（会被拦截）</n-button>
       <n-text depth="3" style="display: block; margin-top: 8px; font-size: 13px">
         will-navigate 拦截：页面内任何跳转外部站点的尝试都会被阻止，
@@ -109,7 +130,7 @@ onUnmounted(() => dispose?.())
 
     <n-card
       size="small"
-      title="③ 系统权限询问（macOS，主进程: systemAccess.ts）"
+      title="④ 系统权限询问（macOS，主进程: systemAccess.ts）"
       style="margin-bottom: 12px"
     >
       <div v-if="accessStatus">
@@ -147,7 +168,7 @@ onUnmounted(() => dispose?.())
 
     <n-card
       size="small"
-      title="③.5 静默权限检查（setPermissionCheckHandler）"
+      title="⑤ 静默权限检查（setPermissionCheckHandler）"
       style="margin-bottom: 12px"
     >
       <div style="display: flex; align-items: center; gap: 12px">
@@ -163,7 +184,7 @@ onUnmounted(() => dispose?.())
 
     <n-card
       size="small"
-      title="④ 证书校验策略（主进程: certificate.ts）"
+      title="⑥ 证书校验策略（主进程: certificate.ts）"
       style="margin-bottom: 12px"
     >
       <div style="display: flex; align-items: center; gap: 12px">
@@ -176,7 +197,7 @@ onUnmounted(() => dispose?.())
       </n-alert>
     </n-card>
 
-    <n-card size="small" title="⑤ 安全基线建议">
+    <n-card size="small" title="⑦ 安全基线建议">
       <n-text depth="3" style="font-size: 13px">
         1. 永远开启 contextIsolation，preload 只暴露最小化 API（本工程 preload/index.ts 即范例）<br />
         2. 生产环境建议 sandbox: true（本工程保持模板默认 false 便于教学演示）<br />

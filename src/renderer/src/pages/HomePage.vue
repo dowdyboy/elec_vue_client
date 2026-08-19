@@ -81,6 +81,74 @@ const featureTable = {
     { name: '加密存储', api: 'safeStorage', doc: 'docs/33-安全存储（safeStorage）.md' }
   ]
 }
+
+/** TypeScript 惯用法板块速查表 */
+const tsTable = {
+  columns: [
+    { title: '课程', key: 'name' },
+    { title: '覆盖能力', key: 'ability' },
+    { title: '文档', key: 'doc' }
+  ],
+  data: [
+    { name: 'TS 总览', ability: '学习路径与 Electron 对照', doc: 'docs/TS-00-总览.md' },
+    {
+      name: '类型标注与推断',
+      ability: '基础类型、字面量、any/unknown/never、as const',
+      doc: 'docs/TS-01-类型标注与推断.md'
+    },
+    {
+      name: 'interface vs type',
+      ability: '可选/只读/索引签名/继承与交叉/声明合并',
+      doc: 'docs/TS-02-interface与type.md'
+    },
+    {
+      name: '联合类型与收窄',
+      ability: 'typeof/in/instanceof、判别联合、穷尽检查',
+      doc: 'docs/TS-03-联合类型与收窄.md'
+    },
+    { name: '泛型', ability: '函数/接口/约束/默认参数/多参数', doc: 'docs/TS-04-泛型.md' },
+    {
+      name: '工具类型',
+      ability: 'Partial/Omit/Pick/Record/ReturnType/Parameters',
+      doc: 'docs/TS-05-工具类型.md'
+    },
+    {
+      name: '映射与条件类型',
+      ability: 'keyof/索引访问/infer/as const/satisfies',
+      doc: 'docs/TS-06-映射与条件类型.md'
+    },
+    {
+      name: '函数惯用法',
+      ability: '重载/默认参数/rest/类型守卫/this',
+      doc: 'docs/TS-07-函数惯用法.md'
+    },
+    {
+      name: '枚举与常量断言',
+      ability: 'enum vs as const、模板字面量类型',
+      doc: 'docs/TS-08-枚举与常量断言.md'
+    },
+    {
+      name: '异步惯用法',
+      ability: 'async/await、类型化错误、Result、allSettled',
+      doc: 'docs/TS-09-异步惯用法.md'
+    },
+    {
+      name: '模块与导入导出',
+      ability: 'import type、re-export、barrel、路径别名',
+      doc: 'docs/TS-10-模块与导入导出.md'
+    },
+    {
+      name: '类与面向对象',
+      ability: '访问修饰符、抽象类、implements、参数属性',
+      doc: 'docs/TS-11-类与面向对象.md'
+    },
+    {
+      name: '与 Electron 结合',
+      ability: 'IPC 通道类型安全、事件载荷推导、preload 类型声明',
+      doc: 'docs/TS-12-与Electron结合（IPC类型安全）.md'
+    }
+  ]
+}
 </script>
 
 <template>
@@ -122,6 +190,18 @@ const featureTable = {
       <n-data-table
         :columns="featureTable.columns"
         :data="featureTable.data"
+        :bordered="false"
+        size="small"
+      />
+    </n-card>
+
+    <n-card size="small" title="TypeScript 惯用法速查表" style="margin-top: 12px">
+      <n-text depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+        左侧「TypeScript 惯用法」子菜单逐课学习；与上方 Electron 特性互补，实战代码见各页源码。
+      </n-text>
+      <n-data-table
+        :columns="tsTable.columns"
+        :data="tsTable.data"
         :bordered="false"
         size="small"
       />

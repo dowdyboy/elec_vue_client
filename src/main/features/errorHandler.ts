@@ -90,4 +90,22 @@ export function registerErrorHandler(getMainWindow: MainWindowGetter): void {
 
   // 查询历史日志（页面初始化时加载）
   ipcMain.handle('error:getLogs', () => logs)
+
+  // ── 模拟触发主进程错误（教学演示：走真实 uncaughtException 捕获链路）──
+  ipcMain.handle('error:simulateError', () => {
+    // 延后抛出，让事件循环先返回 IPC 响应，再由 uncaughtException 处理器捕获
+    setTimeout(() => {
+      throw new Error('模拟主进程异常（errorHandler 捕获）')
+    }, 0)
+    return { ok: true }
+  })
+
+  // ── 模拟渲染进程崩溃（教学演示：触发 render-process-gone + 自动恢复）──
+  // 渲染进程被杀后：错误日志记录 render-process-gone；若开启自动恢复则 1 秒后 reload
+  ipcMain.handle('error:crashRenderer', () => {
+    const win = getMainWindow()
+    if (!win) return { ok: false, error: '无主窗口' }
+    win.webContents.forcefullyCrashRenderer()
+    return { ok: true }
+  })
 }
