@@ -10,7 +10,14 @@
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { createLineRenderer, withAlpha, hexToRgba, type LineRenderer } from './core/gl'
 import { iqAdapters } from './core/adapters'
-import { drawAxisOverlay, type PlotRect } from './core/axis'
+import {
+  drawAxisOverlay,
+  drawChip,
+  drawPanel,
+  snapRangeNice,
+  CHIP_H,
+  type PlotRect
+} from './core/axis'
 import { resolveTheme } from './core/theme'
 import type { IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
 import { useGlChart } from './composables/useGlChart'
@@ -52,6 +59,7 @@ const th = computed(() =>
 
 // ── 布局常量（CSS px）──
 const GUTTER_BOTTOM = 20 // 底部 X 刻度槽；左侧刻度带宽由主题 axisWidth 提供（默认 56）
+const PAD_X = 24 // 波形左右内缩留白：避免满幅波形的左/右边缘贴住绘图区形成「信号墙」
 const MIN_SPAN = 16 // 最小可见样本数
 const DEFAULT_SPAN = 4096 // follow 模式默认窗宽（须明显大于单帧点数）
 const ZOOM_FACTOR = 1.2 // 每次滚轮缩放系数
@@ -105,6 +113,9 @@ function normalize(raw: unknown): IqNormalized | null {
 }
 
 function pushNormalized(n: IqNormalized): void {
+  // 完全暂停：冻结（非跟随）期间在入口丢弃新帧——
+  // 缓冲零增长、环形淘汰永不发生，冻结窗内容像素级静止；恢复跟随（zoomReset）后自动继续接收
+  if (!view.follow) return
   if (n instanceof Float32Array) {
     // 交织 [I0,Q0,I1,Q1...]
     const pairs = Math.floor(n.length / 2)
@@ -141,7 +152,11 @@ const view = reactive({
 })
 
 function applyExternalViewport(v: NonNullable<IqProps['viewport']>): void {
-  if (v.autoScale !== undefined) view.yAuto = v.autoScale
+  if (v.autoScale !== undefined) {
+    // 外部切回自动缩放时丢弃旧平滑状态，避免从历史范围缓慢滑入
+    if (v.autoScale && !view.yAuto) resetYAuto()
+    view.yAuto = v.autoScale
+  }
   if (v.yMin !== undefined) view.yMin = v.yMin
   if (v.yMax !== undefined) view.yMax = v.yMax
   if (v.xMin !== undefined && v.xMax !== undefined && v.xMax > v.xMin) {
@@ -184,8 +199,11 @@ function resolveXRange(): { min: number; max: number } {
   let max = Math.min(total, view.xMax)
   if (max - min < MIN_SPAN) min = Math.max(dropped, max - MIN_SPAN)
   if (max <= min) {
-    max = total
-    min = Math.max(dropped, total - DEFAULT_SPAN)
+    // 环形淘汰已吞掉冻结窗：锚定最老可用数据，保持「已暂停」语义（绝不自动跳回最新）
+    // 后续每次淘汰会让该窗口随淘汰前沿步进——有限历史下的必然，但永不恢复实时跟随
+    const span = Math.max(MIN_SPAN, Math.min(view.span, total - dropped))
+    min = dropped
+    max = Math.min(total, dropped + span)
   }
   return { min, max }
 }
@@ -225,8 +243,13 @@ function decimate(arr: Float32Array, len: number, target: number): Float32Array 
   return out.subarray(0, oi)
 }
 
-function resolveYRange(s: number, e: number): { min: number; max: number } {
-  if (!view.yAuto) return { min: view.yMin, max: view.yMax }
+// ── 自动 Y 轴平滑（即时扩张 / 慢速收缩）──
+// 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；
+// 示波器通用解法：出现新极值立即扩入当前范围（永不裁剪波形），数据回落后缓慢收敛
+const Y_RELEASE = 0.08 // 收缩速度：每帧向目标靠拢的比例（九成幅度约半秒内收敛，刻度轻微呼吸后稳定）
+let yAutoCur: { min: number; max: number } | null = null // 平滑后的当前自动范围；null=待初始化/需重置
+
+function computeAutoYTarget(s: number, e: number): { min: number; max: number } {
   if (e <= s) return { min: -1, max: 1 }
   let mn = Infinity,
     mx = -Infinity
@@ -239,13 +262,39 @@ function resolveYRange(s: number, e: number): { min: number; max: number } {
     if (b > mx) mx = b
   }
   if (!isFinite(mn) || !isFinite(mx)) return { min: -1, max: 1 }
-  // 居中 + 25% 余量：波形不贴边，网格有呼吸空间
+  // 居中 + 25% 余量后做档位量化：向外吸附到刻度步进族，
+  // 吸收逐帧随机的极值波动（稳态下目标恒定 → 刻度完全静止，跨档时才离散更新）
   const cx = (mn + mx) / 2
   const half = Math.max((mx - mn) / 2, 1e-3) * 1.25
-  return { min: cx - half, max: cx + half }
+  return snapRangeNice(cx - half, cx + half)
 }
 
-// 绘图区（CSS px）：左侧固定刻度带 + 底部 X 刻度槽；Y 芯片右对齐贴绘图区左边框
+/** 重置自动 Y 轴平滑状态（清空数据/切换 yAuto 等），下一帧直接吸附目标 */
+function resetYAuto(): void {
+  yAutoCur = null
+}
+
+function resolveYRange(s: number, e: number): { min: number; max: number } {
+  if (!view.yAuto) return { min: view.yMin, max: view.yMax }
+  const target = computeAutoYTarget(s, e)
+  if (!yAutoCur) {
+    yAutoCur = { ...target }
+    return { ...target }
+  }
+  const cur = yAutoCur
+  // 非对称更新：新极值即时扩入（含目标自带的 25% 余量，保证不裁剪）；富余则缓慢回落
+  if (target.min < cur.min) cur.min = target.min
+  else cur.min += (target.min - cur.min) * Y_RELEASE
+  if (target.max > cur.max) cur.max = target.max
+  else cur.max += (target.max - cur.max) * Y_RELEASE
+  // 收敛吸附：残差小于目标跨度千分之一时贴合，避免无限爬行导致刻度数字微颤
+  const tSpan = Math.abs(target.max - target.min)
+  if (Math.abs(cur.min - target.min) < tSpan * 1e-3) cur.min = target.min
+  if (Math.abs(cur.max - target.max) < tSpan * 1e-3) cur.max = target.max
+  return { min: cur.min, max: cur.max }
+}
+
+// 绘图区（CSS px）：左侧固定刻度带 + 底部 X 刻度槽；Y 芯片+竖直轴线钉在组件最左，与绘图区间留空隙
 function computePlot(canvas: HTMLCanvasElement): PlotRect {
   const dpr = window.devicePixelRatio || 1
   const wCss = canvas.width / dpr
@@ -260,12 +309,20 @@ function computePlot(canvas: HTMLCanvasElement): PlotRect {
   }
 }
 
-// 上一帧视口缓存：交互时光标坐标 ↔ 数据坐标换算依据
+// 上一帧视口缓存：交互时光标坐标 ↔ 数据坐标换算依据。
+// xRange 为「显示域」：真实窗口两侧外扩 xFrac 比例后的范围（与屏幕波形一一对应）
 let lastView: {
   xRange: { min: number; max: number }
   yRange: { min: number; max: number }
   plot: PlotRect
+  /** 波形水平留白比例（每侧），显示域 ↔ 真实窗口换算用 */
+  xFrac: number
+  /** 当前帧缓冲切片 [s,e)（缓冲下标），供十字光标采样读数 */
+  slice: { s: number; e: number }
 } | null = null
+
+// 十字光标状态：绘图区内悬停位置；null=不显示
+let cursor: { px: number; py: number } | null = null
 
 let raf = 0
 function schedule(): void {
@@ -279,7 +336,6 @@ function schedule(): void {
 function draw(): void {
   const canvas = canvasRef.value
   if (!canvas || !gl || !renderer) return
-  const dpr = window.devicePixelRatio || 1
   const xr = resolveXRange()
   // 绝对索引 → 缓冲下标
   const s = Math.max(0, Math.floor(xr.min) - dropped)
@@ -298,16 +354,27 @@ function draw(): void {
     clearOverlay()
     return
   }
-  lastView = { xRange: xr, yRange: yr, plot }
+  // 波形水平内缩留白：视窗两侧外扩等效 PAD_X 像素再映射到全宽绘图区
+  // （轴线/网格不动，与 Y 轴纵向余量同一思路；首末采样点落在 f 与 1-f 像素分数处）
+  const effPad = Math.min(PAD_X, plot.w * 0.08)
+  const xFrac = effPad / plot.w
+  const kS = 1 - 2 * xFrac
+  const spanX = Math.max(1e-9, xr.max - xr.min)
+  const padData = (xFrac * spanX) / kS
+  const xrView = { min: xr.min - padData, max: xr.max + padData }
+  lastView = { xRange: xrView, yRange: yr, plot, xFrac, slice: { s, e } }
   const targetPoints = Math.max(1, Math.floor(plot.w))
   const iSlice = iBuf.subarray(s, e)
   const qSlice = qBuf.subarray(s, e)
   const iDec = decimate(iSlice, len, targetPoints)
   const qDec = decimate(qSlice, len, targetPoints)
+  // 抽稀索引空间同变换：idx=0 / idx=N-1 对齐 f 与 1-f 像素分数（与采样值域严格一致）
+  const nIdx = Math.max(1, iDec.length - 1)
+  const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
   renderer.setData(iDec)
   renderer.draw(
-    { xMin: 0, xMax: Math.max(0, iDec.length - 1), yMin: yr.min, yMax: yr.max },
+    { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
     withAlpha(th.value.traceI, th.value.traceAlpha),
     false,
     plot
@@ -316,21 +383,20 @@ function draw(): void {
   if (rendererQ) {
     rendererQ.setData(qDec)
     rendererQ.draw(
-      { xMin: 0, xMax: Math.max(0, qDec.length - 1), yMin: yr.min, yMax: yr.max },
+      { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
       withAlpha(th.value.traceQ, th.value.traceAlpha),
       false,
       plot
     )
   }
-  drawOverlay(xr, yr, plot, dpr)
+  drawOverlay(xrView, yr, plot)
 }
 
 // ── 坐标轴覆盖层 ──
 function drawOverlay(
-  xr: { min: number; max: number },
+  xv: { min: number; max: number },
   yr: { min: number; max: number },
-  plot: PlotRect,
-  dpr: number
+  plot: PlotRect
 ): void {
   const ov = overlayRef.value
   if (!ov || !props.axis) return
@@ -338,16 +404,23 @@ function drawOverlay(
   if (!ctx) return
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, ov.width, ov.height)
-  ctx.scale(dpr, dpr)
+  // 真实比例映射：背板设备像素 ÷ 元素当前 CSS 实测尺寸。
+  // 不信任全局 DPR 缓存——页面缩放/系统非整数缩放/监听时序差下，
+  // overlay 全部绘制仍与鼠标位置严格贴合（修复「越远越偏」的比例错位）
+  const rect = ov.getBoundingClientRect()
+  const sx = ov.width / Math.max(1, rect.width)
+  const sy = ov.height / Math.max(1, rect.height)
+  ctx.setTransform(sx, 0, 0, sy, 0, 0)
   const t = th.value
   drawAxisOverlay(ctx, {
     plot,
-    xMin: xr.min,
-    xMax: xr.max,
+    xMin: xv.min,
+    xMax: xv.max,
     yMin: yr.min,
     yMax: yr.max,
     showX: props.xAxis !== false,
     showGrid: props.grid !== false,
+    frame: false,
     theme: {
       text: t.text,
       grid: t.grid,
@@ -357,6 +430,57 @@ function drawOverlay(
       zeroLine: t.zeroLine,
       labelChipBg: t.labelChipBg
     }
+  })
+
+  // ── 十字光标与读数（悬停；跟随/暂停均可用）──
+  if (!cursor) return
+  const cxp = Math.round(cursor.px) + 0.5
+  const cyp = Math.round(cursor.py) + 0.5
+  ctx.save()
+  ctx.strokeStyle = t.crosshair
+  ctx.lineWidth = 1
+  ctx.setLineDash([4, 4])
+  ctx.beginPath()
+  ctx.moveTo(cxp, plot.y)
+  ctx.lineTo(cxp, plot.y + plot.h)
+  ctx.moveTo(plot.x, cyp)
+  ctx.lineTo(plot.x + plot.w, cyp)
+  ctx.stroke()
+  ctx.restore()
+
+  // 轴缘读数芯片：X 值贴底部刻度槽、Y 值贴左带（与 Y 刻度芯片同款样式）
+  ctx.font = '11px system-ui, -apple-system, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const chipBg = t.labelChipBg
+  const xText = String(Math.round(pxToDataX(cursor.px)))
+  drawChip(ctx, cxp, plot.y + plot.h + 3, xText, chipBg, t.text, 'center', {
+    min: plot.x,
+    max: plot.x + plot.w
+  })
+  const yText = pyToDataY(cursor.py).toFixed(3)
+  const yChipY = Math.min(Math.max(cyp - CHIP_H / 2, plot.y + 2), plot.y + plot.h - CHIP_H - 2)
+  drawChip(ctx, 2, yChipY, yText, chipBg, t.text)
+
+  // 浮动读数框：样本索引 + 最近采样点实际 I/Q 值（贴近右/下边缘时自动翻转避让）
+  const smp = sampleAt(cursor.px)
+  if (!smp) return
+  const fmtVal = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+  const lines = [`#${smp.idx}`, `I ${fmtVal(smp.i)}`, `Q ${fmtVal(smp.q)}`]
+  ctx.textAlign = 'left'
+  let wMax = 0
+  for (const ln of lines) wMax = Math.max(wMax, ctx.measureText(ln).width)
+  const padX = 8
+  const lineH = 14
+  const bw = Math.ceil(wMax) + padX * 2
+  const bh = lines.length * lineH + 6
+  let bx = cursor.px + 14
+  const byC = Math.min(cursor.py + 14, plot.y + plot.h - bh - 4)
+  if (bx + bw > plot.x + plot.w) bx = cursor.px - 14 - bw
+  drawPanel(ctx, bx, byC, bw, bh, chipBg)
+  ctx.fillStyle = t.text
+  lines.forEach((ln, li) => {
+    ctx.fillText(ln, bx + padX, byC + 3 + lineH * li + lineH / 2)
   })
 }
 function clearOverlay(): void {
@@ -392,6 +516,49 @@ function pxToDataX(px: number): number {
 function pyToDataY(py: number): number {
   const { yRange, plot } = lastView!
   return yRange.min + (1 - (py - plot.y) / plot.h) * (yRange.max - yRange.min)
+}
+/** 显示域窗口 → 真实窗口：去掉两侧波形留白外扩（与 draw() 的外扩互逆） */
+function unpadX(min: number, max: number, frac: number): { min: number; max: number } {
+  const p = frac * (max - min)
+  return { min: min + p, max: max - p }
+}
+/** 光标处最近采样点读取；显示域坐标越出当前缓冲切片时返回 null */
+function sampleAt(px: number): { idx: number; i: number; q: number } | null {
+  if (!lastView || dataLen === 0) return null
+  const absIdx = Math.round(pxToDataX(px))
+  const local = absIdx - dropped
+  const { s, e } = lastView.slice
+  if (local < s || local >= e) return null
+  return { idx: absIdx, i: iBuf[local] ?? 0, q: qBuf[local] ?? 0 }
+}
+
+// ── 十字光标 ──
+function updateCursor(evt: MouseEvent): void {
+  const canvas = canvasRef.value
+  if (!canvas || !lastView) {
+    if (cursor !== null) {
+      cursor = null
+      schedule()
+    }
+    return
+  }
+  const r = canvas.getBoundingClientRect()
+  const px = evt.clientX - r.left
+  const py = evt.clientY - r.top
+  const { plot } = lastView
+  const inside = px >= plot.x && px <= plot.x + plot.w && py >= plot.y && py <= plot.y + plot.h
+  const next = inside ? { px, py } : null
+  const changed =
+    (next === null) !== (cursor === null) ||
+    (next !== null && cursor !== null && (next.px !== cursor.px || next.py !== cursor.py))
+  cursor = next
+  if (changed) schedule()
+}
+function onPointerLeave(): void {
+  if (cursor !== null) {
+    cursor = null
+    schedule()
+  }
 }
 
 let viewportNotifyTimer: ReturnType<typeof setTimeout> | null = null
@@ -436,19 +603,20 @@ function onWheel(evt: WheelEvent): void {
     view.yMin = min
     view.yMax = max
   } else {
-    // X 轴缩放：锚定光标处绝对索引（光标左右两侧比例保持不变）
+    // X 轴缩放：锚定光标处绝对索引（光标左右两侧比例保持不变）；显示域计算后去留白回真实窗口
     const anchor = pxToDataX(p.px)
-    const { xRange } = lastView
+    const { xRange, xFrac } = lastView
     const limit = Math.max(totalAbs(), MIN_SPAN)
     const span = Math.min(Math.max((xRange.max - xRange.min) * factor, MIN_SPAN), limit)
     const leftSpan = (anchor - xRange.min) * factor
-    setFrozenX(anchor - leftSpan, anchor - leftSpan + span)
+    const rw = unpadX(anchor - leftSpan, anchor - leftSpan + span, xFrac)
+    setFrozenX(rw.min, rw.max)
   }
   schedule()
   emitViewportChange()
 }
 
-// 拖拽平移上下文（dragStart 时冻结的基准）
+// 拖拽平移上下文（dragStart 时冻结的基准；xMin/xMax 为显示域）
 interface DragCtx {
   px: number
   py: number
@@ -456,6 +624,7 @@ interface DragCtx {
   plotH: number
   xMin: number
   xMax: number
+  xFrac: number
   yMin: number
   yMax: number
   yAuto: boolean
@@ -474,6 +643,7 @@ function onPointerDown(evt: PointerEvent): void {
     plotH: lastView.plot.h,
     xMin: lastView.xRange.min,
     xMax: lastView.xRange.max,
+    xFrac: lastView.xFrac,
     yMin: lastView.yRange.min,
     yMax: lastView.yRange.max,
     yAuto: view.yAuto
@@ -481,14 +651,16 @@ function onPointerDown(evt: PointerEvent): void {
 }
 
 function onPointerMove(evt: PointerEvent): void {
+  updateCursor(evt)
   if (!dragCtx) return
   const p = clientToPlot(evt)
   if (!p) return
   const dx = p.px - dragCtx.px
   const dy = p.py - dragCtx.py
-  // X 平移：像素位移 → 样本位移（拖左看更老数据）
+  // X 平移：像素位移 → 样本位移（显示域换算后去留白回真实窗口；拖左看更老数据）
   const dsamp = -(dx * (dragCtx.xMax - dragCtx.xMin)) / dragCtx.plotW
-  setFrozenX(dragCtx.xMin + dsamp, dragCtx.xMax + dsamp)
+  const rw = unpadX(dragCtx.xMin + dsamp, dragCtx.xMax + dsamp, dragCtx.xFrac)
+  setFrozenX(rw.min, rw.max)
   // Y 平移：纵向拖动自动退出 autoScale
   if (!dragCtx.yAuto || Math.abs(dy) > 2) {
     if (dragCtx.yAuto) {
@@ -513,6 +685,7 @@ function zoomReset(notify = true): void {
   view.follow = true
   view.span = DEFAULT_SPAN
   view.yAuto = true
+  resetYAuto() // 复位后直接吸附新窗口目标范围，不从旧范围滑入
   schedule()
   if (notify) emitViewportChange(true)
 }
@@ -608,6 +781,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
+    @pointerleave="onPointerLeave"
     @dblclick="zoomReset()"
   >
     <canvas ref="canvasRef" class="sig-canvas" />

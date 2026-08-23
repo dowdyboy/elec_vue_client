@@ -47,6 +47,8 @@ export interface ChartStyle {
   traceAlpha?: number
   /** 左侧刻度带宽 CSS px（最小 40，默认 56；固定宽度不随数据抖动） */
   axisWidth?: number
+  /** 十字光标线颜色（悬停读数功能） */
+  crosshair?: string
 }
 
 export interface ChartBaseProps {

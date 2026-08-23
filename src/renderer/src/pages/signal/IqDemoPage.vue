@@ -89,7 +89,8 @@ watch(adapterKey, (v) => {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        交互：滚轮缩放时间轴（光标锚点）· Shift+滚轮缩放幅值 · 拖拽平移 · 双击或点角标恢复跟随
+        交互：滚轮缩放时间轴（光标锚点）· Shift+滚轮缩放幅值 · 拖拽平移 · 悬停十字光标读数 ·
+        双击或点角标恢复跟随
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
         时域图直接绘制服务端下发的原始 IQ；数据经 <code>adapter</code>（{{

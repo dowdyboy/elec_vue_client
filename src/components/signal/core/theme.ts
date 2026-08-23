@@ -18,6 +18,7 @@ interface FullPreset {
   traceQ: string
   traceAlpha: number
   axisWidth: number
+  crosshair: string
 }
 
 /** 解析后的完整主题（字段全部可用，无 undefined） */
@@ -33,6 +34,7 @@ export interface ResolvedTheme {
   traceQ: string
   traceAlpha: number
   axisWidth: number
+  crosshair: string
   /** 容器内浮层（角标/图例）按明暗归类取文字色 */
   darkLike: boolean
 }
@@ -48,7 +50,8 @@ const DARK: FullPreset = {
   traceI: '#00bcd4',
   traceQ: '#ff4081',
   traceAlpha: 0.85,
-  axisWidth: 56
+  axisWidth: 56,
+  crosshair: '#8b949e'
 }
 
 const LIGHT: FullPreset = {
@@ -62,7 +65,8 @@ const LIGHT: FullPreset = {
   traceI: '#00bcd4',
   traceQ: '#ff4081',
   traceAlpha: 0.85,
-  axisWidth: 56
+  axisWidth: 56,
+  crosshair: '#57606a'
 }
 
 /** 频谱仪经典面板：纯黑底、暗绿栅格、亮黄/青双迹 */
@@ -78,7 +82,8 @@ const SPECTRUM: FullPreset = {
   traceI: '#ffd60a',
   traceQ: '#22d3ee',
   traceAlpha: 0.9,
-  axisWidth: 56
+  axisWidth: 56,
+  crosshair: '#7ee2a8'
 }
 
 const COLOR_KEYS = [
@@ -90,7 +95,8 @@ const COLOR_KEYS = [
   'zeroLine',
   'labelChipBg',
   'traceI',
-  'traceQ'
+  'traceQ',
+  'crosshair'
 ] as const
 
 export function resolveTheme(
