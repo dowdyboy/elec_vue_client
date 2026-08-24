@@ -14,6 +14,7 @@ import {
   drawAxisOverlay,
   drawChip,
   drawPanel,
+  niceTicks,
   snapRangeNice,
   CHIP_H,
   type PlotRect
@@ -412,6 +413,11 @@ function drawOverlay(
   const sy = ov.height / Math.max(1, rect.height)
   ctx.setTransform(sx, 0, 0, sy, 0, 0)
   const t = th.value
+  // X 轴时间单位（sampleRate > 0）：刻度值仍为样本索引域，标签换算为时间
+  const rate = props.sampleRate
+  const timeOn = !!rate && rate > 0
+  const tStep = timeOn ? (xv.max - xv.min) / (rate as number) / 6 : 0
+  const xTicksOverride = buildTimeTicks(xv.min, xv.max)
   drawAxisOverlay(ctx, {
     plot,
     xMin: xv.min,
@@ -421,6 +427,7 @@ function drawOverlay(
     showX: props.xAxis !== false,
     showGrid: props.grid !== false,
     frame: false,
+    xTicksOverride,
     theme: {
       text: t.text,
       grid: t.grid,
@@ -453,7 +460,8 @@ function drawOverlay(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const chipBg = t.labelChipBg
-  const xText = String(Math.round(pxToDataX(cursor.px)))
+  const dispX = pxToDataX(cursor.px)
+  const xText = timeOn ? fmtTime(dispX / (rate as number), tStep) : String(Math.round(dispX))
   drawChip(ctx, cxp, plot.y + plot.h + 3, xText, chipBg, t.text, 'center', {
     min: plot.x,
     max: plot.x + plot.w
@@ -466,7 +474,10 @@ function drawOverlay(
   const smp = sampleAt(cursor.px)
   if (!smp) return
   const fmtVal = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
-  const lines = [`#${smp.idx}`, `I ${fmtVal(smp.i)}`, `Q ${fmtVal(smp.q)}`]
+  const idxLine = timeOn
+    ? `#${smp.idx} · ${fmtTime(dispX / (rate as number), tStep)}`
+    : `#${smp.idx}`
+  const lines = [idxLine, `I ${fmtVal(smp.i)}`, `Q ${fmtVal(smp.q)}`]
   ctx.textAlign = 'left'
   let wMax = 0
   for (const ln of lines) wMax = Math.max(wMax, ctx.measureText(ln).width)
@@ -530,6 +541,36 @@ function sampleAt(px: number): { idx: number; i: number; q: number } | null {
   const { s, e } = lastView.slice
   if (local < s || local >= e) return null
   return { idx: absIdx, i: iBuf[local] ?? 0, q: qBuf[local] ?? 0 }
+}
+
+// ── X 轴时间单位（sampleRate > 0 时启用）──
+/** 数值按步长量级取小数并去掉尾随 0 */
+function trimZeros(v: number, step: number): string {
+  const dec = Math.min(4, Math.max(0, Math.ceil(-Math.log10(Math.max(step, 1e-12)))))
+  const s = v.toFixed(dec)
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
+}
+/** 秒 → 自适应时间文本（µs/ms/s），小数位随刻度步长量级 */
+function fmtTime(seconds: number, stepSeconds: number): string {
+  const a = Math.abs(seconds)
+  if (a >= 1) return `${trimZeros(seconds, stepSeconds)} s`
+  if (a >= 1e-3) return `${trimZeros(seconds * 1e3, stepSeconds * 1e3)} ms`
+  return `${trimZeros(seconds * 1e6, stepSeconds * 1e6)} µs`
+}
+/** 依据采样率构建时间刻度：值仍为样本索引域（供网格定位），labels 为时间文本 */
+function buildTimeTicks(
+  min: number,
+  max: number
+): { values: number[]; labels: string[] } | undefined {
+  const rate = props.sampleRate
+  if (!rate || rate <= 0 || !(max > min)) return undefined
+  const times = niceTicks(min / rate, max / rate, 6)
+  if (!times.length) return undefined
+  const stepT = times.length > 1 ? times[1]! - times[0]! : Math.max((max - min) / rate / 6, 1e-9)
+  return {
+    values: times.map((t) => t * rate),
+    labels: times.map((t) => fmtTime(t, stepT))
+  }
 }
 
 // ── 十字光标 ──

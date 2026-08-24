@@ -73,6 +73,8 @@ export interface IqProps extends ChartBaseProps {
   colors?: [string, string] // [I 颜色, Q 颜色]；未传时取主题预置，style.traceI/Q 可再覆盖
   /** 外观覆盖项，优先级：style > colors > 主题预置 */
   style?: ChartStyle
+  /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
+  sampleRate?: number
   adapter?: IqAdapter
   data?: RawInput | IqNormalized
   /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */

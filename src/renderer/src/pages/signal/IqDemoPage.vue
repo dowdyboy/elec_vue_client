@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { NCard, NSelect, NButton, NEmpty, useMessage } from 'naive-ui'
+import { NCard, NSelect, NButton, NEmpty, NInputNumber, useMessage } from 'naive-ui'
 import IqChart from '@components/signal/IqChart.vue'
 import { iqAdapters } from '@components/signal/core/adapters'
 import type { Theme } from '@components/signal/core/types'
@@ -10,6 +10,7 @@ const message = useMessage()
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const adapterKey = ref<'passthrough' | 'jsonInterleaved'>('passthrough')
 const themeKey = ref<Theme>('spectrum')
+const sampleRate = ref(4096)
 const hasData = ref(false)
 
 function getAdapter(): (raw: unknown) => unknown {
@@ -79,6 +80,14 @@ watch(adapterKey, (v) => {
           ]"
           style="width: 200px"
         />
+        <span>采样率 (Hz)</span>
+        <NInputNumber
+          v-model:value="sampleRate"
+          :min="1"
+          :step="4096"
+          :show-button="false"
+          style="width: 130px"
+        />
         <NButton size="small" @click="onBackToLatest">回到最新</NButton>
         <NButton size="small" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
@@ -101,7 +110,13 @@ watch(adapterKey, (v) => {
     </NCard>
     <NCard content-style="padding: 0">
       <div style="position: relative; height: 420px">
-        <IqChart ref="iqRef" :theme="themeKey" :adapter="getAdapter() as never" :height="420" />
+        <IqChart
+          ref="iqRef"
+          :theme="themeKey"
+          :adapter="getAdapter() as never"
+          :sample-rate="sampleRate"
+          :height="420"
+        />
         <NEmpty
           v-if="!hasData"
           description="暂无数据，请至“Mock 配置”页启动服务…"

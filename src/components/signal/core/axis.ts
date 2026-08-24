@@ -164,10 +164,26 @@ export function drawAxisOverlay(
     showGrid?: boolean
     /** 是否绘制四边边框盒；左轴带模式传 false，改用独立竖直轴线 */
     frame?: boolean
+    /**
+     * 覆盖 X 刻度：values 为绘图坐标域（如样本索引），labels 为显示文本（如时间单位）。
+     * 用于样本索引 ↔ 物理单位换算；缺省按 1/2/5 步进自动取刻度
+     */
+    xTicksOverride?: { values: number[]; labels: string[] }
     theme: AxisTheme
   }
 ): void {
-  const { plot, xMin, xMax, yMin, yMax, showX = true, showGrid = true, frame = true, theme } = opts
+  const {
+    plot,
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    showX = true,
+    showGrid = true,
+    frame = true,
+    xTicksOverride,
+    theme
+  } = opts
   if (plot.w <= 0 || plot.h <= 0 || !(xMax > xMin) || !(yMax > yMin)) return
   ctx.lineWidth = 1
   ctx.font = '11px system-ui, -apple-system, sans-serif'
@@ -179,7 +195,7 @@ export function drawAxisOverlay(
   }
 
   const yTicks = niceTicks(yMin, yMax, 5)
-  const xTicks = showX ? niceTicks(xMin, xMax, 6) : []
+  const xTicks = showX ? (xTicksOverride?.values ?? niceTicks(xMin, xMax, 6)) : []
   const toPxY = (t: number): number => plot.y + plot.h - ((t - yMin) / (yMax - yMin)) * plot.h
   const toPxX = (t: number): number => plot.x + ((t - xMin) / (xMax - xMin)) * plot.w
 
@@ -208,12 +224,13 @@ export function drawAxisOverlay(
 
   // ── X 网格 + 标签（首尾防碰撞）──
   if (showX) {
-    const xStep = niceStep(xMax - xMin, 6)
+    const xStep = xTicksOverride ? 1 : niceStep(xMax - xMin, 6)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
     const labelL = plot.x + 20
     const labelR = plot.x + plot.w - 20
-    for (const t of xTicks) {
+    for (let ti = 0; ti < xTicks.length; ti++) {
+      const t = xTicks[ti]!
       const tx = toPxX(t)
       if (tx < plot.x - 0.5 || tx > plot.x + plot.w + 0.5) continue
       if (showGrid) {
@@ -225,7 +242,8 @@ export function drawAxisOverlay(
       }
       if (tx >= labelL && tx <= labelR) {
         ctx.fillStyle = theme.text
-        ctx.fillText(fmtByStep(t, xStep), tx, plot.y + plot.h + 4)
+        const label = xTicksOverride ? (xTicksOverride.labels[ti] ?? '') : fmtByStep(t, xStep)
+        ctx.fillText(label, tx, plot.y + plot.h + 4)
       }
     }
   }
