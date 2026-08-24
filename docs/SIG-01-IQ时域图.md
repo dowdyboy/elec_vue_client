@@ -20,7 +20,8 @@ ws.onmessage = (e) => iqRef.value.appendData(e.data) // RawInput 任意
 **Adapter**：返回 `{i,q}` 或交织 `Float32Array`；内置 `iqAdapters.passthrough/jsonInterleaved/arrayBuffer/base64`
 
 **Props**：`theme:'light'|'dark'|'auto'|'spectrum'` `mode:'line'|'dots'` `lineWidth` `colors`（可选，未传取主题预置）
-`decimation` `viewport` `axis/xAxis/grid` `sampleRate`（Hz，启用时间轴） `style`（外观覆盖） `exportHandler`（导出交付回调）
+`decimation` `viewport` `axis/xAxis/grid` `sampleRate`（Hz，启用时间轴） `span`（follow 窗宽样本数，默认 4096）
+`style`（外观覆盖） `exportHandler`（导出交付回调）
 
 **外观**：`theme:'light'|'dark'|'auto'|'spectrum'` + `style` 字段级覆盖（优先级 `style > colors > 预置`）
 `spectrum` 为频谱仪经典面板：纯黑底、暗绿栅格、亮黄 I 迹、青色 Q 迹；固定观感不随系统深浅色切换
@@ -47,6 +48,14 @@ interface ChartStyle {
 绘图区内仅网格+波形（无边框盒），波形另在区内左右各内缩约 24px（视窗等效外扩实现，与网格刻度严格对齐，
 避免满幅波形的起止边缘贴边形成「信号墙」）；固定带宽不随数据变化，无逐帧左右抖动
 
+**显示点数机制（三层，各自决定）**：
+- ① 数据到达速率：**服务端**决定——Mock 默认 `pointsPerFrame=2048` × 60fps ≈ 12 万样本/秒，只影响流动快慢
+- ② 视口展示样本数：**组件**决定——follow 模式窗口宽 = `span` prop（默认 4096，≥16，**支持 `v-model:span` 双向**：
+  外部改值实时生效，内部缩放/框选/复位会通过 `update:span` 事件反馈回外部输入框，始终显示当前窗宽）；
+  滚动/框选缩放会改写，范围 16 ~ 缓冲上限
+- ③ 实际绘制点数：**组件**决定——窗口内样本 `minmax` 抽稀到「每像素列约 1 点」（`targetPoints=绘图区像素宽`，
+  顶点 ≤ 2×像素宽），与数据速率/窗宽无关，是高性能关键
+
 **十字光标**：悬停绘图区显示虚线十字 + 三处读数——X 样本索引芯片（底部槽）、Y 幅值芯片（左带）、
 浮动框显示最近采样点实际 I/Q 值；跟随/暂停状态均可用；颜色可经 `style.crosshair` 覆盖
 
@@ -64,7 +73,8 @@ interface ChartStyle {
 - 微调：Alt+按住标记拖拽（位移超 4px 判定为拖拽）
 - 读数：右上角面板逐标记显示 索引·时间·I/Q；恰好两个标记时附加 Δ 样本 / Δt / 1/Δt 频率
 - 刷新（跟随）状态下不允许标记与拖拽平移（始终展示最新数据），仅滚轮/框选缩放（缩放即进入暂停态）
-- 左键双击：暂停 ⇆ 恢复刷新；恢复时清除全部标记；清空数据时同样重置
+- 左键双击 / 角标「恢复跟随」：恢复刷新并清除全部标记，**保留当前缩放窗宽**；
+  `zoomReset()`（「回到最新」）与清空数据才将窗宽复位为 `span` 默认值
 
 **导出**：`exportPNG()` 当前视图截图（波形+轴+图例合成，导出前同步重绘确保 WebGL 帧有效）；
 `exportCSV()` 可见窗口原始样本（超 50 万行等步长抽稀；`sampleRate` 存在时附 `time_s` 列）；
@@ -80,6 +90,12 @@ interface ChartStyle {
 新帧在入口直接丢弃（缓冲零增长、淘汰永不发生，视口像素级静止，暂停期间仍可缩放/平移回看历史），
 恢复跟随（双击/角标）后自动继续接收；若冻结窗曾被外部视口指向已淘汰区域，视口锚定最老可用数据
 
-**内部**：环形 2M 点，`minmax` 抽稀至 `2×px`，`WebGL2` 双 `LINE_STRIP`；
+**单元测试**：`npm test`（vitest）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化）、
+`yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/reset）、
+`pyramid`（整树重建随机区间/增量追加/按桶抽稀与旧实现逐值一致/扩容重建）
+
+**内部**：环形 2M 点；**min/max 极值金字塔**（`core/pyramid.ts`，默认 16 样本/块，多层预聚合，含 min/max 下标以保持原索引顺序）——
+Y 轴自适应统计与按桶抽稀均为 O(块数)：200 万点全窗下 Y 统计 ~0.001ms、抽稀 ~0.75ms（旧全扫描分别 ~4.3ms/~3.4ms）；
+追加数据仅增量更新受影响块，扩容/环形淘汰后整树重建；`WebGL2` 双 `LINE_STRIP`；
 GL 视口/scissor 与 overlay 轴层均按「背板设备像素 ÷ 元素 CSS 实测尺寸」做真实比例映射，
 页面缩放/系统非整数缩放场景下波形与网格严格对齐（不依赖全局 DPR 缓存）

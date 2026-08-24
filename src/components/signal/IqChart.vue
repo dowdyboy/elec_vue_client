@@ -10,15 +10,9 @@
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { createLineRenderer, withAlpha, hexToRgba, type LineRenderer } from './core/gl'
 import { iqAdapters } from './core/adapters'
-import {
-  drawAxisOverlay,
-  drawChip,
-  drawPanel,
-  niceTicks,
-  snapRangeNice,
-  CHIP_H,
-  type PlotRect
-} from './core/axis'
+import { drawAxisOverlay, drawChip, drawPanel, niceTicks, CHIP_H, type PlotRect } from './core/axis'
+import { MinMaxPyramid } from './core/pyramid'
+import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
 import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
 import { useGlChart } from './composables/useGlChart'
@@ -29,6 +23,7 @@ const props = withDefaults(defineProps<IqProps>(), {
   fpsLimit: 60,
   mode: 'line',
   lineWidth: 1,
+  span: 4096,
   viewport: undefined,
   adapter: undefined,
   data: undefined,
@@ -41,6 +36,7 @@ const emit = defineEmits<{
   (e: 'error', msg: string): void
   (e: 'viewportChange', v: IqViewInfo): void
   (e: 'exported', p: { kind: 'png' | 'csv'; filename: string }): void
+  (e: 'update:span', span: number): void
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -75,6 +71,9 @@ let dataLen = 0
 // 已丢弃的最老样本数：绝对索引 = dropped + 缓冲下标。
 // 视口用绝对索引表达，冻结视图不受环形丢数据影响
 let dropped = 0
+// 极值金字塔：区间极值/按桶抽稀 O(块数) 替代每帧全量扫描；结构变化后需整树重建
+const pyr = new MinMaxPyramid(MAX_POINTS)
+let pyrDirty = true
 function totalAbs(): number {
   return dropped + dataLen
 }
@@ -88,14 +87,16 @@ function ensureCapacity(n: number): void {
   nq.set(qBuf.subarray(0, dataLen))
   iBuf = ni
   qBuf = nq
+  pyrDirty = true // 数据拷贝到新缓冲，金字塔需重建
 }
 
-/** 环形丢老：保留最近 keep 条，累计 dropped */
+/** 环形丢老：保留最近 keep 条，累计 dropped；数据搬移后需重建金字塔 */
 function compact(keep: number): void {
   dropped += dataLen - keep
   iBuf.copyWithin(0, dataLen - keep, dataLen)
   qBuf.copyWithin(0, dataLen - keep, dataLen)
   dataLen = keep
+  pyrDirty = true
 }
 
 function normalize(raw: unknown): IqNormalized | null {
@@ -119,6 +120,7 @@ function pushNormalized(n: IqNormalized): void {
   // 完全暂停：冻结（非跟随）期间在入口丢弃新帧——
   // 缓冲零增长、环形淘汰永不发生，冻结窗内容像素级静止；恢复跟随（zoomReset）后自动继续接收
   if (!view.follow) return
+  const prevLen = dataLen
   if (n instanceof Float32Array) {
     // 交织 [I0,Q0,I1,Q1...]
     const pairs = Math.floor(n.length / 2)
@@ -139,6 +141,13 @@ function pushNormalized(n: IqNormalized): void {
       dataLen++
     }
   }
+  // 维护金字塔：结构变化（扩容/淘汰）整树重建，否则增量更新受影响块
+  if (pyrDirty) {
+    pyr.rebuild(iBuf, qBuf, dataLen)
+    pyrDirty = false
+  } else {
+    pyr.appendRange(iBuf, qBuf, prevLen, dataLen)
+  }
   schedule()
 }
 
@@ -146,13 +155,23 @@ function pushNormalized(n: IqNormalized): void {
 // follow=true：窗口吸附最新数据；任何缩放/平移后 follow=false（冻结），数据从视图下方流过
 const view = reactive({
   follow: true,
-  span: DEFAULT_SPAN, // 当前窗宽（样本数），follow 与缩放共用
+  span: Math.max(MIN_SPAN, props.span), // 当前窗宽（样本数），follow 与缩放共用；初值/复位取 props.span
   xMin: 0, // 冻结时的绝对索引范围
   xMax: DEFAULT_SPAN,
   yAuto: true,
   yMin: -1,
   yMax: 1
 })
+
+// 调用方运行时修改窗宽：跟随状态下立即生效并重绘
+watch(
+  () => props.span,
+  (v) => {
+    if (v === undefined) return
+    view.span = Math.max(MIN_SPAN, v)
+    if (view.follow) schedule()
+  }
+)
 
 // 迹线可见性：点击图例切换；隐藏的通道不参与绘制与 Y 轴自适应统计
 const traceVisible = reactive({ i: true, q: true })
@@ -193,6 +212,22 @@ function setFrozenX(min: number, max: number): void {
   view.span = span
   view.xMin = min
   view.xMax = min + span
+  emitSpanChange()
+}
+
+let spanNotifyTimer: ReturnType<typeof setTimeout> | null = null
+/** 窗宽变化反馈（v-model:span 双向）：节流上报当前视口窗宽 */
+function emitSpanChange(immediate = false): void {
+  if (spanNotifyTimer) {
+    clearTimeout(spanNotifyTimer)
+    spanNotifyTimer = null
+  }
+  const send = (): void => {
+    spanNotifyTimer = null
+    emit('update:span', Math.max(MIN_SPAN, Math.round(view.span)))
+  }
+  if (immediate) send()
+  else spanNotifyTimer = setTimeout(send, 150)
 }
 
 function resolveXRange(): { min: number; max: number } {
@@ -214,94 +249,39 @@ function resolveXRange(): { min: number; max: number } {
   return { min, max }
 }
 
-// 抽稀（主线程简版 minmax，按原索引排序避免折线交叉伪影；大数据可移入 Worker）
-function decimate(arr: Float32Array, len: number, target: number): Float32Array {
-  if (!props.decimation || len <= target) return arr.subarray(0, len)
-  const bucket = len / target
-  const out = new Float32Array(target * 2)
-  let oi = 0
-  for (let i = 0; i < target; i++) {
-    const s = Math.floor(i * bucket)
-    const e = Math.floor((i + 1) * bucket)
-    let min = Infinity,
-      max = -Infinity
-    let minIdx = s,
-      maxIdx = s
-    for (let j = s; j < e && j < len; j++) {
-      const v = arr[j]
-      if (v < min) {
-        min = v
-        minIdx = j
-      }
-      if (v > max) {
-        max = v
-        maxIdx = j
-      }
-    }
-    if (minIdx < maxIdx) {
-      out[oi++] = min
-      out[oi++] = max
-    } else {
-      out[oi++] = max
-      out[oi++] = min
-    }
-  }
-  return out.subarray(0, oi)
-}
-
 // ── 自动 Y 轴平滑（即时扩张 / 慢速收缩）──
-// 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；
-// 示波器通用解法：出现新极值立即扩入当前范围（永不裁剪波形），数据回落后缓慢收敛
-const Y_RELEASE = 0.08 // 收缩速度：每帧向目标靠拢的比例（九成幅度约半秒内收敛，刻度轻微呼吸后稳定）
-let yAutoCur: { min: number; max: number } | null = null // 平滑后的当前自动范围；null=待初始化/需重置
+// 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；见 core/yauto.ts
+const yAuto = new YAutoScaler()
 
-function computeAutoYTarget(s: number, e: number): { min: number; max: number } {
-  if (e <= s) return { min: -1, max: 1 }
-  let mn = Infinity,
-    mx = -Infinity
-  for (let i = s; i < e; i++) {
-    if (traceVisible.i) {
-      const a = iBuf[i]
-      if (a < mn) mn = a
-      if (a > mx) mx = a
-    }
-    if (traceVisible.q) {
-      const b = qBuf[i]
-      if (b < mn) mn = b
-      if (b > mx) mx = b
-    }
+/** 可见窗口真实极值（尊重图例显隐通道）；无效返回 null */
+function computeVisibleMM(s: number, e: number): { min: number; max: number } | null {
+  if (e <= s) return null
+  const mm = pyr.query(iBuf, qBuf, s, e)
+  if (!mm) return null
+  let mn = Infinity
+  let mx = -Infinity
+  if (traceVisible.i) {
+    if (mm.minI < mn) mn = mm.minI
+    if (mm.maxI > mx) mx = mm.maxI
   }
-  if (!isFinite(mn) || !isFinite(mx)) return { min: -1, max: 1 }
-  // 居中 + 25% 余量后做档位量化：向外吸附到刻度步进族，
-  // 吸收逐帧随机的极值波动（稳态下目标恒定 → 刻度完全静止，跨档时才离散更新）
-  const cx = (mn + mx) / 2
-  const half = Math.max((mx - mn) / 2, 1e-3) * 1.25
-  return snapRangeNice(cx - half, cx + half)
+  if (traceVisible.q) {
+    if (mm.minQ < mn) mn = mm.minQ
+    if (mm.maxQ > mx) mx = mm.maxQ
+  }
+  if (!isFinite(mn)) return null
+  return { min: mn, max: mx }
 }
 
 /** 重置自动 Y 轴平滑状态（清空数据/切换 yAuto 等），下一帧直接吸附目标 */
 function resetYAuto(): void {
-  yAutoCur = null
+  yAuto.reset()
 }
 
 function resolveYRange(s: number, e: number): { min: number; max: number } {
   if (!view.yAuto) return { min: view.yMin, max: view.yMax }
-  const target = computeAutoYTarget(s, e)
-  if (!yAutoCur) {
-    yAutoCur = { ...target }
-    return { ...target }
-  }
-  const cur = yAutoCur
-  // 非对称更新：新极值即时扩入（含目标自带的 25% 余量，保证不裁剪）；富余则缓慢回落
-  if (target.min < cur.min) cur.min = target.min
-  else cur.min += (target.min - cur.min) * Y_RELEASE
-  if (target.max > cur.max) cur.max = target.max
-  else cur.max += (target.max - cur.max) * Y_RELEASE
-  // 收敛吸附：残差小于目标跨度千分之一时贴合，避免无限爬行导致刻度数字微颤
-  const tSpan = Math.abs(target.max - target.min)
-  if (Math.abs(cur.min - target.min) < tSpan * 1e-3) cur.min = target.min
-  if (Math.abs(cur.max - target.max) < tSpan * 1e-3) cur.max = target.max
-  return { min: cur.min, max: cur.max }
+  const mm = computeVisibleMM(s, e)
+  if (!mm) return { min: -1, max: 1 }
+  return yAuto.resolve(mm.min, mm.max)
 }
 
 // 绘图区（CSS px）：左侧固定刻度带 + 底部 X 刻度槽；Y 芯片+竖直轴线钉在组件最左，与绘图区间留空隙
@@ -442,10 +422,16 @@ function draw(): void {
   const xrView = { min: xr.min - padData, max: xr.max + padData }
   lastView = { xRange: xrView, yRange: yr, plot, xFrac, slice: { s, e } }
   const targetPoints = Math.max(1, Math.floor(plot.w))
-  const iSlice = iBuf.subarray(s, e)
-  const qSlice = qBuf.subarray(s, e)
-  const iDec = decimate(iSlice, len, targetPoints)
-  const qDec = decimate(qSlice, len, targetPoints)
+  // 抽稀：窗口小于像素宽时直接用原始切片；否则走极值金字塔按桶 minmax（保持原索引顺序）
+  let iDec: Float32Array
+  let qDec: Float32Array
+  if (!props.decimation || len <= targetPoints) {
+    iDec = iBuf.subarray(s, e)
+    qDec = qBuf.subarray(s, e)
+  } else {
+    iDec = pyr.bucketChannel(iBuf, qBuf, s, e, targetPoints, 0)
+    qDec = pyr.bucketChannel(iBuf, qBuf, s, e, targetPoints, 1)
+  }
   // 抽稀索引空间同变换：idx=0 / idx=N-1 对齐 f 与 1-f 像素分数（与采样值域严格一致）
   const nIdx = Math.max(1, iDec.length - 1)
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
@@ -988,7 +974,7 @@ function onPointerCancel(evt: PointerEvent): void {
   dragCtx = null
 }
 
-/** 左键双击：暂停 ⇆ 恢复刷新；恢复刷新时清除全部标记 */
+/** 左键双击：暂停 ⇆ 恢复刷新；恢复刷新时清除全部标记、保留当前缩放窗宽 */
 function onDblClick(): void {
   if (view.follow) {
     const xr = resolveXRange()
@@ -996,19 +982,32 @@ function onDblClick(): void {
     schedule()
     emitViewportChange(true)
   } else {
-    zoomReset()
+    resumeFollow()
   }
+}
+
+/** 恢复跟随：保留当前缩放窗宽，清除标记；双击/角标使用 */
+function resumeFollow(): void {
+  view.follow = true
+  view.yAuto = true
+  markers = []
+  markerDrag = -1
+  menu.show = false
+  resetYAuto()
+  schedule()
+  emitViewportChange(true)
 }
 
 function zoomReset(notify = true): void {
   view.follow = true
-  view.span = DEFAULT_SPAN
+  view.span = Math.max(MIN_SPAN, props.span)
   view.yAuto = true
   markers = []
   markerDrag = -1
   menu.show = false
   resetYAuto() // 复位后直接吸附新窗口目标范围，不从旧范围滑入
   schedule()
+  emitSpanChange(notify)
   if (notify) emitViewportChange(true)
 }
 
@@ -1155,6 +1154,10 @@ onUnmounted(() => {
     clearTimeout(viewportNotifyTimer)
     viewportNotifyTimer = null
   }
+  if (spanNotifyTimer) {
+    clearTimeout(spanNotifyTimer)
+    spanNotifyTimer = null
+  }
 })
 
 watch(
@@ -1181,6 +1184,7 @@ function clear(needDraw = true): void {
   dropped = 0
   markers = []
   markerDrag = -1
+  pyrDirty = true // 数据清空，下次推流重建金字塔
   zoomReset(false)
   if (needDraw) draw()
 }
@@ -1212,7 +1216,12 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   >
     <canvas ref="canvasRef" class="sig-canvas" />
     <canvas ref="overlayRef" class="sig-overlay" />
-    <div v-if="!view.follow" class="sig-follow-badge" title="恢复跟随最新数据" @click="zoomReset()">
+    <div
+      v-if="!view.follow"
+      class="sig-follow-badge"
+      title="恢复跟随最新数据（保留当前缩放窗宽）"
+      @click="resumeFollow()"
+    >
       已暂停跟随 · 双击恢复
     </div>
     <div class="sig-legend" title="点击切换迹线显隐">

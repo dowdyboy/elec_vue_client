@@ -85,6 +85,8 @@ export interface IqProps extends ChartBaseProps {
   style?: ChartStyle
   /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
   sampleRate?: number
+  /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
+  span?: number
   /**
    * 导出交付回调：提供后 PNG/CSV 完全交由宿主持久化（组件不再内置浏览器下载，
    * 含未配置目录等场景的回退也由宿主负责）；未提供时组件回退 <a download> 行为
