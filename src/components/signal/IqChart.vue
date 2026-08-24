@@ -11,7 +11,7 @@ import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from
 import { createLineRenderer, withAlpha, hexToRgba, type LineRenderer } from './core/gl'
 import { iqAdapters } from './core/adapters'
 import { drawAxisOverlay, drawChip, drawPanel, niceTicks, CHIP_H, type PlotRect } from './core/axis'
-import { MinMaxPyramid } from './core/pyramid'
+import { MinMaxPyramid, type RangeStats } from './core/pyramid'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
 import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
@@ -521,6 +521,39 @@ function drawOverlay(
     ctx.restore()
   }
 
+  // ── 窗口自动测量（暂停态；Vpp/均值/RMS，仅显示可见通道）──
+  if (!view.follow) {
+    const st = windowStats()
+    if (st) {
+      ctx.font = '11px system-ui, -apple-system, sans-serif'
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      const fmt3 = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+      const lines = [`窗口 ${st.count} 样本`]
+      if (traceVisible.i) {
+        lines.push(
+          `I  Vpp ${(st.maxI - st.minI).toFixed(3)}  均值 ${fmt3(st.meanI)}  RMS ${st.rmsI.toFixed(3)}`
+        )
+      }
+      if (traceVisible.q) {
+        lines.push(
+          `Q  Vpp ${(st.maxQ - st.minQ).toFixed(3)}  均值 ${fmt3(st.meanQ)}  RMS ${st.rmsQ.toFixed(3)}`
+        )
+      }
+      let wMax = 0
+      for (const ln of lines) wMax = Math.max(wMax, ctx.measureText(ln).width)
+      const padX = 8
+      const lineH = 14
+      const bw = Math.ceil(wMax) + padX * 2
+      const bh = lines.length * lineH + 6
+      const bx = plot.x + 8
+      const byC = plot.y + 34 // 暂停角标下方
+      drawPanel(ctx, bx, byC, bw, bh, t.labelChipBg)
+      ctx.fillStyle = t.text
+      lines.forEach((ln, li) => ctx.fillText(ln, bx + padX, byC + 3 + lineH * li + lineH / 2))
+    }
+  }
+
   // ── 测量标记（锚定样本索引，随缩放平移保持数据位置；数量不限）──
   if (markers.length > 0) {
     ctx.font = '11px system-ui, -apple-system, sans-serif'
@@ -692,6 +725,20 @@ function sampleAt(px: number): { idx: number; i: number; q: number } | null {
   const { s, e } = lastView.slice
   if (local < s || local >= e) return null
   return { idx: absIdx, i: iBuf[local] ?? 0, q: qBuf[local] ?? 0 }
+}
+
+// ── 窗口自动测量（暂停态）──
+let statsKey = ''
+let statsCache: RangeStats | null = null
+/** 暂停态计算可见窗口统计（Vpp/均值/RMS，金字塔 O(块数)）；按窗口切片缓存；跟随态返回 null */
+function windowStats(): RangeStats | null {
+  if (!lastView || view.follow) return null
+  const { s, e } = lastView.slice
+  const key = `${s}:${e}`
+  if (statsKey === key) return statsCache
+  statsKey = key
+  statsCache = pyr.queryStats(iBuf, qBuf, s, e)
+  return statsCache
 }
 
 // ── X 轴时间单位（sampleRate > 0 时启用）──

@@ -173,6 +173,50 @@ describe('MinMaxPyramid', () => {
     expect(got!.minQ).toBeCloseTo(exp.minQ, 5)
   })
 
+  it('queryStats 均值/RMS 与暴力一致', () => {
+    const CAP = 1 << 16
+    const i = new Float32Array(CAP)
+    const q = new Float32Array(CAP)
+    const rnd = makeRng(2024)
+    const N = 50000
+    for (let j = 0; j < N; j++) {
+      i[j] = Math.sin(j * 0.01) + rnd() * 0.3
+      q[j] = Math.cos(j * 0.013) + rnd() * 0.3
+    }
+    const pyr = new MinMaxPyramid(CAP)
+    pyr.rebuild(i, q, N)
+    for (let t = 0; t < 30; t++) {
+      const a = Math.floor(rnd() * N * 0.7)
+      const b = Math.min(N, a + 1 + Math.floor(rnd() * 20000))
+      const st = pyr.queryStats(i, q, a, b)
+      // 暴力均值/RMS
+      let sumI = 0
+      let sumSqI = 0
+      let sumQ = 0
+      let sumSqQ = 0
+      let mnI = Infinity
+      let mxI = -Infinity
+      for (let j = a; j < b; j++) {
+        const v = i[j]!
+        const w = q[j]!
+        sumI += v
+        sumSqI += v * v
+        sumQ += w
+        sumSqQ += w * w
+        if (v < mnI) mnI = v
+        if (v > mxI) mxI = v
+      }
+      const n = b - a
+      expect(st!.count).toBe(n)
+      expect(st!.minI).toBeCloseTo(mnI, 4)
+      expect(st!.maxI).toBeCloseTo(mxI, 4)
+      expect(st!.meanI).toBeCloseTo(sumI / n, 4)
+      expect(st!.rmsI).toBeCloseTo(Math.sqrt(sumSqI / n), 4)
+      expect(st!.meanQ).toBeCloseTo(sumQ / n, 4)
+      expect(st!.rmsQ).toBeCloseTo(Math.sqrt(sumSqQ / n), 4)
+    }
+  })
+
   it('无效区间返回 null / 空数组', () => {
     const i = new Float32Array(64)
     const q = new Float32Array(64)

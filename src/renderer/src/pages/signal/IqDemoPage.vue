@@ -11,6 +11,7 @@ const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const adapterKey = ref<'passthrough' | 'jsonInterleaved'>('passthrough')
 const themeKey = ref<Theme>('spectrum')
 const sampleRate = ref(4096)
+const spanSamples = ref(4096)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
 
@@ -136,6 +137,14 @@ watch(adapterKey, (v) => {
           :show-button="false"
           style="width: 130px"
         />
+        <span>窗宽 (样本)</span>
+        <NInputNumber
+          v-model:value="spanSamples"
+          :min="16"
+          :step="4096"
+          :show-button="false"
+          style="width: 130px"
+        />
         <span>导出目录</span>
         <NInput :value="exportDir" readonly placeholder="默认下载目录" style="width: 220px" />
         <NButton size="small" @click="onPickExportDir">选择…</NButton>
@@ -151,9 +160,9 @@ watch(adapterKey, (v) => {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        交互：滚轮缩放（光标锚点）· Shift+滚轮缩放幅值 · 暂停后拖拽平移 / Shift+框选放大 ·
-        Alt+点击添加标记（点标记即清除）/ 右键菜单批量管理 · 双击暂停⇆恢复（恢复清除标记）·
-        悬停十字光标读数 · 点击图例切换迹线
+        交互：滚轮缩放（光标锚点）· Shift+滚轮缩放幅值 · 暂停后拖拽平移 / Shift+框选放大 /
+        窗口自动测量 · Alt+点击添加标记（点标记即清除）/ 右键菜单批量管理 ·
+        双击暂停⇆恢复（恢复清除标记）· 悬停十字光标读数 · 点击图例切换迹线
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
         时域图直接绘制服务端下发的原始 IQ；数据经 <code>adapter</code>（{{
@@ -169,6 +178,7 @@ watch(adapterKey, (v) => {
       <div style="position: relative; height: 420px">
         <IqChart
           ref="iqRef"
+          v-model:span="spanSamples"
           :theme="themeKey"
           :adapter="getAdapter() as never"
           :sample-rate="sampleRate"

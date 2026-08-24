@@ -25,6 +25,10 @@ interface LevelArrays {
   maxQ: Float32Array
   qMinIdx: Float32Array
   qMaxIdx: Float32Array
+  sumI: Float32Array
+  sumSqI: Float32Array
+  sumQ: Float32Array
+  sumSqQ: Float32Array
 }
 
 export interface RangeMM {
@@ -32,6 +36,15 @@ export interface RangeMM {
   maxI: number
   minQ: number
   maxQ: number
+}
+
+/** 区间统计：极值 + 均值/RMS（供自动测量） */
+export interface RangeStats extends RangeMM {
+  count: number
+  meanI: number
+  rmsI: number
+  meanQ: number
+  rmsQ: number
 }
 
 export class MinMaxPyramid {
@@ -67,7 +80,11 @@ export class MinMaxPyramid {
       minQ: mk(),
       maxQ: mk(),
       qMinIdx: mk(),
-      qMaxIdx: mk()
+      qMaxIdx: mk(),
+      sumI: mk(),
+      sumSqI: mk(),
+      sumQ: mk(),
+      sumSqQ: mk()
     }
   }
 
@@ -90,6 +107,10 @@ export class MinMaxPyramid {
         let mxIi = 0
         let mnQi = 0
         let mxQi = 0
+        let sumI = 0
+        let sumSqI = 0
+        let sumQ = 0
+        let sumSqQ = 0
         if (child === null) {
           for (let j = s; j < e; j++) {
             const v = i[j] ?? 0
@@ -101,6 +122,8 @@ export class MinMaxPyramid {
               mxI = v
               mxIi = j
             }
+            sumI += v
+            sumSqI += v * v
             const w = q[j] ?? 0
             if (w < mnQ) {
               mnQ = w
@@ -110,6 +133,8 @@ export class MinMaxPyramid {
               mxQ = w
               mxQi = j
             }
+            sumQ += w
+            sumSqQ += w * w
           }
         } else {
           const cs = child.bs
@@ -135,6 +160,10 @@ export class MinMaxPyramid {
               mxQ = d1
               mxQi = child.qMaxIdx[b0] ?? 0
             }
+            sumI += child.sumI[b0] ?? 0
+            sumSqI += child.sumSqI[b0] ?? 0
+            sumQ += child.sumQ[b0] ?? 0
+            sumSqQ += child.sumSqQ[b0] ?? 0
           }
         }
         lv.minI[b] = mnI
@@ -145,6 +174,10 @@ export class MinMaxPyramid {
         lv.maxQ[b] = mxQ
         lv.qMinIdx[b] = mnQi
         lv.qMaxIdx[b] = mxQi
+        lv.sumI[b] = sumI
+        lv.sumSqI[b] = sumSqI
+        lv.sumQ[b] = sumQ
+        lv.sumSqQ[b] = sumSqQ
       }
     }
   }
@@ -173,6 +206,10 @@ export class MinMaxPyramid {
         let mxIi = 0
         let mnQi = 0
         let mxQi = 0
+        let sumI = 0
+        let sumSqI = 0
+        let sumQ = 0
+        let sumSqQ = 0
         if (child === null) {
           for (let j = s; j < e; j++) {
             const v = i[j] ?? 0
@@ -184,6 +221,8 @@ export class MinMaxPyramid {
               mxI = v
               mxIi = j
             }
+            sumI += v
+            sumSqI += v * v
             const w = q[j] ?? 0
             if (w < mnQ) {
               mnQ = w
@@ -193,6 +232,8 @@ export class MinMaxPyramid {
               mxQ = w
               mxQi = j
             }
+            sumQ += w
+            sumSqQ += w * w
           }
         } else {
           const cs = child.bs
@@ -218,6 +259,10 @@ export class MinMaxPyramid {
               mxQ = d1
               mxQi = child.qMaxIdx[b0] ?? 0
             }
+            sumI += child.sumI[b0] ?? 0
+            sumSqI += child.sumSqI[b0] ?? 0
+            sumQ += child.sumQ[b0] ?? 0
+            sumSqQ += child.sumSqQ[b0] ?? 0
           }
         }
         lv.minI[b] = mnI
@@ -228,6 +273,10 @@ export class MinMaxPyramid {
         lv.maxQ[b] = mxQ
         lv.qMinIdx[b] = mnQi
         lv.qMaxIdx[b] = mxQi
+        lv.sumI[b] = sumI
+        lv.sumSqI[b] = sumSqI
+        lv.sumQ[b] = sumQ
+        lv.sumSqQ[b] = sumSqQ
       }
     }
   }
@@ -262,6 +311,64 @@ export class MinMaxPyramid {
     })
     if (!isFinite(minI)) return null
     return { minI, maxI, minQ, maxQ }
+  }
+
+  /** 区间统计：极值 + 均值/RMS（供自动测量）；区间无效返回 null */
+  queryStats(i: Float32Array, q: Float32Array, start: number, end: number): RangeStats | null {
+    if (end <= start) return null
+    const s = Math.max(0, start | 0)
+    const e = Math.min(i.length, end | 0)
+    if (e <= s) return null
+    let minI = Infinity
+    let maxI = -Infinity
+    let minQ = Infinity
+    let maxQ = -Infinity
+    let sumI = 0
+    let sumSqI = 0
+    let sumQ = 0
+    let sumSqQ = 0
+    let count = 0
+    this.fold(s, e, (lo, hi, lv) => {
+      if (lv) {
+        const b = Math.floor(lo / lv.bs)
+        if (lv.minI[b]! < minI) minI = lv.minI[b]!
+        if (lv.maxI[b]! > maxI) maxI = lv.maxI[b]!
+        if (lv.minQ[b]! < minQ) minQ = lv.minQ[b]!
+        if (lv.maxQ[b]! > maxQ) maxQ = lv.maxQ[b]!
+        sumI += lv.sumI[b] ?? 0
+        sumSqI += lv.sumSqI[b] ?? 0
+        sumQ += lv.sumQ[b] ?? 0
+        sumSqQ += lv.sumSqQ[b] ?? 0
+        count += lv.bs
+      } else {
+        for (let j = lo; j < hi; j++) {
+          const v = i[j]!
+          const w = q[j]!
+          if (v < minI) minI = v
+          if (v > maxI) maxI = v
+          if (w < minQ) minQ = w
+          if (w > maxQ) maxQ = w
+          sumI += v
+          sumSqI += v * v
+          sumQ += w
+          sumSqQ += w * w
+          count++
+        }
+      }
+    })
+    if (!isFinite(minI) || count <= 0) return null
+    const n = count
+    return {
+      minI,
+      maxI,
+      minQ,
+      maxQ,
+      count: n,
+      meanI: sumI / n,
+      rmsI: Math.sqrt(Math.max(0, sumSqI / n)),
+      meanQ: sumQ / n,
+      rmsQ: Math.sqrt(Math.max(0, sumSqQ / n))
+    }
   }
 
   /**
