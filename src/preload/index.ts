@@ -14,12 +14,19 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type { ChildWindowMode } from '../main/features/windowManager'
 import type { NotificationOptions } from '../main/features/notification'
 import type { ThemeSource } from '../main/features/theme'
+import type { ShellOpenResult } from '../main/features/shellOps'
+import type { DownloadRecord } from '../main/features/download'
 
 /** 事件监听辅助：统一封装"注册监听 + 返回取消函数" */
 function on<T>(channel: string, callback: (payload: T) => void): () => void {
   const listener = (_event: IpcRendererEvent, payload: T): void => callback(payload)
   ipcRenderer.on(channel, listener)
   return () => ipcRenderer.removeListener(channel, listener)
+}
+
+/** invoke 辅助：泛型封装，把主进程 handle 的返回类型带给调用处 */
+function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<T>
 }
 
 /** 串口设备信息（主进程 select-serial-port 事件推送，见 serialPort.ts） */
@@ -146,6 +153,9 @@ const api = {
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
     writeFile: (filePath: string, content: string) =>
       ipcRenderer.invoke('fs:writeFile', filePath, content),
+    /** 写入二进制文件（base64 输入，自动创建父目录；PNG 导出等场景） */
+    writeFileBase64: (filePath: string, base64: string) =>
+      ipcRenderer.invoke('fs:writeFileBase64', filePath, base64),
     listDir: (dirPath: string) => ipcRenderer.invoke('fs:listDir', dirPath),
     joinPath: (base: string, name: string) => ipcRenderer.invoke('fs:joinPath', base, name),
     /** 拖拽文件 → 真实系统路径（webUtils 在 preload 中可用） */
@@ -343,7 +353,7 @@ const api = {
     resume: (id: string) => ipcRenderer.invoke('download:resume', id),
     cancel: (id: string) => ipcRenderer.invoke('download:cancel', id),
     /** 回放下载列表（活动 + 历史缓存，页面挂载时拉取，见 download.ts） */
-    list: () => ipcRenderer.invoke('download:list'),
+    list: () => invoke<DownloadRecord[]>('download:list'),
     onProgress: (cb: (data: unknown) => void) => on('download:progress', cb),
     onDone: (cb: (data: unknown) => void) => on('download:done', cb),
     /** 暂停/恢复状态推送（Electron 事件不映射 paused，主进程主动推送，见 download.ts） */
@@ -375,7 +385,7 @@ const api = {
 
   /** ── shell 文件操作（主进程: shellOps.ts）── */
   shell: {
-    openPath: (target: string) => ipcRenderer.invoke('shell:openPath', target),
+    openPath: (target: string) => invoke<ShellOpenResult>('shell:openPath', target),
     showInFolder: (target: string) => ipcRenderer.invoke('shell:showInFolder', target),
     trash: (target: string) => ipcRenderer.invoke('shell:trash', target),
     beep: () => ipcRenderer.invoke('shell:beep')
@@ -534,6 +544,38 @@ const api = {
     getAll: () => ipcRenderer.invoke('paths:getAll'),
     set: (key: string, value: string) => ipcRenderer.invoke('paths:set', key, value),
     getAppPath: () => ipcRenderer.invoke('paths:getAppPath')
+  },
+
+  /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由 SignalConfigPage 统一）── */
+  signalAnalysis: {
+    start: (opts?: { mode?: 'local' | 'remote'; port?: number; remoteUrl?: string }) =>
+      invoke<{ ok: boolean; mode?: string; port?: number; remoteUrl?: string; error?: string }>(
+        'signalAnalysis:start',
+        opts
+      ),
+    stop: () => invoke<{ ok: boolean }>('signalAnalysis:stop'),
+    getStatus: () =>
+      invoke<{ running: boolean; mode: string; port: number; remoteUrl?: string; config: unknown }>(
+        'signalAnalysis:getStatus'
+      ),
+    setConfig: (cfg: unknown) =>
+      invoke<{ ok: boolean; remoteUrl?: string; config?: unknown }>(
+        'signalAnalysis:setConfig',
+        cfg
+      ),
+    trigger: () => invoke<{ ok: boolean }>('signalAnalysis:trigger'),
+    onFrame: (cb: (frame: unknown) => void) => on('signal:analysis', cb),
+    onStatus: (cb: (s: { connected: boolean; error?: string; url?: string }) => void) =>
+      on('signal:analysis:status', cb)
+  },
+
+  /** ── 远端Mock内置（与本地同端口互斥，演示一键远程）── */
+  remoteMock: {
+    start: (opts?: { port?: number; config?: unknown }) =>
+      invoke<{ ok: boolean; port?: number; error?: string }>('remoteMock:start', opts),
+    stop: () => invoke<{ ok: boolean }>('remoteMock:stop'),
+    getStatus: () =>
+      invoke<{ running: boolean; port: number; config: unknown }>('remoteMock:getStatus')
   }
 }
 
@@ -563,11 +605,13 @@ if (process.contextIsolated) {
 // 在 preload 收到端口后，用 window.postMessage 把它转移到主世界，
 // 页面用 window.addEventListener('message') 接收（官方推荐模式，见 docs/02）。
 // 预注册时机：preload 加载即注册，早于页面任何点击，无时序问题。
+// 轻量化安全：生产建议将 '*' 收紧为 window.location.origin；file:// 下 origin 为 'null' 需保留 '*'
 // ──────────────────────────────────────────────────
 ipcRenderer.on('ipc:channel-port', (event) => {
   const port = event.ports[0]
   if (port) {
-    window.postMessage('ipc:channel-port', '*', [port])
+    const targetOrigin = window.location.protocol === 'file:' ? '*' : window.location.origin
+    window.postMessage('ipc:channel-port', targetOrigin, [port])
   }
 })
 

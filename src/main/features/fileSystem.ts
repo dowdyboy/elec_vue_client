@@ -32,6 +32,18 @@ async function safe<T>(fn: () => Promise<T>): Promise<FsResult<T>> {
 const watchers = new Map<number, FSWatcher>()
 let watchSeq = 0
 
+/** 释放所有 watchers（供 before-quit 调用） */
+export function disposeFileSystemWatchers(): void {
+  for (const w of watchers.values()) {
+    try {
+      w.close()
+    } catch {
+      // ignore
+    }
+  }
+  watchers.clear()
+}
+
 function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
   // ── 读取文本文件 ──
   ipcMain.handle('fs:readFile', (_e, filePath: string) =>
@@ -43,6 +55,15 @@ function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
     safe(async () => {
       await fs.mkdir(dirname(filePath), { recursive: true })
       await fs.writeFile(filePath, content, 'utf-8')
+      return `${basename(filePath)} 写入成功`
+    })
+  )
+
+  // ── 写入二进制文件（base64 输入，自动创建父目录；PNG 导出等场景）──
+  ipcMain.handle('fs:writeFileBase64', (_e, filePath: string, base64: string) =>
+    safe(async () => {
+      await fs.mkdir(dirname(filePath), { recursive: true })
+      await fs.writeFile(filePath, Buffer.from(base64, 'base64'))
       return `${basename(filePath)} 写入成功`
     })
   )
@@ -103,6 +124,16 @@ function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
   })
 }
 
-export function registerFileSystem(getMainWindow: MainWindowGetter): void {
+export function registerFileSystem(getMainWindow: MainWindowGetter): () => void {
   registerFileSystemImpl(getMainWindow)
+  return () => {
+    disposeFileSystemWatchers()
+    ipcMain.removeHandler('fs:readFile')
+    ipcMain.removeHandler('fs:writeFile')
+    ipcMain.removeHandler('fs:writeFileBase64')
+    ipcMain.removeHandler('fs:listDir')
+    ipcMain.removeHandler('fs:joinPath')
+    ipcMain.removeHandler('fs:watch')
+    ipcMain.removeHandler('fs:unwatch')
+  }
 }

@@ -20,7 +20,7 @@ import {
   type PlotRect
 } from './core/axis'
 import { resolveTheme } from './core/theme'
-import type { IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
+import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
 import { useGlChart } from './composables/useGlChart'
 
 const props = withDefaults(defineProps<IqProps>(), {
@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<IqProps>(), {
 const emit = defineEmits<{
   (e: 'error', msg: string): void
   (e: 'viewportChange', v: IqViewInfo): void
+  (e: 'exported', p: { kind: 'png' | 'csv'; filename: string }): void
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -809,6 +810,104 @@ function zoomReset(notify = true): void {
   if (notify) emitViewportChange(true)
 }
 
+// ── 导出 ──
+const EXPORT_MAX_ROWS = 500_000
+
+/**
+ * 合成 GL 波形层 + overlay 轴层为离屏画布（手动补绘图例，DOM 元素不入画布）。
+ * 先同步 draw()：preserveDrawingBuffer=false 时，同任务内重绘+读取可确保 WebGL 帧缓冲有效
+ */
+function compositeCanvas(): HTMLCanvasElement {
+  draw()
+  const glC = canvasRef.value
+  const ov = overlayRef.value
+  const out = document.createElement('canvas')
+  if (!glC || !ov) return out
+  out.width = glC.width
+  out.height = glC.height
+  const ctx = out.getContext('2d')
+  if (!ctx) return out
+  ctx.drawImage(glC, 0, 0)
+  ctx.drawImage(ov, 0, 0)
+  const dpr = window.devicePixelRatio || 1
+  const cssW = glC.width / dpr
+  ctx.scale(dpr, dpr)
+  ctx.font = '12px system-ui, -apple-system, sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  const items = [
+    { label: 'I', color: th.value.traceI, on: traceVisible.i },
+    { label: 'Q', color: th.value.traceQ, on: traceVisible.q }
+  ]
+  const gap = 12
+  const widths = items.map((it) => 8 + 4 + ctx.measureText(it.label).width)
+  const totalW = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)
+  let x = cssW - 10 - totalW
+  const y = 15
+  items.forEach((it, idx) => {
+    ctx.globalAlpha = it.on ? 1 : 0.35
+    ctx.fillStyle = it.color
+    ctx.beginPath()
+    ctx.arc(x + 4, y, 4, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = th.value.darkLike ? '#c9d1d9' : '#1f2328'
+    ctx.fillText(it.label, x + 12, y + 0.5)
+    x += widths[idx]! + gap
+  })
+  ctx.globalAlpha = 1
+  return out
+}
+
+/** 导出当前视图为 PNG（波形 + 坐标轴 + 图例） */
+function exportPNG(): void {
+  const filename = `iq-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+  deliverExport({ kind: 'png', filename, dataUrl: compositeCanvas().toDataURL('image/png') })
+}
+
+/** 导出当前可见窗口原始样本为 CSV；超 50 万行按等步长抽稀，sampleRate 存在时附 time_s 列 */
+function exportCSV(): void {
+  const xr = resolveXRange()
+  const s = Math.max(0, Math.floor(xr.min) - dropped)
+  const e = Math.min(dataLen, Math.ceil(xr.max) - dropped)
+  const len = e - s
+  if (len <= 0) return
+  const stride = Math.max(1, Math.ceil(len / EXPORT_MAX_ROWS))
+  const rate = props.sampleRate
+  const parts: string[] = [rate && rate > 0 ? 'index,time_s,i,q' : 'index,i,q']
+  for (let k = 0; k < len; k += stride) {
+    const abs = dropped + s + k
+    const i = iBuf[s + k] ?? 0
+    const q = qBuf[s + k] ?? 0
+    parts.push(
+      rate && rate > 0 ? `${abs},${(abs / rate).toFixed(9)},${i},${q}` : `${abs},${i},${q}`
+    )
+  }
+  const filename = `iq-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+  deliverExport({ kind: 'csv', filename, text: parts.join('\n') })
+}
+
+/** 交付导出：宿主提供 exportHandler 时交其持久化，否则回退浏览器下载；完成后发 exported 供 UI 反馈 */
+function deliverExport(p: ExportPayload): void {
+  const handler = props.exportHandler
+  if (handler) {
+    Promise.resolve(handler(p)).catch((e: unknown) =>
+      emit('error', e instanceof Error ? e.message : String(e))
+    )
+  } else {
+    const a = document.createElement('a')
+    if (p.kind === 'png' && p.dataUrl) {
+      a.href = p.dataUrl
+    } else {
+      const blob = new Blob([p.text ?? ''], { type: 'text/csv;charset=utf-8' })
+      a.href = URL.createObjectURL(blob)
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+    a.download = p.filename
+    a.click()
+  }
+  emit('exported', { kind: p.kind, filename: p.filename })
+}
+
 defineExpose({
   appendData,
   setData,
@@ -816,6 +915,8 @@ defineExpose({
   setViewport,
   getLength: () => dataLen,
   zoomReset,
+  exportPNG,
+  exportCSV,
   getView: (): IqViewInfo => ({
     follow: view.follow,
     yAuto: view.yAuto,

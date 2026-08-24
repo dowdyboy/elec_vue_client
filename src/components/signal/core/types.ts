@@ -67,6 +67,16 @@ export interface IqData {
 }
 export type IqNormalized = IqData | Float32Array // Float32Array 为交织 [I0,Q0,I1,Q1...]
 export type IqAdapter = (raw: RawInput) => IqNormalized | null
+/** 导出载荷：配置 exportHandler 时组件不再自行触发浏览器下载，改交宿主持久化 */
+export interface ExportPayload {
+  kind: 'png' | 'csv'
+  filename: string
+  /** png：dataURL（含 data:image/png;base64, 前缀） */
+  dataUrl?: string
+  /** csv：UTF-8 文本 */
+  text?: string
+}
+
 export interface IqProps extends ChartBaseProps {
   mode?: 'line' | 'dots'
   lineWidth?: number
@@ -75,6 +85,11 @@ export interface IqProps extends ChartBaseProps {
   style?: ChartStyle
   /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
   sampleRate?: number
+  /**
+   * 导出交付回调：提供后 PNG/CSV 完全交由宿主持久化（组件不再内置浏览器下载，
+   * 含未配置目录等场景的回退也由宿主负责）；未提供时组件回退 <a download> 行为
+   */
+  exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: IqAdapter
   data?: RawInput | IqNormalized
   /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */

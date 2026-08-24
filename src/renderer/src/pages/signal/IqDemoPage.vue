@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { NCard, NSelect, NButton, NEmpty, NInputNumber, useMessage } from 'naive-ui'
+import { NCard, NSelect, NButton, NEmpty, NInput, NInputNumber, useMessage } from 'naive-ui'
 import IqChart from '@components/signal/IqChart.vue'
 import { iqAdapters } from '@components/signal/core/adapters'
-import type { Theme } from '@components/signal/core/types'
+import type { ExportPayload, Theme } from '@components/signal/core/types'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
 
 const message = useMessage()
@@ -11,7 +11,47 @@ const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const adapterKey = ref<'passthrough' | 'jsonInterleaved'>('passthrough')
 const themeKey = ref<Theme>('spectrum')
 const sampleRate = ref(4096)
+const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
+
+watch(exportDir, (v) => {
+  if (v) localStorage.setItem('sig-iq-export-dir', v)
+  else localStorage.removeItem('sig-iq-export-dir')
+})
+
+async function onPickExportDir(): Promise<void> {
+  const dir = (await window.api.dialog.openDirectory('选择导出目录')) as string | null
+  if (dir) exportDir.value = dir
+}
+
+/** 组件导出交付：配置了目录则写入自定义位置；未配置时自行执行浏览器下载回退（组件传入 handler 后不再内置下载） */
+async function handleExport(p: ExportPayload): Promise<void> {
+  if (!exportDir.value) {
+    const a = document.createElement('a')
+    if (p.kind === 'png' && p.dataUrl) {
+      a.href = p.dataUrl
+    } else {
+      const blob = new Blob([p.text ?? ''], { type: 'text/csv;charset=utf-8' })
+      a.href = URL.createObjectURL(blob)
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    }
+    a.download = p.filename
+    a.click()
+    return
+  }
+  const full = (await window.api.fs.joinPath(exportDir.value, p.filename)) as string
+  if (p.kind === 'png' && p.dataUrl) {
+    await window.api.fs.writeFileBase64(full, p.dataUrl.split(',')[1] ?? '')
+  } else if (p.kind === 'csv' && p.text !== undefined) {
+    await window.api.fs.writeFile(full, p.text)
+  }
+  message.success(`已保存：${full}`)
+}
+
+function onExported(p: { kind: 'png' | 'csv'; filename: string }): void {
+  // 未配置目录时组件走浏览器下载，在此给出反馈；配置了目录的反馈由 handleExport 负责
+  if (!exportDir.value) message.success(`已导出：${p.filename}`)
+}
 
 function getAdapter(): (raw: unknown) => unknown {
   if (adapterKey.value === 'jsonInterleaved')
@@ -47,6 +87,14 @@ function onClear(): void {
 
 function onBackToLatest(): void {
   iqRef.value?.zoomReset()
+}
+
+function onExportPNG(): void {
+  iqRef.value?.exportPNG()
+}
+
+function onExportCSV(): void {
+  iqRef.value?.exportCSV()
 }
 
 watch(adapterKey, (v) => {
@@ -88,7 +136,12 @@ watch(adapterKey, (v) => {
           :show-button="false"
           style="width: 130px"
         />
+        <span>导出目录</span>
+        <NInput :value="exportDir" readonly placeholder="默认下载目录" style="width: 220px" />
+        <NButton size="small" @click="onPickExportDir">选择…</NButton>
         <NButton size="small" @click="onBackToLatest">回到最新</NButton>
+        <NButton size="small" @click="onExportPNG">截图 PNG</NButton>
+        <NButton size="small" @click="onExportCSV">导出 CSV</NButton>
         <NButton size="small" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
           >等待服务端（请至“Mock 配置”页启动）…</span
@@ -98,8 +151,8 @@ watch(adapterKey, (v) => {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        交互：滚轮缩放时间轴（光标锚点）· Shift+滚轮缩放幅值 · 拖拽平移 · 悬停十字光标读数 ·
-        双击或点角标恢复跟随
+        交互：滚轮缩放时间轴（光标锚点）· Shift+滚轮缩放幅值 · 拖拽平移 · Shift+拖拽框选放大 ·
+        悬停十字光标读数 · 点击图例切换迹线 · 双击或点角标恢复跟随
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
         时域图直接绘制服务端下发的原始 IQ；数据经 <code>adapter</code>（{{
@@ -115,7 +168,10 @@ watch(adapterKey, (v) => {
           :theme="themeKey"
           :adapter="getAdapter() as never"
           :sample-rate="sampleRate"
+          :export-handler="handleExport"
           :height="420"
+          @exported="onExported"
+          @error="(m: string) => message.error(m)"
         />
         <NEmpty
           v-if="!hasData"
