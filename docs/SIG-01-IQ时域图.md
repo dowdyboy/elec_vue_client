@@ -19,7 +19,8 @@ ws.onmessage = (e) => iqRef.value.appendData(e.data) // RawInput 任意
 
 **Adapter**：返回 `{i,q}` 或交织 `Float32Array`；内置 `iqAdapters.passthrough/jsonInterleaved/arrayBuffer/base64`
 
-**Props**：`mode:'line'|'dots'` `lineWidth` `colors`（可选，未传取主题预置） `decimation` `viewport` `axis/xAxis/grid`
+**Props**：`theme:'light'|'dark'|'auto'|'spectrum'` `mode:'line'|'dots'` `lineWidth` `colors`（可选，未传取主题预置）
+`decimation` `viewport` `axis/xAxis/grid` `sampleRate`（Hz，启用时间轴） `style`（外观覆盖） `exportHandler`（导出交付回调）
 
 **外观**：`theme:'light'|'dark'|'auto'|'spectrum'` + `style` 字段级覆盖（优先级 `style > colors > 预置`）
 `spectrum` 为频谱仪经典面板：纯黑底、暗绿栅格、亮黄 I 迹、青色 Q 迹；固定观感不随系统深浅色切换
@@ -38,6 +39,7 @@ interface ChartStyle {
   traceQ?: string        // Q 迹线
   traceAlpha?: number    // 波形不透明度（默认 0.85）
   axisWidth?: number     // 左侧刻度带宽 CSS px（≥40，默认 56）
+  crosshair?: string     // 十字光标/测量标记线颜色
 }
 ```
 
@@ -54,10 +56,20 @@ interface ChartStyle {
 **迹线显隐**：点击右上角图例 I/Q 切换可见性；隐藏通道不参与绘制、Y 轴自适应统计与光标读数
 
 **框选放大**：Shift+左键拖拽出矩形，松手放大到该区域（X 冻结到选段、Y 切手动精确范围）；
-矩形过小（<8px）忽略；Esc/pointercancel 取消
+矩形过小（<8px）忽略；pointercancel 取消
+
+**测量标记**：数量不限，锚定绝对样本索引（缩放/平移保持数据位置）
+- 添加：暂停状态下 Alt+点击空白，或右键菜单「在此处标记」
+- 清除：Alt+点击标记（按下无拖动判定）/ 右键「清除该标记」/「清除全部标记」
+- 微调：Alt+按住标记拖拽（位移超 4px 判定为拖拽）
+- 读数：右上角面板逐标记显示 索引·时间·I/Q；恰好两个标记时附加 Δ 样本 / Δt / 1/Δt 频率
+- 刷新（跟随）状态下不允许标记与拖拽平移（始终展示最新数据），仅滚轮/框选缩放（缩放即进入暂停态）
+- 左键双击：暂停 ⇆ 恢复刷新；恢复时清除全部标记；清空数据时同样重置
 
 **导出**：`exportPNG()` 当前视图截图（波形+轴+图例合成，导出前同步重绘确保 WebGL 帧有效）；
-`exportCSV()` 可见窗口原始样本（超 50 万行等步长抽稀；`sampleRate` 存在时附 `time_s` 列）
+`exportCSV()` 可见窗口原始样本（超 50 万行等步长抽稀；`sampleRate` 存在时附 `time_s` 列）；
+导出交付：配置 `exportHandler?` 回调后 PNG/CSV 交由宿主持久化（如 Electron 写入自定义目录），
+否则回退浏览器 `<a download>`；两种路径均发 `exported` 事件（`{kind, filename}`）供宿主 UI 反馈
 
 **自动 Y 轴**：目标范围经「V/div 档位量化」（向外吸附到刻度步进族）+ 快扩张/慢收缩平滑——
 小幅波动被同一档位吸收，流式刷新时刻度完全静止；仅跨档时离散更新并缓入新档；
@@ -68,4 +80,6 @@ interface ChartStyle {
 新帧在入口直接丢弃（缓冲零增长、淘汰永不发生，视口像素级静止，暂停期间仍可缩放/平移回看历史），
 恢复跟随（双击/角标）后自动继续接收；若冻结窗曾被外部视口指向已淘汰区域，视口锚定最老可用数据
 
-**内部**：环形 2M 点，`minmax` 抽稀至 `2×px`，`WebGL2` 双 `LINE_STRIP`
+**内部**：环形 2M 点，`minmax` 抽稀至 `2×px`，`WebGL2` 双 `LINE_STRIP`；
+GL 视口/scissor 与 overlay 轴层均按「背板设备像素 ÷ 元素 CSS 实测尺寸」做真实比例映射，
+页面缩放/系统非整数缩放场景下波形与网格严格对齐（不依赖全局 DPR 缓存）

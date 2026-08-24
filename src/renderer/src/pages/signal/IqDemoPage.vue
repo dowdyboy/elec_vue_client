@@ -151,14 +151,18 @@ watch(adapterKey, (v) => {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        交互：滚轮缩放时间轴（光标锚点）· Shift+滚轮缩放幅值 · 拖拽平移 · Shift+拖拽框选放大 ·
-        悬停十字光标读数 · 点击图例切换迹线 · 双击或点角标恢复跟随
+        交互：滚轮缩放（光标锚点）· Shift+滚轮缩放幅值 · 暂停后拖拽平移 / Shift+框选放大 ·
+        Alt+点击添加标记（点标记即清除）/ 右键菜单批量管理 · 双击暂停⇆恢复（恢复清除标记）·
+        悬停十字光标读数 · 点击图例切换迹线
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
         时域图直接绘制服务端下发的原始 IQ；数据经 <code>adapter</code>（{{
           adapterKey
-        }}）自转后进入组件。外观由「主题」预置驱动，亦可用
-        <code>style</code> 属性做字段级覆盖（迹线/背景/网格/刻度带等）。
+        }}）自转后进入组件。外观由「主题」预置驱动，亦可用 <code>style</code> 属性做字段级覆盖。
+      </div>
+      <div style="margin-top: 4px; font-size: 12px; color: #888">
+        采样率 (Hz) 仅用于「样本 ↔ 时间」换算（时间 = 索引 ÷ 采样率），不影响数据内容； Mock 默认
+        4096，即满窗 4096 样本恰好为 1 秒。真实使用时应与采集硬件的实际采样率一致。
       </div>
     </NCard>
     <NCard content-style="padding: 0">

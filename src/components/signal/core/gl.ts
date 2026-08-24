@@ -141,16 +141,19 @@ export function createLineRenderer(
     },
     draw(viewport, color, clear = true, plotRect?) {
       if (count === 0) return
-      const dpr = window.devicePixelRatio || 1
+      // 实测比例：背板设备像素 ÷ 元素 CSS 实测尺寸——不信任全局 DPR 缓存，
+      // 页面缩放/系统非整数缩放场景下波形与 overlay 网格保持严格对齐（同 overlay 真实比例修复）
+      const cssW = canvas.clientWidth || canvas.width
+      const ratio = canvas.width / Math.max(1, cssW)
       let vx = 0,
         vy = 0,
         vw = canvas.width,
         vh = canvas.height
       if (plotRect) {
-        vx = Math.round(plotRect.x * dpr)
-        vy = Math.round(canvas.height - (plotRect.y + plotRect.h) * dpr)
-        vw = Math.max(1, Math.round(plotRect.w * dpr))
-        vh = Math.max(1, Math.round(plotRect.h * dpr))
+        vx = Math.round(plotRect.x * ratio)
+        vy = Math.round(canvas.height - (plotRect.y + plotRect.h) * ratio)
+        vw = Math.max(1, Math.round(plotRect.w * ratio))
+        vh = Math.max(1, Math.round(plotRect.h * ratio))
       }
       _gl.viewport(vx, vy, vw, vh)
       // viewport 只做坐标映射不裁剪，需配合 scissor 把折线限制在绘图区内

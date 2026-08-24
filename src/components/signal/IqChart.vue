@@ -43,6 +43,7 @@ const emit = defineEmits<{
   (e: 'exported', p: { kind: 'png' | 'csv'; filename: string }): void
 }>()
 
+const rootRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 let renderer: LineRenderer | null = null
@@ -336,6 +337,71 @@ let cursor: { px: number; py: number } | null = null
 // Shift+拖拽框选状态：像素坐标矩形；null=未框选
 let boxSel: { x0: number; y0: number; x1: number; y1: number } | null = null
 
+// ── 测量标记 ──
+// Alt+点击空白：添加标记；Alt+点击标记：清除该标记（按下无拖动判定）；Alt+按住标记拖拽：微调位置。
+// 右键菜单：在此处标记 / 清除该标记 / 清除全部标记 / 暂停-恢复刷新。
+// 刷新（跟随）状态下不允许标记与拖拽平移，仅滚轮/框选缩放（缩放即进入暂停态）。
+// 标记锚定绝对样本索引（缩放/平移保持数据位置），clear/恢复刷新时清空
+let markers: number[] = []
+let markerDrag = -1 // 正在拖拽的标记下标；-1=无
+let markerMoved = false // 拖拽位移超阈值（区分「点击清除」与「拖拽微调」）
+const markerDownPx = { x: 0, y: 0 }
+const MARKER_HIT_PX = 6
+
+// 右键菜单状态
+const menu = reactive({ show: false, x: 0, y: 0, hitIdx: -1, dataX: 0 })
+
+/** 标记绝对索引 → 当前显示域像素 x */
+function markerPx(c: number): number {
+  if (!lastView) return Number.NaN
+  const { plot, xRange } = lastView
+  return plot.x + ((c - xRange.min) / (xRange.max - xRange.min)) * plot.w
+}
+/** 命中检测：返回像素 x 处命中的标记下标；-1=未命中 */
+function markerHit(px: number): number {
+  for (let i = markers.length - 1; i >= 0; i--) {
+    const mx = markerPx(markers[i]!)
+    if (lastView && Math.abs(mx - px) <= MARKER_HIT_PX) return i
+  }
+  return -1
+}
+/** 添加标记（刷新状态下禁止）；位置取整到采样点 */
+function addMarkerAt(dispX: number): void {
+  if (view.follow) return
+  markers.push(Math.round(dispX))
+  schedule()
+}
+
+/** 右键菜单：按点击位置与命中状态构建动作集 */
+function onContextMenu(evt: MouseEvent): void {
+  evt.preventDefault()
+  const root = rootRef.value
+  if (!root || !lastView) return
+  const rr = root.getBoundingClientRect()
+  const px = evt.clientX - rr.left
+  const py = evt.clientY - rr.top
+  menu.x = Math.min(Math.max(4, px), Math.max(4, rr.width - 175))
+  menu.y = Math.min(Math.max(4, py), Math.max(4, rr.height - 150))
+  menu.hitIdx = markerHit(px)
+  menu.dataX = pxToDataX(px)
+  menu.show = true
+  schedule()
+}
+
+function menuAction(act: 'add' | 'remove' | 'clear' | 'toggle'): void {
+  menu.show = false
+  if (act === 'add') {
+    addMarkerAt(menu.dataX)
+  } else if (act === 'remove' && menu.hitIdx >= 0) {
+    markers.splice(menu.hitIdx, 1)
+  } else if (act === 'clear') {
+    markers = []
+  } else if (act === 'toggle') {
+    onDblClick()
+  }
+  schedule()
+}
+
 let raf = 0
 function schedule(): void {
   if (raf) return
@@ -467,6 +533,73 @@ function drawOverlay(
     ctx.setLineDash([4, 3])
     ctx.strokeRect(bx + 0.5, by + 0.5, bw, bh)
     ctx.restore()
+  }
+
+  // ── 测量标记（锚定样本索引，随缩放平移保持数据位置；数量不限）──
+  if (markers.length > 0) {
+    ctx.font = '11px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const chipBg2 = t.labelChipBg
+    const readAt = (c: number): string | null => {
+      const local = c - dropped
+      if (local < 0 || local >= dataLen) return null
+      return `I ${fmtValIq(iBuf[local] ?? 0)} Q ${fmtValIq(qBuf[local] ?? 0)}`
+    }
+    const markerLines: string[] = []
+    markers.forEach((c, i) => {
+      if (!lastView) return
+      const pl = lastView.plot
+      const px = markerPx(c)
+      if (px < pl.x - 0.5 || px > pl.x + pl.w + 0.5) return
+      const pxc = Math.round(px) + 0.5
+      ctx.save()
+      ctx.strokeStyle = t.crosshair
+      ctx.setLineDash([2, 3])
+      ctx.beginPath()
+      ctx.moveTo(pxc, pl.y)
+      ctx.lineTo(pxc, pl.y + pl.h)
+      ctx.stroke()
+      ctx.restore()
+      drawChip(ctx, pxc, pl.y + 2, `M${i + 1}`, chipBg2, t.text, 'center', {
+        min: pl.x,
+        max: pl.x + pl.w
+      })
+      const local = c - dropped
+      const tTxt = timeOn ? ` · ${fmtTime(c / (rate as number), tStep)}` : ''
+      markerLines.push(
+        local >= 0 && local < dataLen
+          ? `M${i + 1}  #${c}${tTxt}  ${readAt(c)}`
+          : `M${i + 1}  #${c}${tTxt}`
+      )
+    })
+    // 恰好两个标记时附加 Δ 测量（样本/时间/频率）
+    if (markers.length === 2) {
+      const sorted = [...markers].sort((x, y) => x - y)
+      const dSamples = Math.abs(sorted[1]! - sorted[0]!)
+      markerLines.push(`Δ ${dSamples} 样本`)
+      if (timeOn && dSamples > 0) {
+        const dt = dSamples / (rate as number)
+        markerLines.push(`Δt ${fmtTime(dt, tStep)}`)
+        markerLines.push(`1/Δt ${fmtFreq(1 / dt)}`)
+      }
+    }
+    if (markerLines.length > 0) {
+      ctx.textAlign = 'left'
+      let wMax = 0
+      for (const ln of markerLines) wMax = Math.max(wMax, ctx.measureText(ln).width)
+      const padX = 8
+      const lineH = 14
+      const bw = Math.ceil(wMax) + padX * 2
+      const bh = markerLines.length * lineH + 6
+      const bx = plot.x + plot.w - 8 - bw // 右上角，避开左上角标
+      const byC = plot.y + 40 // 图例下方
+      drawPanel(ctx, bx, byC, bw, bh, chipBg2)
+      ctx.fillStyle = t.text
+      markerLines.forEach((ln, li) => {
+        ctx.fillText(ln, bx + padX, byC + 3 + lineH * li + lineH / 2)
+      })
+    }
   }
 
   // ── 十字光标与读数（悬停；跟随/暂停均可用）──
@@ -604,6 +737,17 @@ function buildTimeTicks(
     labels: times.map((t) => fmtTime(t, stepT))
   }
 }
+/** Hz → 自适应频率文本（Hz/kHz/MHz） */
+function fmtFreq(hz: number): string {
+  if (!isFinite(hz) || hz <= 0) return '—'
+  if (hz >= 1e6) return `${trimZeros(hz / 1e6, 1e-3)} MHz`
+  if (hz >= 1e3) return `${trimZeros(hz / 1e3, 1e-3)} kHz`
+  return `${trimZeros(hz, 1e-3)} Hz`
+}
+/** 带符号三位小数的 I/Q 值文本（游标/十字光标读数共用） */
+function fmtValIq(v: number): string {
+  return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+}
 
 // ── 十字光标 ──
 function updateCursor(evt: MouseEvent): void {
@@ -706,14 +850,33 @@ let dragCtx: DragCtx | null = null
 
 function onPointerDown(evt: PointerEvent): void {
   if (!lastView || evt.button !== 0) return
+  menu.show = false // 任意按下先收起右键菜单
   const p = clientToPlot(evt)
   if (!p) return
   ;(evt.currentTarget as HTMLElement).setPointerCapture?.(evt.pointerId)
-  // Shift+拖拽：框选放大（与拖拽平移互斥）
+  // Alt+点击：空白处添加标记；命中标记则进入「按下-拖拽/松手清除」流程。
+  // 刷新（跟随）状态下不允许标记
+  if (evt.altKey) {
+    if (view.follow) return
+    const hit = markerHit(p.px)
+    if (hit >= 0) {
+      markerDrag = hit
+      markerMoved = false
+      markerDownPx.x = p.px
+      markerDownPx.y = p.py
+    } else {
+      addMarkerAt(pxToDataX(p.px))
+    }
+    schedule()
+    return
+  }
+  // Shift+拖拽：框选放大（缩放类操作，刷新状态下允许，松手即进入暂停态）
   if (evt.shiftKey) {
     boxSel = { x0: p.px, y0: p.py, x1: p.px, y1: p.py }
     return
   }
+  // 刷新（跟随）状态下禁止拖拽平移：始终展示最新数据
+  if (view.follow) return
   dragCtx = {
     px: p.px,
     py: p.py,
@@ -747,6 +910,19 @@ function finishBoxZoom(): void {
 
 function onPointerMove(evt: PointerEvent): void {
   updateCursor(evt)
+  if (markerDrag >= 0) {
+    const p = clientToPlot(evt)
+    if (!p || !lastView) return
+    // 位移超阈值视为拖拽（否则松手时按「Alt+点击标记=清除」处理）
+    if (!markerMoved && Math.abs(p.px - markerDownPx.x) + Math.abs(p.py - markerDownPx.y) > 4) {
+      markerMoved = true
+    }
+    if (markerMoved && markers[markerDrag] !== undefined) {
+      markers[markerDrag] = Math.round(pxToDataX(p.px))
+    }
+    schedule()
+    return
+  }
   if (boxSel) {
     const p = clientToPlot(evt)
     if (!p) return
@@ -779,6 +955,13 @@ function onPointerMove(evt: PointerEvent): void {
 
 function onPointerUp(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (markerDrag >= 0) {
+    // Alt+按下标记后未拖动即松手 = 清除该标记
+    if (!markerMoved) markers.splice(markerDrag, 1)
+    markerDrag = -1
+    schedule()
+    return
+  }
   if (boxSel) {
     finishBoxZoom()
     boxSel = null
@@ -791,20 +974,39 @@ function onPointerUp(evt: PointerEvent): void {
   emitViewportChange(true)
 }
 
-/** 取消进行中的手势（框选/拖拽），不产生任何视口变更 */
+/** 取消进行中的手势（框选/拖拽/标记拖动），不产生任何视口变更 */
 function onPointerCancel(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
   if (boxSel) {
     boxSel = null
     schedule()
   }
+  if (markerDrag >= 0) {
+    markerDrag = -1
+    schedule()
+  }
   dragCtx = null
+}
+
+/** 左键双击：暂停 ⇆ 恢复刷新；恢复刷新时清除全部标记 */
+function onDblClick(): void {
+  if (view.follow) {
+    const xr = resolveXRange()
+    setFrozenX(xr.min, xr.max)
+    schedule()
+    emitViewportChange(true)
+  } else {
+    zoomReset()
+  }
 }
 
 function zoomReset(notify = true): void {
   view.follow = true
   view.span = DEFAULT_SPAN
   view.yAuto = true
+  markers = []
+  markerDrag = -1
+  menu.show = false
   resetYAuto() // 复位后直接吸附新窗口目标范围，不从旧范围滑入
   schedule()
   if (notify) emitViewportChange(true)
@@ -977,6 +1179,8 @@ function appendData(raw: unknown): void {
 function clear(needDraw = true): void {
   dataLen = 0
   dropped = 0
+  markers = []
+  markerDrag = -1
   zoomReset(false)
   if (needDraw) draw()
 }
@@ -987,6 +1191,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
 
 <template>
   <div
+    ref="rootRef"
     class="sig-iq"
     :class="th.darkLike ? 'sig-dark' : 'sig-light'"
     :style="{
@@ -1002,7 +1207,8 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
     @pointerleave="onPointerLeave"
-    @dblclick="zoomReset()"
+    @contextmenu.prevent="onContextMenu"
+    @dblclick="onDblClick"
   >
     <canvas ref="canvasRef" class="sig-canvas" />
     <canvas ref="overlayRef" class="sig-overlay" />
@@ -1029,6 +1235,49 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
       >
         <span class="sig-dot" :style="{ background: th.traceQ }" /> Q
       </span>
+    </div>
+    <div
+      v-if="menu.show"
+      class="sig-menu"
+      :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
+      @contextmenu.prevent
+    >
+      <div
+        class="sig-menu-item"
+        :class="{ disabled: view.follow }"
+        @click.stop="menuAction('add')"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        在此处标记
+      </div>
+      <div
+        v-if="menu.hitIdx >= 0"
+        class="sig-menu-item"
+        @click.stop="menuAction('remove')"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        清除该标记
+      </div>
+      <div
+        v-if="markers.length > 0"
+        class="sig-menu-item"
+        @click.stop="menuAction('clear')"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        清除全部标记
+      </div>
+      <div class="sig-menu-sep" />
+      <div
+        class="sig-menu-item"
+        @click.stop="menuAction('toggle')"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        {{ view.follow ? '暂停刷新' : '恢复刷新（清除标记）' }}
+      </div>
     </div>
   </div>
 </template>
@@ -1092,6 +1341,36 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
 }
 .sig-trace.off {
   opacity: 0.35;
+}
+.sig-menu {
+  position: absolute;
+  z-index: 5;
+  min-width: 150px;
+  padding: 4px 0;
+  background: color-mix(in srgb, var(--sig-bg) 96%, transparent);
+  border: 1px solid var(--sig-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  color: var(--sig-text);
+  user-select: none;
+}
+.sig-menu-item {
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sig-menu-item:hover {
+  background: color-mix(in srgb, var(--sig-border) 40%, transparent);
+}
+.sig-menu-item.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.sig-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--sig-border);
 }
 .sig-dot {
   display: inline-block;
