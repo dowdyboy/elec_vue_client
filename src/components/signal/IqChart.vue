@@ -152,6 +152,9 @@ const view = reactive({
   yMax: 1
 })
 
+// 迹线可见性：点击图例切换；隐藏的通道不参与绘制与 Y 轴自适应统计
+const traceVisible = reactive({ i: true, q: true })
+
 function applyExternalViewport(v: NonNullable<IqProps['viewport']>): void {
   if (v.autoScale !== undefined) {
     // 外部切回自动缩放时丢弃旧平滑状态，避免从历史范围缓慢滑入
@@ -255,12 +258,16 @@ function computeAutoYTarget(s: number, e: number): { min: number; max: number } 
   let mn = Infinity,
     mx = -Infinity
   for (let i = s; i < e; i++) {
-    const a = iBuf[i],
-      b = qBuf[i]
-    if (a < mn) mn = a
-    if (a > mx) mx = a
-    if (b < mn) mn = b
-    if (b > mx) mx = b
+    if (traceVisible.i) {
+      const a = iBuf[i]
+      if (a < mn) mn = a
+      if (a > mx) mx = a
+    }
+    if (traceVisible.q) {
+      const b = qBuf[i]
+      if (b < mn) mn = b
+      if (b > mx) mx = b
+    }
   }
   if (!isFinite(mn) || !isFinite(mx)) return { min: -1, max: 1 }
   // 居中 + 25% 余量后做档位量化：向外吸附到刻度步进族，
@@ -325,6 +332,9 @@ let lastView: {
 // 十字光标状态：绘图区内悬停位置；null=不显示
 let cursor: { px: number; py: number } | null = null
 
+// Shift+拖拽框选状态：像素坐标矩形；null=未框选
+let boxSel: { x0: number; y0: number; x1: number; y1: number } | null = null
+
 let raf = 0
 function schedule(): void {
   if (raf) return
@@ -373,15 +383,17 @@ function draw(): void {
   const nIdx = Math.max(1, iDec.length - 1)
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
-  renderer.setData(iDec)
-  renderer.draw(
-    { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
-    withAlpha(th.value.traceI, th.value.traceAlpha),
-    false,
-    plot
-  )
+  if (traceVisible.i) {
+    renderer.setData(iDec)
+    renderer.draw(
+      { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
+      withAlpha(th.value.traceI, th.value.traceAlpha),
+      false,
+      plot
+    )
+  }
   // 绘制 Q（叠加，不再清空）
-  if (rendererQ) {
+  if (traceVisible.q && rendererQ) {
     rendererQ.setData(qDec)
     rendererQ.draw(
       { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
@@ -439,6 +451,23 @@ function drawOverlay(
     }
   })
 
+  // ── Shift+拖拽 框选矩形（松手放大到该区域）──
+  if (boxSel) {
+    const bx = Math.min(boxSel.x0, boxSel.x1)
+    const by = Math.min(boxSel.y0, boxSel.y1)
+    const bw = Math.abs(boxSel.x1 - boxSel.x0)
+    const bh = Math.abs(boxSel.y1 - boxSel.y0)
+    ctx.save()
+    ctx.globalAlpha = 0.12
+    ctx.fillStyle = t.crosshair
+    ctx.fillRect(bx, by, bw, bh)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = t.crosshair
+    ctx.setLineDash([4, 3])
+    ctx.strokeRect(bx + 0.5, by + 0.5, bw, bh)
+    ctx.restore()
+  }
+
   // ── 十字光标与读数（悬停；跟随/暂停均可用）──
   if (!cursor) return
   const cxp = Math.round(cursor.px) + 0.5
@@ -477,7 +506,9 @@ function drawOverlay(
   const idxLine = timeOn
     ? `#${smp.idx} · ${fmtTime(dispX / (rate as number), tStep)}`
     : `#${smp.idx}`
-  const lines = [idxLine, `I ${fmtVal(smp.i)}`, `Q ${fmtVal(smp.q)}`]
+  const lines = [idxLine]
+  if (traceVisible.i) lines.push(`I ${fmtVal(smp.i)}`)
+  if (traceVisible.q) lines.push(`Q ${fmtVal(smp.q)}`)
   ctx.textAlign = 'left'
   let wMax = 0
   for (const ln of lines) wMax = Math.max(wMax, ctx.measureText(ln).width)
@@ -677,6 +708,11 @@ function onPointerDown(evt: PointerEvent): void {
   const p = clientToPlot(evt)
   if (!p) return
   ;(evt.currentTarget as HTMLElement).setPointerCapture?.(evt.pointerId)
+  // Shift+拖拽：框选放大（与拖拽平移互斥）
+  if (evt.shiftKey) {
+    boxSel = { x0: p.px, y0: p.py, x1: p.px, y1: p.py }
+    return
+  }
   dragCtx = {
     px: p.px,
     py: p.py,
@@ -691,8 +727,33 @@ function onPointerDown(evt: PointerEvent): void {
   }
 }
 
+/** 框选放大：像素矩形 → 数据域窗口（X 去留白回真实窗口；Y 直接映射）；矩形过小则忽略 */
+function finishBoxZoom(): void {
+  if (!boxSel || !lastView) return
+  const { x0, y0, x1, y1 } = boxSel
+  if (Math.abs(x1 - x0) < 8 || Math.abs(y1 - y0) < 8) return
+  const rw = unpadX(pxToDataX(Math.min(x0, x1)), pxToDataX(Math.max(x0, x1)), lastView.xFrac)
+  setFrozenX(rw.min, rw.max)
+  const yHi = pyToDataY(Math.min(y0, y1))
+  const yLo = pyToDataY(Math.max(y0, y1))
+  if (yHi - yLo > 1e-9) {
+    view.yAuto = false
+    view.yMin = yLo
+    view.yMax = yHi
+    resetYAuto()
+  }
+}
+
 function onPointerMove(evt: PointerEvent): void {
   updateCursor(evt)
+  if (boxSel) {
+    const p = clientToPlot(evt)
+    if (!p) return
+    boxSel.x1 = p.px
+    boxSel.y1 = p.py
+    schedule()
+    return
+  }
   if (!dragCtx) return
   const p = clientToPlot(evt)
   if (!p) return
@@ -716,10 +777,27 @@ function onPointerMove(evt: PointerEvent): void {
 }
 
 function onPointerUp(evt: PointerEvent): void {
-  if (!dragCtx) return
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (boxSel) {
+    finishBoxZoom()
+    boxSel = null
+    schedule()
+    emitViewportChange(true)
+    return
+  }
+  if (!dragCtx) return
   dragCtx = null
   emitViewportChange(true)
+}
+
+/** 取消进行中的手势（框选/拖拽），不产生任何视口变更 */
+function onPointerCancel(evt: PointerEvent): void {
+  ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (boxSel) {
+    boxSel = null
+    schedule()
+  }
+  dragCtx = null
 }
 
 function zoomReset(notify = true): void {
@@ -821,7 +899,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
+    @pointercancel="onPointerCancel"
     @pointerleave="onPointerLeave"
     @dblclick="zoomReset()"
   >
@@ -830,9 +908,26 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     <div v-if="!view.follow" class="sig-follow-badge" title="恢复跟随最新数据" @click="zoomReset()">
       已暂停跟随 · 双击恢复
     </div>
-    <div class="sig-legend">
-      <span class="sig-dot" :style="{ background: th.traceI }" /> I
-      <span class="sig-dot" :style="{ background: th.traceQ, marginLeft: '12px' }" /> Q
+    <div class="sig-legend" title="点击切换迹线显隐">
+      <span
+        class="sig-trace"
+        :class="{ off: !traceVisible.i }"
+        @click.stop="traceVisible.i = !traceVisible.i"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        <span class="sig-dot" :style="{ background: th.traceI }" /> I
+      </span>
+      <span
+        class="sig-trace"
+        :class="{ off: !traceVisible.q }"
+        style="margin-left: 12px"
+        @click.stop="traceVisible.q = !traceVisible.q"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        <span class="sig-dot" :style="{ background: th.traceQ }" /> Q
+      </span>
     </div>
   </div>
 </template>
@@ -889,7 +984,13 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   background: color-mix(in srgb, var(--sig-bg) 80%, transparent);
   padding: 2px 8px;
   border-radius: 10px;
-  pointer-events: none;
+}
+.sig-trace {
+  cursor: pointer;
+  user-select: none;
+}
+.sig-trace.off {
+  opacity: 0.35;
 }
 .sig-dot {
   display: inline-block;
