@@ -19,7 +19,8 @@ declare module 'vue-router' {
 /** 分组显示名（与 meta.group 对应） */
 const GROUP_LABELS: Record<string, string> = {
   'Electron 教学': '⚛ Electron 教学',
-  'TypeScript 惯用法': '🟦 TypeScript 惯用法'
+  'TypeScript 惯用法': '🟦 TypeScript 惯用法',
+  信号分析: '📡 信号分析'
 }
 
 export const routes: RouteRecordRaw[] = [
@@ -287,6 +288,37 @@ export const routes: RouteRecordRaw[] = [
     name: 'ts-electron-bridge',
     component: () => import('../pages/ts/TsElectronBridgePage.vue'),
     meta: { title: '与 Electron 结合', icon: '🔗', group: 'TypeScript 惯用法' }
+  },
+  // ── 信号分析板块（垂直领域，4 组件 + Mock 配置，Mock 服务端自产数）──
+  {
+    path: '/signal',
+    name: 'signal-config',
+    component: () => import('../pages/signal/SignalConfigPage.vue'),
+    meta: { title: 'Mock 配置', icon: '🛠️', group: '信号分析' }
+  },
+  {
+    path: '/signal/iq',
+    name: 'signal-iq',
+    component: () => import('../pages/signal/IqDemoPage.vue'),
+    meta: { title: 'IQ 时域', icon: '〰️', group: '信号分析' }
+  },
+  {
+    path: '/signal/spectrum',
+    name: 'signal-spectrum',
+    component: () => import('../pages/signal/SpectrumDemoPage.vue'),
+    meta: { title: '频谱', icon: '📊', group: '信号分析' }
+  },
+  {
+    path: '/signal/spectrogram',
+    name: 'signal-spectrogram',
+    component: () => import('../pages/signal/SpectrogramDemoPage.vue'),
+    meta: { title: '时频图', icon: '🌈', group: '信号分析' }
+  },
+  {
+    path: '/signal/constellation',
+    name: 'signal-constellation',
+    component: () => import('../pages/signal/ConstellationDemoPage.vue'),
+    meta: { title: '星座图', icon: '✨', group: '信号分析' }
   },
   {
     // 子窗口演示页：仅通过主进程创建子窗口时加载，不在菜单显示

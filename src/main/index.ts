@@ -58,7 +58,7 @@ import { registerZoom } from './features/zoom'
 import { registerSessionConfig } from './features/sessionConfig'
 import { registerCertificate } from './features/certificate'
 import { registerPartition } from './features/partition'
-import { registerQuitGuard, quitState } from './features/quitGuard'
+import { registerQuitGuard, isQuitting, setQuitting } from './features/quitGuard'
 import { registerHttpServer } from './features/httpServer'
 import { registerScriptInjection } from './features/scriptInjection'
 import { registerLoadState } from './features/loadState'
@@ -67,6 +67,9 @@ import { registerSerialPort } from './features/serialPort'
 import { registerGpuInfo, applyGpuCommandLine } from './features/gpuInfo'
 import { registerAppPaths } from './features/appPaths'
 import { registerBetterSqlite } from './features/betterSqlite'
+// Demo：信号分析服务端（本地主进程计算 + 远程后端，仅演示，置于 signal 而非 features）
+import { registerSignalAnalysisServer } from './signal/analysisServer'
+import { registerRemoteMockServer } from './signal/remoteMockServer'
 
 // ⚠️ 必须在 app ready 之前：声明 elec-fs 自定义协议特权（见 protocolContent.ts）
 registerProtocolSchemes()
@@ -79,6 +82,9 @@ let mainWindow: BrowserWindow | null = null
 
 /** 提供给各特性模块的窗口获取函数 */
 const getMainWindow: MainWindowGetter = () => mainWindow
+
+/** 轻量化资源释放表：收集各特性返回的 Disposer，退出时统一释放（防端口/文件句柄泄漏） */
+const featureDisposers: (() => void)[] = []
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -109,9 +115,9 @@ function createWindow(): void {
   })
 
   // 窗口关闭行为：默认"关闭 = 隐藏到托盘"（教学演示托盘常驻场景）
-  // 真正退出走托盘菜单"退出应用"或系统退出（此时 quitState.isQuitting = true，不拦截）
+  // 真正退出走托盘菜单"退出应用"或系统退出（此时 isQuitting() = true，不拦截）
   mainWindow.on('close', (event) => {
-    if (!quitState.isQuitting) {
+    if (!isQuitting()) {
       event.preventDefault()
       mainWindow?.hide()
     }
@@ -153,7 +159,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // ── 特性注册表 ──
+  // ── 特性注册表（轻量化：需释放资源的模块返回 Disposer，收集到 featureDisposers）──
   registerWindowManager(getMainWindow) // 窗口管理（含多窗口/置顶/透明）
   registerIpcBridge() // IPC 四种通信模式
   registerTray(getMainWindow) // 系统托盘
@@ -161,14 +167,14 @@ app.whenReady().then(() => {
   registerGlobalShortcut(getMainWindow) // 全局快捷键 Ctrl+Shift+1/2
   registerClipboard() // 剪贴板
   registerDialog(getMainWindow) // 文件对话框
-  registerFileSystem(getMainWindow) // 文件系统读写
+  featureDisposers.push(registerFileSystem(getMainWindow)) // 文件系统读写（含 watchers 释放）
   registerMenu(getMainWindow) // 应用菜单 + 右键菜单
   registerScreenInfo(getMainWindow) // 屏幕信息
   registerTheme(getMainWindow) // 系统主题联动
   registerSecurity() // 安全策略（权限/导航拦截）
   registerNetwork() // HTTP 请求封装
-  registerSockets(getMainWindow) // TCP / UDP 原生通信
-  registerSocketServer() // WebSocket 服务器（socket.io 自闭环演示）
+  featureDisposers.push(registerSockets(getMainWindow)) // TCP / UDP 原生通信（含端口释放）
+  featureDisposers.push(registerSocketServer()) // WebSocket 服务器（socket.io 自闭环演示）
   registerAutoUpdater(getMainWindow) // 自动更新（electron-updater）
   registerProtocol(getMainWindow) // 自定义协议 + 深链接 + 内嵌网页
   registerWindowState() // 窗口状态持久化（attach 见 createWindow）
@@ -198,8 +204,8 @@ app.whenReady().then(() => {
   registerSessionConfig() // 会话配置（代理/UA）
   registerCertificate() // 证书校验策略
   registerPartition() // 会话分区（无痕/多账号）
-  registerQuitGuard(getMainWindow) // 退出前未保存询问
-  registerHttpServer() // HTTP 服务器（node:http）
+  featureDisposers.push(registerQuitGuard(getMainWindow)) // 退出前未保存询问
+  featureDisposers.push(registerHttpServer()) // HTTP 服务器（node:http）
   registerScriptInjection(getMainWindow) // 脚本注入
   registerLoadState(getMainWindow) // 页面加载状态监控
   registerSafeStorage() // 加密存储（safeStorage）
@@ -207,6 +213,8 @@ app.whenReady().then(() => {
   registerGpuInfo() // GPU 信息与硬件加速开关
   registerAppPaths() // 应用数据目录（getPath/setPath）
   registerBetterSqlite() // 第三方 SQLite（better-sqlite3）
+  featureDisposers.push(registerSignalAnalysisServer()) // 信号分析服务端（Demo，本地计算/远程后端，IPC + WS）
+  featureDisposers.push(registerRemoteMockServer()) // 远端Mock内置（与本地同端口互斥，演示一键远程）
 
   // 启动闪屏（教学演示默认开启；主窗口 ready 后自动关闭）
   showSplash()
@@ -221,9 +229,17 @@ app.whenReady().then(() => {
 
 // 所有窗口关闭即退出（macOS 除外：保留 Dock 常驻）
 // 教学说明：正常关闭窗口已被拦截为"隐藏到托盘"（见 createWindow），
-// 走到这里说明是退出流程（托盘"退出应用"触发 before-quit → quitState.isQuitting=true）
+// 走到这里说明是退出流程（托盘"退出应用"触发 before-quit → isQuitting=true）
+// 轻量化：退出前统一释放资源（端口/文件监听等），避免下次启动 EADDRINUSE
 app.on('before-quit', () => {
-  quitState.isQuitting = true
+  setQuitting(true)
+  for (const d of featureDisposers) {
+    try {
+      d()
+    } catch {
+      // 忽略单个释放异常
+    }
+  }
 })
 
 app.on('window-all-closed', () => {
