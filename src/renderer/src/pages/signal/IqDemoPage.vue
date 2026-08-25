@@ -184,7 +184,8 @@ watch(adapterKey, (v) => {
       <div style="margin-top: 8px; font-size: 12px; color: #888">
         交互：滚轮缩放（光标锚点）· Shift+滚轮缩放幅值 · 暂停后拖拽平移 / Shift+框选放大 /
         窗口自动测量 · Alt+点击添加标记（点标记即清除）/ 右键菜单批量管理 ·
-        双击暂停⇆恢复（恢复清除标记）· 悬停十字光标读数 · 点击图例切换迹线
+        双击暂停⇆恢复（恢复清除标记）· 悬停十字光标读数 · 点击图例切换迹线 · 暂停态方向键平移 ±缩放
+        · Z/Shift+Z 撤销重做缩放
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
         时域图直接绘制服务端下发的原始 IQ；数据经 <code>adapter</code>（{{

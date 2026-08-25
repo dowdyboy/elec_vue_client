@@ -19,7 +19,15 @@ import {
   type LineRenderer
 } from './core/gl'
 import { iqAdapters } from './core/adapters'
-import { drawAxisOverlay, drawChip, drawPanel, niceTicks, CHIP_H, type PlotRect } from './core/axis'
+import {
+  drawAxisOverlay,
+  drawChip,
+  drawPanel,
+  niceTicks,
+  niceStep,
+  CHIP_H,
+  type PlotRect
+} from './core/axis'
 import { MinMaxPyramid, type RangeStats } from './core/pyramid'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
@@ -642,16 +650,16 @@ function drawOverlay(
       ctx.font = '11px system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      const fmt3 = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+      const fmt3 = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(yDecimals())}`
       const lines = [`窗口 ${st.count} 样本`]
       if (traceVisible.i) {
         lines.push(
-          `I  Vpp ${(st.maxI - st.minI).toFixed(3)}  均值 ${fmt3(st.meanI)}  RMS ${st.rmsI.toFixed(3)}`
+          `I  Vpp ${(st.maxI - st.minI).toFixed(yDecimals())}  均值 ${fmt3(st.meanI)}  RMS ${st.rmsI.toFixed(yDecimals())}`
         )
       }
       if (traceVisible.q) {
         lines.push(
-          `Q  Vpp ${(st.maxQ - st.minQ).toFixed(3)}  均值 ${fmt3(st.meanQ)}  RMS ${st.rmsQ.toFixed(3)}`
+          `Q  Vpp ${(st.maxQ - st.minQ).toFixed(yDecimals())}  均值 ${fmt3(st.meanQ)}  RMS ${st.rmsQ.toFixed(yDecimals())}`
         )
       }
       let wMax = 0
@@ -677,7 +685,7 @@ function drawOverlay(
     const readAt = (c: number): string | null => {
       const local = c - dropped
       if (local < 0 || local >= dataLen) return null
-      return `I ${fmtValIq(iBuf[local] ?? 0)} Q ${fmtValIq(qBuf[local] ?? 0)}`
+      return `I ${fmtValIqAdaptive(iBuf[local] ?? 0)} Q ${fmtValIqAdaptive(qBuf[local] ?? 0)}`
     }
     const markerLines: string[] = []
     markers.forEach((c, i) => {
@@ -762,14 +770,14 @@ function drawOverlay(
     min: plot.x,
     max: plot.x + plot.w
   })
-  const yText = pyToDataY(cursor.py).toFixed(3)
+  const yText = pyToDataY(cursor.py).toFixed(yDecimals())
   const yChipY = Math.min(Math.max(cyp - CHIP_H / 2, plot.y + 2), plot.y + plot.h - CHIP_H - 2)
   drawChip(ctx, 2, yChipY, yText, chipBg, t.text)
 
   // 浮动读数框：样本索引 + 最近采样点实际 I/Q 值（贴近右/下边缘时自动翻转避让）
   const smp = sampleAt(cursor.px)
   if (!smp) return
-  const fmtVal = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+  const fmtVal = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(yDecimals())}`
   const idxLine = timeOn
     ? `#${smp.idx} · ${fmtTime(dispX / (rate as number), tStep)}`
     : `#${smp.idx}`
@@ -893,9 +901,144 @@ function fmtFreq(hz: number): string {
   if (hz >= 1e3) return `${trimZeros(hz / 1e3, 1e-3)} kHz`
   return `${trimZeros(hz, 1e-3)} Hz`
 }
-/** 带符号三位小数的 I/Q 值文本（游标/十字光标读数共用） */
-function fmtValIq(v: number): string {
-  return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}`
+/** 读数小数位自适应：随 Y 轴 V/div 档位（步长量级）自动定精度，钳制 2~6 位 */
+function yDecimals(): number {
+  if (!lastView) return 3
+  const step = niceStep(lastView.yRange.max - lastView.yRange.min, 5)
+  return Math.min(6, Math.max(2, Math.ceil(-Math.log10(Math.max(step, 1e-9))) + 2))
+}
+/** 带符号自适应小数位（精度随 V/div 档位） */
+function fmtValIqAdaptive(v: number): string {
+  return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(yDecimals())}`
+}
+
+// ── 缩放历史栈（Z 撤销 / Shift+Z 重做）──
+interface ViewState {
+  follow: boolean
+  span: number
+  xMin: number
+  xMax: number
+  yAuto: boolean
+  yMin: number
+  yMax: number
+}
+const viewHistory: ViewState[] = []
+let viewHistoryPos = -1
+const VIEW_HISTORY_MAX = 30
+
+function captureView(): ViewState {
+  const xr = resolveXRange()
+  return {
+    follow: view.follow,
+    span: view.span,
+    xMin: xr.min,
+    xMax: xr.max,
+    yAuto: view.yAuto,
+    yMin: view.yMin,
+    yMax: view.yMax
+  }
+}
+/** 视口变更后提交当前状态（截断 redo 尾部，容量封顶） */
+function commitViewState(): void {
+  viewHistory.length = viewHistoryPos + 1
+  viewHistory.push(captureView())
+  if (viewHistory.length > VIEW_HISTORY_MAX) viewHistory.shift()
+  viewHistoryPos = viewHistory.length - 1
+}
+function clearViewHistory(): void {
+  viewHistory.length = 0
+  viewHistoryPos = -1
+  commitViewState() // 记录新基线
+}
+function applyViewState(s: ViewState): void {
+  view.follow = s.follow
+  view.span = s.span
+  view.yAuto = s.yAuto
+  view.yMin = s.yMin
+  view.yMax = s.yMax
+  if (!s.follow) {
+    view.xMin = s.xMin
+    view.xMax = s.xMax
+  }
+  resetYAuto()
+  schedule()
+  emitViewportChange(true)
+}
+function undoView(): void {
+  if (viewHistoryPos <= 0) return
+  viewHistoryPos--
+  applyViewState(viewHistory[viewHistoryPos]!)
+}
+function redoView(): void {
+  if (viewHistoryPos >= viewHistory.length - 1) return
+  viewHistoryPos++
+  applyViewState(viewHistory[viewHistoryPos]!)
+}
+
+// ── 键盘微调（暂停态）：←→ X 平移 / ↑↓ Y 平移 / +− X 缩放 / Z 撤销 / Shift+Z 重做 ──
+function panView(dx: number): void {
+  const xr = resolveXRange()
+  const span = xr.max - xr.min
+  setFrozenX(xr.min + dx * span, xr.max + dx * span)
+  schedule()
+  emitViewportChange(true)
+}
+function panViewY(dy: number): void {
+  const r = view.yAuto && lastView ? lastView.yRange : { min: view.yMin, max: view.yMax }
+  view.yAuto = false
+  const d = dy * (r.max - r.min)
+  view.yMin = r.min + d
+  view.yMax = r.max + d
+  resetYAuto()
+  schedule()
+  emitViewportChange(true)
+}
+function zoomViewX(factor: number): void {
+  const xr = resolveXRange()
+  const span = Math.min(
+    Math.max((xr.max - xr.min) * factor, MIN_SPAN),
+    Math.max(totalAbs(), MIN_SPAN)
+  )
+  const c = (xr.min + xr.max) / 2
+  setFrozenX(c - span / 2, c + span / 2)
+  schedule()
+  emitViewportChange(true)
+}
+function onKeyDown(evt: KeyboardEvent): void {
+  if (evt.ctrlKey || evt.metaKey || evt.altKey) return
+  if (evt.key === 'z' || evt.key === 'Z') {
+    if (evt.shiftKey) redoView()
+    else undoView()
+    return
+  }
+  if (view.follow) return // 跟随态不允许视口微调
+  if (!lastView) return
+  const commit = (fn: () => void): void => {
+    fn()
+    commitViewState()
+  }
+  switch (evt.key) {
+    case 'ArrowLeft':
+      commit(() => panView(-0.1))
+      break
+    case 'ArrowRight':
+      commit(() => panView(0.1))
+      break
+    case 'ArrowUp':
+      commit(() => panViewY(0.1))
+      break
+    case 'ArrowDown':
+      commit(() => panViewY(-0.1))
+      break
+    case '+':
+    case '=':
+      commit(() => zoomViewX(1 / 1.2))
+      break
+    case '-':
+    case '_':
+      commit(() => zoomViewX(1.2))
+      break
+  }
 }
 
 // ── 十字光标 ──
@@ -978,6 +1121,7 @@ function onWheel(evt: WheelEvent): void {
     const rw = unpadX(anchor - leftSpan, anchor - leftSpan + span, xFrac)
     setFrozenX(rw.min, rw.max)
   }
+  commitViewState() // 缩放历史（Z 可逐级撤销）
   schedule()
   emitViewportChange()
 }
@@ -1055,6 +1199,7 @@ function finishBoxZoom(): void {
     view.yMax = yHi
     resetYAuto()
   }
+  commitViewState() // 框选缩放入历史（Z 可回退）
 }
 
 function onPointerMove(evt: PointerEvent): void {
@@ -1120,6 +1265,7 @@ function onPointerUp(evt: PointerEvent): void {
   }
   if (!dragCtx) return
   dragCtx = null
+  commitViewState() // 拖拽平移结束 → 历史
   emitViewportChange(true)
 }
 
@@ -1181,6 +1327,7 @@ function zoomReset(notify = true): void {
   markerDrag = -1
   menu.show = false
   resetYAuto() // 复位后直接吸附新窗口目标范围，不从旧范围滑入
+  clearViewHistory() // 复位后历史重置为新基线
   schedule()
   emitSpanChange(notify)
   if (notify) emitViewportChange(true)
@@ -1308,6 +1455,7 @@ function doResolveViewInfo(): { xMin: number; xMax: number; yMin: number; yMax: 
 
 onMounted(async () => {
   await nextTick()
+  window.addEventListener('keydown', onKeyDown)
   const canvas = canvasRef.value
   if (!canvas) return
   // preserveDrawingBuffer：合成后保留绘图缓冲——余辉（persistence）淡出合成的前提；
@@ -1331,6 +1479,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
   renderer?.dispose()
   rendererQ?.dispose()
   rendererEnv?.dispose()
