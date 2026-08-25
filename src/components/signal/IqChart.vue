@@ -44,6 +44,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const overlayRef = ref<HTMLCanvasElement | null>(null)
 let renderer: LineRenderer | null = null
 let rendererQ: LineRenderer | null = null
+let rendererEnv: LineRenderer | null = null
 // 单 canvas 双 program 也可，此处双 renderer 简化（Q 用第二 canvas 叠加或同一 GL 分两 draw）
 // 为拷贝轻量：复用同一 canvas，绘制 I 后再绘制 Q（同一 GL 上下文分两次 draw）
 let gl: WebGL2RenderingContext | null = null
@@ -174,7 +175,7 @@ watch(
 )
 
 // 迹线可见性：点击图例切换；隐藏的通道不参与绘制与 Y 轴自适应统计
-const traceVisible = reactive({ i: true, q: true })
+const traceVisible = reactive({ i: true, q: true, env: true })
 
 function applyExternalViewport(v: NonNullable<IqProps['viewport']>): void {
   if (v.autoScale !== undefined) {
@@ -267,6 +268,10 @@ function computeVisibleMM(s: number, e: number): { min: number; max: number } | 
   if (traceVisible.q) {
     if (mm.minQ < mn) mn = mm.minQ
     if (mm.maxQ > mx) mx = mm.maxQ
+  }
+  if (traceVisible.env) {
+    if (mm.envMin < mn) mn = mm.envMin
+    if (mm.envMax > mx) mx = mm.envMax
   }
   if (!isFinite(mn)) return null
   return { min: mn, max: mx }
@@ -451,6 +456,23 @@ function draw(): void {
     rendererQ.draw(
       { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
       withAlpha(th.value.traceQ, th.value.traceAlpha),
+      false,
+      plot
+    )
+  }
+  // 绘制幅度包络 √(I²+Q²)（第三条叠加迹线；金字塔 env 聚合，大窗仍 O(块数)）
+  if (props.envelope && traceVisible.env && rendererEnv) {
+    let envDec: Float32Array
+    if (!props.decimation || len <= targetPoints) {
+      envDec = new Float32Array(len)
+      for (let k = 0; k < len; k++) envDec[k] = Math.hypot(iBuf[s + k] ?? 0, qBuf[s + k] ?? 0)
+    } else {
+      envDec = pyr.bucketChannel(iBuf, qBuf, s, e, targetPoints, 2)
+    }
+    rendererEnv.setData(envDec)
+    rendererEnv.draw(
+      { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
+      withAlpha(th.value.envColor, th.value.traceAlpha * 0.8),
       false,
       plot
     )
@@ -1087,6 +1109,7 @@ function compositeCanvas(): HTMLCanvasElement {
     { label: 'I', color: th.value.traceI, on: traceVisible.i },
     { label: 'Q', color: th.value.traceQ, on: traceVisible.q }
   ]
+  if (props.envelope) items.push({ label: 'Env', color: th.value.envColor, on: traceVisible.env })
   const gap = 12
   const widths = items.map((it) => 8 + 4 + ctx.measureText(it.label).width)
   const totalW = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)
@@ -1188,6 +1211,7 @@ onMounted(async () => {
   }
   renderer = createLineRenderer(canvas, gl)
   rendererQ = createLineRenderer(canvas, gl)
+  rendererEnv = createLineRenderer(canvas, gl)
   // 初始数据
   if (props.data !== undefined) setData(props.data)
   draw()
@@ -1196,6 +1220,7 @@ onMounted(async () => {
 onUnmounted(() => {
   renderer?.dispose()
   rendererQ?.dispose()
+  rendererEnv?.dispose()
   if (raf) cancelAnimationFrame(raf)
   if (viewportNotifyTimer) {
     clearTimeout(viewportNotifyTimer)
@@ -1290,6 +1315,17 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
         @dblclick.stop
       >
         <span class="sig-dot" :style="{ background: th.traceQ }" /> Q
+      </span>
+      <span
+        v-if="props.envelope"
+        class="sig-trace"
+        :class="{ off: !traceVisible.env }"
+        style="margin-left: 12px"
+        @click.stop="traceVisible.env = !traceVisible.env"
+        @pointerdown.stop
+        @dblclick.stop
+      >
+        <span class="sig-dot" :style="{ background: th.envColor }" /> Env
       </span>
     </div>
     <div

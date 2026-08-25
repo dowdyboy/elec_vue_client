@@ -224,4 +224,53 @@ describe('MinMaxPyramid', () => {
     expect(pyr.query(i, q, 5, 5)).toBeNull()
     expect(pyr.bucketChannel(i, q, 0, 0, 4, 0).length).toBe(0)
   })
+
+  it('包络通道 env 抽稀与暴力一致（含索引顺序）', () => {
+    const CAP = 1 << 16
+    const i = new Float32Array(CAP)
+    const q = new Float32Array(CAP)
+    const rnd = makeRng(55)
+    const N = 50000
+    for (let j = 0; j < N; j++) {
+      i[j] = Math.sin(j * 0.02) + rnd() * 0.3
+      q[j] = Math.cos(j * 0.02) + rnd() * 0.3
+    }
+    const pyr = new MinMaxPyramid(CAP)
+    pyr.rebuild(i, q, N)
+    const s = 5000
+    for (const target of [600, 250]) {
+      const got = Array.from(pyr.bucketChannel(i, q, s, N, target, 2))
+      // 暴力：每桶 env min/max（含顺序）
+      const len = N - s
+      const bucket = len / target
+      const exp: number[] = []
+      for (let b = 0; b < target; b++) {
+        const a = s + Math.floor(b * bucket)
+        const c = Math.min(N, s + Math.floor((b + 1) * bucket))
+        let mn = Infinity
+        let mx = -Infinity
+        let mnIdx = -1
+        let mxIdx = -1
+        for (let j = a; j < c; j++) {
+          const v = Math.hypot(i[j]!, q[j]!)
+          if (v < mn) {
+            mn = v
+            mnIdx = j
+          }
+          if (v > mx) {
+            mx = v
+            mxIdx = j
+          }
+        }
+        if (mnIdx < 0) continue
+        if (mnIdx < mxIdx) exp.push(mn, mx)
+        else exp.push(mx, mn)
+      }
+      // float32 存储 vs float64 暴力存在 ~1e-7 舍入，逐元素容差比较
+      expect(got.length).toBe(exp.length)
+      for (let k = 0; k < got.length; k++) {
+        expect(got[k]!).toBeCloseTo(exp[k]!, 5)
+      }
+    }
+  })
 })

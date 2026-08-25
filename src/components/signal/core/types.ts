@@ -43,6 +43,8 @@ export interface ChartStyle {
   traceI?: string
   /** Q 迹线颜色 */
   traceQ?: string
+  /** 幅度包络迹线颜色（envelope 启用时） */
+  envColor?: string
   /** 波形不透明度 0~1（默认 0.85） */
   traceAlpha?: number
   /** 左侧刻度带宽 CSS px（最小 40，默认 56；固定宽度不随数据抖动） */
@@ -85,6 +87,8 @@ export interface IqProps extends ChartBaseProps {
   style?: ChartStyle
   /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
   sampleRate?: number
+  /** 启用幅度包络通道 √(I²+Q²)（第三条叠加迹线，基于金字塔 env 聚合，大窗仍 O(块数)） */
+  envelope?: boolean
   /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
   span?: number
   /**

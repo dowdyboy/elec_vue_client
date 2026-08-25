@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { NCard, NSelect, NButton, NEmpty, NInput, NInputNumber, useMessage } from 'naive-ui'
+import {
+  NCard,
+  NSelect,
+  NButton,
+  NEmpty,
+  NInput,
+  NInputNumber,
+  NCheckbox,
+  useMessage
+} from 'naive-ui'
 import IqChart from '@components/signal/IqChart.vue'
 import { iqAdapters } from '@components/signal/core/adapters'
 import type { ExportPayload, Theme } from '@components/signal/core/types'
@@ -12,6 +21,7 @@ const adapterKey = ref<'passthrough' | 'jsonInterleaved'>('passthrough')
 const themeKey = ref<Theme>('spectrum')
 const sampleRate = ref(4096)
 const spanSamples = ref(4096)
+const envelopeOn = ref(false)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
 
@@ -145,6 +155,7 @@ watch(adapterKey, (v) => {
           :show-button="false"
           style="width: 130px"
         />
+        <NCheckbox v-model:checked="envelopeOn">幅度包络</NCheckbox>
         <span>导出目录</span>
         <NInput :value="exportDir" readonly placeholder="默认下载目录" style="width: 220px" />
         <NButton size="small" @click="onPickExportDir">选择…</NButton>
@@ -182,6 +193,7 @@ watch(adapterKey, (v) => {
           :theme="themeKey"
           :adapter="getAdapter() as never"
           :sample-rate="sampleRate"
+          :envelope="envelopeOn"
           :export-handler="handleExport"
           :height="420"
           @exported="onExported"

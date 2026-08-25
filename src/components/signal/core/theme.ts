@@ -16,6 +16,7 @@ interface FullPreset {
   labelChipBg: string
   traceI: string
   traceQ: string
+  envColor: string
   traceAlpha: number
   axisWidth: number
   crosshair: string
@@ -32,6 +33,7 @@ export interface ResolvedTheme {
   labelChipBg: string
   traceI: string
   traceQ: string
+  envColor: string
   traceAlpha: number
   axisWidth: number
   crosshair: string
@@ -51,7 +53,8 @@ const DARK: FullPreset = {
   traceQ: '#ff4081',
   traceAlpha: 0.85,
   axisWidth: 56,
-  crosshair: '#8b949e'
+  crosshair: '#8b949e',
+  envColor: '#ffa726'
 }
 
 const LIGHT: FullPreset = {
@@ -66,7 +69,8 @@ const LIGHT: FullPreset = {
   traceQ: '#ff4081',
   traceAlpha: 0.85,
   axisWidth: 56,
-  crosshair: '#57606a'
+  crosshair: '#57606a',
+  envColor: '#f57c00'
 }
 
 /** 频谱仪经典面板：纯黑底、暗绿栅格、亮黄/青双迹 */
@@ -83,7 +87,8 @@ const SPECTRUM: FullPreset = {
   traceQ: '#22d3ee',
   traceAlpha: 0.9,
   axisWidth: 56,
-  crosshair: '#7ee2a8'
+  crosshair: '#7ee2a8',
+  envColor: '#ffb74d'
 }
 
 const COLOR_KEYS = [
@@ -96,6 +101,7 @@ const COLOR_KEYS = [
   'labelChipBg',
   'traceI',
   'traceQ',
+  'envColor',
   'crosshair'
 ] as const
 
