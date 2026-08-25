@@ -50,6 +50,7 @@ in float aValue;
 uniform float uCount;
 uniform vec2 uViewport;
 uniform vec2 uYRange;
+uniform float uPointSize;
 void main(){
   float idx = float(gl_VertexID);
   float xRange = uViewport.y - uViewport.x;
@@ -57,6 +58,7 @@ void main(){
   float yRange = uYRange.y - uYRange.x;
   float y = yRange < 0.0001 ? (aValue+1.0)*0.5 : (aValue - uYRange.x) / yRange;
   gl_Position = vec4(x*2.0-1.0, y*2.0-1.0, 0.0, 1.0);
+  gl_PointSize = uPointSize > 0.0 ? uPointSize : 1.0;
 }
 `
 const FS_LINE = `#version 300 es
@@ -80,7 +82,9 @@ export interface LineRenderer {
      * 不透明直写（禁用混合、以 alpha=1 覆盖）：
      * 冻结稳定态下重绘需幂等——半透明混合的重复叠加会逐次变亮（非幂等）
      */
-    noBlend?: boolean
+    noBlend?: boolean,
+    /** >0 时以 POINTS 散点绘制（mode:'dots' 时间域散点），否则折线 */
+    pointSize?: number
   ): void
   dispose(): void
   gl: WebGL2RenderingContext
@@ -136,6 +140,7 @@ export function createLineRenderer(
   const uViewportLoc = _gl.getUniformLocation(prog, 'uViewport')
   const uYRangeLoc = _gl.getUniformLocation(prog, 'uYRange')
   const uColorLoc = _gl.getUniformLocation(prog, 'uColor')
+  const uPointSizeLoc = _gl.getUniformLocation(prog, 'uPointSize')
   const buf = _gl.createBuffer()
   let count = 0
   return {
@@ -145,7 +150,7 @@ export function createLineRenderer(
       _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
       _gl.bufferData(_gl.ARRAY_BUFFER, data, _gl.DYNAMIC_DRAW)
     },
-    draw(viewport, color, clear = true, plotRect?, noBlend = false) {
+    draw(viewport, color, clear = true, plotRect?, noBlend = false, pointSize = 0) {
       if (count === 0) return
       // 实测比例：背板设备像素 ÷ 元素 CSS 实测尺寸——不信任全局 DPR 缓存，
       // 页面缩放/系统非整数缩放场景下波形与 overlay 网格保持严格对齐（同 overlay 真实比例修复）
@@ -190,7 +195,14 @@ export function createLineRenderer(
         _gl.enable(_gl.BLEND)
         _gl.blendFunc(_gl.ONE, _gl.ONE_MINUS_SRC_ALPHA)
       }
-      _gl.drawArrays(_gl.LINE_STRIP, 0, count)
+      if (pointSize > 0) {
+        // mode:'dots'：时间域散点（复用索引映射），点径随 lineWidth
+        _gl.uniform1f(uPointSizeLoc, pointSize)
+        _gl.drawArrays(_gl.POINTS, 0, count)
+      } else {
+        _gl.uniform1f(uPointSizeLoc, 0)
+        _gl.drawArrays(_gl.LINE_STRIP, 0, count)
+      }
     },
     dispose() {
       _gl.deleteBuffer(buf)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import {
   NCard,
   NSelect,
@@ -9,6 +9,7 @@ import {
   NInputNumber,
   NCheckbox,
   NSlider,
+  NColorPicker,
   useMessage
 } from 'naive-ui'
 import IqChart from '@components/signal/IqChart.vue'
@@ -26,6 +27,65 @@ const envelopeOn = ref(false)
 const persistenceVal = ref(0)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
+
+// ── 全部对外属性演示 ──
+const modeKey = ref<'line' | 'dots'>('line')
+const lineWidthVal = ref(1)
+const decimationKey = ref<'minmax' | 'none'>('minmax')
+const colorsI = ref<string | null>(null) // null=取主题预置
+const colorsQ = ref<string | null>(null)
+const showAxis = ref(true)
+const showXAxis = ref(true)
+const showGrid = ref(true)
+const showAxisLabels = ref(true)
+const styleBg = ref<string | null>(null)
+const styleCrosshair = ref<string | null>(null)
+const styleGrid = ref<string | null>(null)
+const styleBorder = ref<string | null>(null)
+const styleText = ref<string | null>(null)
+
+const styleOverrides = computed(() => {
+  const s: Record<string, string> = {}
+  if (styleBg.value) s.bg = styleBg.value
+  if (styleCrosshair.value) s.crosshair = styleCrosshair.value
+  if (styleGrid.value) s.grid = styleGrid.value
+  if (styleBorder.value) s.border = styleBorder.value
+  if (styleText.value) s.text = styleText.value
+  return s
+})
+const colorsPair = computed<[string, string] | undefined>(() => {
+  const i = colorsI.value
+  const q = colorsQ.value
+  if (!i && !q) return undefined
+  return [(i ?? undefined) as string, (q ?? undefined) as string]
+})
+const decimationVal = computed<'minmax' | false>(() =>
+  decimationKey.value === 'none' ? false : 'minmax'
+)
+
+// ── 方法演示 ──
+const vpMin = ref(0)
+const vpMax = ref(2000)
+function onSetViewport(): void {
+  iqRef.value?.setViewport({ xMin: vpMin.value, xMax: vpMax.value, autoScale: true })
+  message.info(`已设置视口 [${vpMin.value}, ${vpMax.value}]（冻结）`)
+}
+function onGetView(): void {
+  message.info(`视口：${JSON.stringify(iqRef.value?.getView())}`)
+}
+function onGetLength(): void {
+  message.info(`缓冲长度：${iqRef.value?.getLength()} 样本`)
+}
+function onResetStyle(): void {
+  styleBg.value = null
+  styleCrosshair.value = null
+  styleGrid.value = null
+  styleBorder.value = null
+  styleText.value = null
+  colorsI.value = null
+  colorsQ.value = null
+  message.success('已清除自定义颜色，恢复主题预置')
+}
 
 watch(exportDir, (v) => {
   if (v) localStorage.setItem('sig-iq-export-dir', v)
@@ -110,6 +170,17 @@ function onExportCSV(): void {
   iqRef.value?.exportCSV()
 }
 
+/** 停止推流（不切页）：组件保持挂载，约 3 秒后可观察「数据流中断」角标 */
+async function onStopStream(): Promise<void> {
+  try {
+    await window.api.signalAnalysis.stop()
+    await window.api.remoteMock.stop()
+    message.success('已停止推流（组件保持挂载，可观察中断角标）')
+  } catch (e) {
+    message.error(`停止失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 watch(adapterKey, (v) => {
   iqRef.value?.clear()
   hasData.value = false
@@ -119,45 +190,49 @@ watch(adapterKey, (v) => {
 
 <template>
   <div style="padding: 16px">
-    <NCard title="〰️ IQ 时域（可复制组件演示）" style="margin-bottom: 16px">
-      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center">
+    <NCard title="〰️ IQ 时域（可复制组件演示）" style="margin-bottom: 16px" size="small">
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px">
         <span>主题</span>
         <NSelect
           v-model:value="themeKey"
+          size="small"
           :options="[
             { label: 'spectrum（频谱仪黑底黄迹）', value: 'spectrum' },
             { label: 'dark', value: 'dark' },
             { label: 'light', value: 'light' },
             { label: 'auto（跟随系统）', value: 'auto' }
           ]"
-          style="width: 240px"
+          style="width: 210px"
         />
         <span>适配器</span>
         <NSelect
           v-model:value="adapterKey"
+          size="small"
           :options="[
-            { label: 'passthrough (Float32Array)', value: 'passthrough' },
-            { label: 'jsonInterleaved ({i,q})', value: 'jsonInterleaved' }
+            { label: 'passthrough', value: 'passthrough' },
+            { label: 'jsonInterleaved', value: 'jsonInterleaved' }
           ]"
-          style="width: 200px"
+          style="width: 140px"
         />
-        <span>采样率 (Hz)</span>
+        <span>采样率</span>
         <NInputNumber
           v-model:value="sampleRate"
+          size="small"
           :min="1"
           :step="4096"
           :show-button="false"
-          style="width: 130px"
+          style="width: 96px"
         />
-        <span>窗宽 (样本)</span>
+        <span>窗宽</span>
         <NInputNumber
           v-model:value="spanSamples"
+          size="small"
           :min="16"
           :step="4096"
           :show-button="false"
-          style="width: 130px"
+          style="width: 96px"
         />
-        <NCheckbox v-model:checked="envelopeOn">幅度包络</NCheckbox>
+        <NCheckbox v-model:checked="envelopeOn" size="small">包络</NCheckbox>
         <span>余辉</span>
         <NSlider
           v-model:value="persistenceVal"
@@ -168,12 +243,19 @@ watch(adapterKey, (v) => {
           style="width: 120px"
         />
         <span>导出目录</span>
-        <NInput :value="exportDir" readonly placeholder="默认下载目录" style="width: 220px" />
-        <NButton size="small" @click="onPickExportDir">选择…</NButton>
-        <NButton size="small" @click="onBackToLatest">回到最新</NButton>
-        <NButton size="small" @click="onExportPNG">截图 PNG</NButton>
-        <NButton size="small" @click="onExportCSV">导出 CSV</NButton>
-        <NButton size="small" @click="onClear">清空</NButton>
+        <NInput
+          :value="exportDir"
+          readonly
+          placeholder="默认下载目录"
+          size="small"
+          style="width: 180px"
+        />
+        <NButton size="tiny" @click="onPickExportDir">选择…</NButton>
+        <NButton size="tiny" @click="onBackToLatest">回到最新</NButton>
+        <NButton size="tiny" @click="onExportPNG">截图 PNG</NButton>
+        <NButton size="tiny" @click="onExportCSV">导出 CSV</NButton>
+        <NButton size="tiny" @click="onStopStream">停止推流</NButton>
+        <NButton size="tiny" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
           >等待服务端（请至“Mock 配置”页启动）…</span
         >
@@ -197,6 +279,109 @@ watch(adapterKey, (v) => {
         4096，即满窗 4096 样本恰好为 1 秒。真实使用时应与采集硬件的实际采样率一致。
       </div>
     </NCard>
+    <NCard title="🧰 属性与方法（全部对外接口）" style="margin-bottom: 16px" size="small">
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px">
+        <span>模式</span>
+        <NSelect
+          v-model:value="modeKey"
+          size="small"
+          :options="[
+            { label: 'line', value: 'line' },
+            { label: 'dots', value: 'dots' }
+          ]"
+          style="width: 90px"
+        />
+        <span>线宽</span>
+        <NInputNumber
+          v-model:value="lineWidthVal"
+          size="small"
+          :min="1"
+          :max="8"
+          :show-button="false"
+          style="width: 64px"
+        />
+        <span>抽稀</span>
+        <NSelect
+          v-model:value="decimationKey"
+          size="small"
+          :options="[
+            { label: 'minmax', value: 'minmax' },
+            { label: 'off', value: 'none' }
+          ]"
+          style="width: 96px"
+        />
+        <NCheckbox v-model:checked="showAxis" size="small">轴</NCheckbox>
+        <NCheckbox v-model:checked="showXAxis" size="small">X</NCheckbox>
+        <NCheckbox v-model:checked="showGrid" size="small">网格</NCheckbox>
+        <NCheckbox v-model:checked="showAxisLabels" size="small">标题</NCheckbox>
+      </div>
+      <div
+        style="
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-top: 8px;
+          font-size: 12px;
+        "
+      >
+        <span>颜色</span>
+        <span class="cp" title="I 迹线"
+          ><span class="cp-i">I</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="colorsI" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="Q 迹线"
+          ><span class="cp-i">Q</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="colorsQ" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="背景色"
+          ><span class="cp-i">底</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleBg" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="网格线"
+          ><span class="cp-i">网</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleGrid" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="轴线/边框"
+          ><span class="cp-i">轴</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleBorder" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="刻度/读数文字"
+          ><span class="cp-i">文</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleText" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="光标/标记线"
+          ><span class="cp-i">光</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleCrosshair" size="small" :show-alpha="false" /></span
+        ></span>
+        <NButton size="tiny" @click="onResetStyle">重置颜色</NButton>
+      </div>
+      <div
+        style="
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-top: 8px;
+          font-size: 12px;
+        "
+      >
+        <span>视口</span>
+        <NInputNumber v-model:value="vpMin" size="small" :show-button="false" style="width: 84px" />
+        <span>~</span>
+        <NInputNumber v-model:value="vpMax" size="small" :show-button="false" style="width: 84px" />
+        <NButton size="tiny" @click="onSetViewport">setViewport</NButton>
+        <NButton size="tiny" @click="onGetView">getView</NButton>
+        <NButton size="tiny" @click="onGetLength">getLength</NButton>
+      </div>
+    </NCard>
     <NCard content-style="padding: 0">
       <div style="position: relative; height: 420px">
         <IqChart
@@ -205,8 +390,17 @@ watch(adapterKey, (v) => {
           :theme="themeKey"
           :adapter="getAdapter() as never"
           :sample-rate="sampleRate"
+          :mode="modeKey"
+          :line-width="lineWidthVal"
+          :decimation="decimationVal"
+          :colors="colorsPair"
+          :axis="showAxis"
+          :x-axis="showXAxis"
+          :grid="showGrid"
+          :axis-labels="showAxisLabels"
           :envelope="envelopeOn"
           :persistence="persistenceVal"
+          :style="styleOverrides"
           :export-handler="handleExport"
           :height="420"
           @exported="onExported"
@@ -230,3 +424,25 @@ watch(adapterKey, (v) => {
     </NCard>
   </div>
 </template>
+
+<style scoped>
+.cp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cp-i {
+  font-size: 12px;
+  color: #888;
+  min-width: 12px;
+  text-align: center;
+}
+.cp-p {
+  display: inline-block;
+  width: 30px;
+}
+/* 隐藏取色器触发内的颜色文本（rgb(...)），仅显示色块 */
+.cp-p :deep(.n-color-picker__value) {
+  display: none;
+}
+</style>

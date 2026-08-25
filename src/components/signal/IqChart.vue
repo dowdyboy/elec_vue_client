@@ -46,7 +46,8 @@ const props = withDefaults(defineProps<IqProps>(), {
   data: undefined,
   axis: true,
   xAxis: true,
-  grid: true
+  grid: true,
+  axisLabels: true
 })
 
 const emit = defineEmits<{
@@ -73,6 +74,11 @@ let fadeOutFrames = 0
 // 余辉像素不会随 canvas.width 重置而丢失
 let persistSnapshot: HTMLCanvasElement | null = null
 let needsRestore = false
+
+// ── 数据流中断反馈（跟随态下超过阈值无新数据 → 顶部角标提示）──
+const DATA_STALE_MS = 3000
+let lastDataAt = 0 // 最近一次实际接收数据的时间戳（performance.now）
+const dataStale = ref(false)
 // 单 canvas 双 program 也可，此处双 renderer 简化（Q 用第二 canvas 叠加或同一 GL 分两 draw）
 // 为拷贝轻量：复用同一 canvas，绘制 I 后再绘制 Q（同一 GL 上下文分两次 draw）
 let gl: WebGL2RenderingContext | null = null
@@ -177,6 +183,7 @@ function pushNormalized(n: IqNormalized): void {
   } else {
     pyr.appendRange(iBuf, qBuf, prevLen, dataLen)
   }
+  lastDataAt = performance.now() // 实际入缓冲才刷新（暂停态丢弃的帧不计）
   schedule()
 }
 
@@ -496,8 +503,12 @@ function draw(): void {
     gl.clear(gl.COLOR_BUFFER_BIT)
     lastView = null
     clearOverlay()
+    if (dataStale.value) dataStale.value = false
     return
   }
+  // 数据流中断检测（仅跟随态；状态变化才更新 ref，避免每帧触发渲染）
+  const stale = view.follow && lastDataAt > 0 && performance.now() - lastDataAt > DATA_STALE_MS
+  if (dataStale.value !== stale) dataStale.value = stale
   // 波形水平内缩留白：视窗两侧外扩等效 PAD_X 像素再映射到全宽绘图区
   // （轴线/网格不动，与 Y 轴纵向余量同一思路；首末采样点落在 f 与 1-f 像素分数处）
   const effPad = Math.min(PAD_X, plot.w * 0.08)
@@ -523,6 +534,8 @@ function draw(): void {
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
   // 冻结稳定态：迹线不透明直写（幂等重绘）——半透明混合重复叠加会逐次变亮（Alt 循环下可见）
   const opaque = fading && !view.follow && !viewChanged && fadeOutFrames === 0
+  // mode:'dots' 时间域散点；点径随 lineWidth
+  const pt = props.mode === 'dots' ? Math.max(1, Math.round(2 * (props.lineWidth || 1))) : 0
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
   if (traceVisible.i) {
     renderer.setData(iDec)
@@ -531,7 +544,8 @@ function draw(): void {
       withAlpha(th.value.traceI, opaque ? 1 : th.value.traceAlpha),
       false,
       plot,
-      opaque
+      opaque,
+      pt
     )
   }
   // 绘制 Q（叠加，不再清空）
@@ -542,7 +556,8 @@ function draw(): void {
       withAlpha(th.value.traceQ, opaque ? 1 : th.value.traceAlpha),
       false,
       plot,
-      opaque
+      opaque,
+      pt
     )
   }
   // 绘制幅度包络 √(I²+Q²)（第三条叠加迹线；金字塔 env 聚合，大窗仍 O(块数)）
@@ -625,6 +640,30 @@ function drawOverlay(
       labelChipBg: t.labelChipBg
     }
   })
+
+  // ── 轴单位标题（半透明浮于绘图区角部，不占布局；props.axisLabels 控制显隐）──
+  if (props.axisLabels !== false) {
+    ctx.save()
+    ctx.font = '11px system-ui, -apple-system, sans-serif'
+    ctx.fillStyle = t.text
+    ctx.globalAlpha = 0.55
+    // Y：竖排「幅度」于绘图区左上角
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.translate(plot.x + 8, plot.y + 12)
+    ctx.rotate(-Math.PI / 2)
+    ctx.fillText('幅度', 0, 0)
+    ctx.restore()
+    // X：单位于绘图区右下角（时间/样本随 sampleRate）
+    ctx.save()
+    ctx.font = '11px system-ui, -apple-system, sans-serif'
+    ctx.fillStyle = t.text
+    ctx.globalAlpha = 0.55
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText(timeOn ? '时间' : '样本', plot.x + plot.w - 6, plot.y + plot.h - 6)
+    ctx.restore()
+  }
 
   // ── Shift+拖拽 框选矩形（松手放大到该区域）──
   if (boxSel) {
@@ -1314,6 +1353,7 @@ function resumeFollow(): void {
   menu.show = false
   persistSnapshot = null
   needsRestore = false
+  lastDataAt = performance.now() // 恢复瞬间重置计时，避免误报中断
   resetYAuto()
   schedule()
   emitViewportChange(true)
@@ -1522,6 +1562,8 @@ function clear(needDraw = true): void {
   markerDrag = -1
   persistSnapshot = null
   needsRestore = false
+  lastDataAt = 0
+  dataStale.value = false
   pyrDirty = true // 数据清空，下次推流重建金字塔
   zoomReset(false)
   if (needDraw) draw()
@@ -1562,6 +1604,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     >
       已暂停跟随 · 双击恢复
     </div>
+    <div v-if="dataStale" class="sig-stale-badge" title="超过 3 秒未收到新数据">数据流中断</div>
     <div class="sig-legend" title="点击切换迹线显隐">
       <span
         class="sig-trace"
@@ -1682,6 +1725,19 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   border-radius: 10px;
   cursor: pointer;
   z-index: 2;
+}
+.sig-stale-badge {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #f08c00;
+  background: color-mix(in srgb, var(--sig-bg) 80%, transparent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 2;
+  pointer-events: none;
 }
 .sig-legend {
   position: absolute;

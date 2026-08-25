@@ -106,6 +106,8 @@ export interface IqProps extends ChartBaseProps {
   xAxis?: boolean
   /** 网格线，axis 开启时生效 */
   grid?: boolean
+  /** 轴单位标题（左上「幅度」/右下「时间·样本」），默认开启；false 关闭 */
+  axisLabels?: boolean
 }
 
 /** IqChart 视口信息（viewportChange 事件载荷 / getView() 返回值） */
