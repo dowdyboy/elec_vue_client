@@ -63,7 +63,9 @@ const FS_LINE = `#version 300 es
 precision mediump float;
 uniform vec4 uColor;
 out vec4 outColor;
-void main(){ outColor = uColor; }
+// premultiplied 输出：配合 blendFunc(ONE, ONE_MINUS_SRC_ALPHA)，
+// outA = a + dstA*(1-a)，从不透明背景出发 alpha 恒为 1（半透明混合不抽干帧缓冲 alpha）
+void main(){ outColor = vec4(uColor.rgb * uColor.a, uColor.a); }
 `
 
 export interface LineRenderer {
@@ -73,7 +75,12 @@ export interface LineRenderer {
     color: string,
     clear?: boolean,
     /** 绘图区（CSS px，y 为距顶部）；传入时折线只绘入该区域，不传则铺满 canvas */
-    plotRect?: { x: number; y: number; w: number; h: number }
+    plotRect?: { x: number; y: number; w: number; h: number },
+    /**
+     * 不透明直写（禁用混合、以 alpha=1 覆盖）：
+     * 冻结稳定态下重绘需幂等——半透明混合的重复叠加会逐次变亮（非幂等）
+     */
+    noBlend?: boolean
   ): void
   dispose(): void
   gl: WebGL2RenderingContext
@@ -131,7 +138,6 @@ export function createLineRenderer(
   const uColorLoc = _gl.getUniformLocation(prog, 'uColor')
   const buf = _gl.createBuffer()
   let count = 0
-
   return {
     gl: _gl,
     setData(data: Float32Array) {
@@ -139,7 +145,7 @@ export function createLineRenderer(
       _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
       _gl.bufferData(_gl.ARRAY_BUFFER, data, _gl.DYNAMIC_DRAW)
     },
-    draw(viewport, color, clear = true, plotRect?) {
+    draw(viewport, color, clear = true, plotRect?, noBlend = false) {
       if (count === 0) return
       // 实测比例：背板设备像素 ÷ 元素 CSS 实测尺寸——不信任全局 DPR 缓存，
       // 页面缩放/系统非整数缩放场景下波形与 overlay 网格保持严格对齐（同 overlay 真实比例修复）
@@ -176,6 +182,14 @@ export function createLineRenderer(
       _gl.uniform2f(uYRangeLoc, viewport.yMin, viewport.yMax)
       const [r, g, b, a] = hexToRgba(color)
       _gl.uniform4f(uColorLoc, r, g, b, a)
+      if (noBlend) {
+        // 冻结稳定态幂等重绘：不透明直写
+        _gl.disable(_gl.BLEND)
+      } else {
+        // premultiplied 混合：余辉模式下迹线与衰减后的旧帧正确合成且 alpha 恒 1
+        _gl.enable(_gl.BLEND)
+        _gl.blendFunc(_gl.ONE, _gl.ONE_MINUS_SRC_ALPHA)
+      }
       _gl.drawArrays(_gl.LINE_STRIP, 0, count)
     },
     dispose() {
@@ -206,7 +220,8 @@ out vec4 outColor;
 void main(){
   vec2 c = gl_PointCoord - vec2(0.5);
   if (dot(c,c) > 0.25) discard;
-  outColor = vec4(uColor.rgb, uColor.a * uAlpha);
+  float a = uColor.a * uAlpha;
+  outColor = vec4(uColor.rgb * a, a);
 }
 `
 
@@ -262,7 +277,7 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
       gl.uniform1f(uAlphaLoc, alpha)
       gl.uniform1f(uPointSizeLoc, pointSize)
       gl.enable(gl.BLEND)
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       gl.drawArrays(gl.POINTS, 0, count)
     },
     dispose() {
@@ -274,3 +289,102 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
 
 // ── 瀑布纹理（简化：Canvas2D 回退 + WebGL）──
 // 为保持拷贝轻量，瀑布先以 Canvas2D ImageData 滚动实现，WebGL 纹理为可选升级（接口一致）
+
+// ── 全屏淡出渲染器（余辉/数字荧光）──
+// 以指定透明度绘制背景色覆盖旧帧：旧内容按 (1-alpha) 逐帧衰减，形成磷光余辉
+const VS_FADE = `#version 300 es
+void main(){
+  // 全屏大三角：3 个顶点覆盖整个裁剪空间
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+}
+`
+const FS_FADE = `#version 300 es
+precision mediump float;
+uniform vec4 uColor;
+out vec4 outColor;
+// premultiplied 输出：outA = a + dstA*(1-a)，帧缓冲 alpha 恒 1（不抽干）
+void main(){ outColor = vec4(uColor.rgb * uColor.a, uColor.a); }
+`
+
+export interface FadeRenderer {
+  /** color 含 alpha（= 每帧衰减量） */
+  draw(color: [number, number, number, number]): void
+  dispose(): void
+}
+
+export function createFadeRenderer(gl: WebGL2RenderingContext): FadeRenderer {
+  const prog = createProgram(gl, VS_FADE, FS_FADE)
+  const uColorLoc = gl.getUniformLocation(prog, 'uColor')
+  return {
+    draw(color) {
+      // 淡出覆盖整画布（含槽区背景）；scissor 由后续折线绘制自行恢复
+      gl.disable(gl.SCISSOR_TEST)
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+      gl.useProgram(prog)
+      gl.uniform4f(uColorLoc, color[0], color[1], color[2], color[3])
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+    },
+    dispose() {
+      gl.deleteProgram(prog)
+    }
+  }
+}
+
+// ── 全屏贴图回填渲染器 ──
+// 场景：暂停 + 余辉时画布被重建（如按 Alt 弹出菜单栏导致窗口尺寸变化），
+// GL 缓冲随之清空；用冻结前的 2D 快照贴图回填，恢复余辉画面
+const VS_BLIT = `#version 300 es
+out vec2 vUV;
+void main(){
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+  vUV = p * 0.5 + 0.5;
+}
+`
+const FS_BLIT = `#version 300 es
+precision mediump float;
+in vec2 vUV;
+uniform sampler2D uTex;
+out vec4 outColor;
+void main(){ outColor = texture(uTex, vUV); }
+`
+
+export interface BlitRenderer {
+  /** 把 2D 画布内容覆盖绘制到当前帧缓冲（全屏，比例自适应） */
+  draw(source: TexImageSource): void
+  dispose(): void
+}
+
+export function createBlitRenderer(gl: WebGL2RenderingContext): BlitRenderer {
+  const prog = createProgram(gl, VS_BLIT, FS_BLIT)
+  const uTexLoc = gl.getUniformLocation(prog, 'uTex')
+  const tex = gl.createTexture()
+  return {
+    draw(source) {
+      gl.disable(gl.SCISSOR_TEST)
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+      gl.disable(gl.BLEND) // 覆盖而非合成
+      gl.useProgram(prog)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      // 2D 画布行序自顶向下，翻转使纹理 (0,0) 对齐画面左下角
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.uniform1i(uTexLoc, 0)
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      gl.bindTexture(gl.TEXTURE_2D, null)
+    },
+    dispose() {
+      gl.deleteTexture(tex)
+      gl.deleteProgram(prog)
+    }
+  }
+}

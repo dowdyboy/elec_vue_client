@@ -89,6 +89,8 @@ export interface IqProps extends ChartBaseProps {
   sampleRate?: number
   /** 启用幅度包络通道 √(I²+Q²)（第三条叠加迹线，基于金字塔 env 聚合，大窗仍 O(块数)） */
   envelope?: boolean
+  /** 余辉强度 0~0.95（0=关闭）：>0 时旧帧按 (1-强度) 逐帧衰减，形成数字荧光拖影 */
+  persistence?: number
   /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
   span?: number
   /**

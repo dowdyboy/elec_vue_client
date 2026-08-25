@@ -8,6 +8,7 @@ import {
   NInput,
   NInputNumber,
   NCheckbox,
+  NSlider,
   useMessage
 } from 'naive-ui'
 import IqChart from '@components/signal/IqChart.vue'
@@ -22,6 +23,7 @@ const themeKey = ref<Theme>('spectrum')
 const sampleRate = ref(4096)
 const spanSamples = ref(4096)
 const envelopeOn = ref(false)
+const persistenceVal = ref(0)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
 
@@ -156,6 +158,15 @@ watch(adapterKey, (v) => {
           style="width: 130px"
         />
         <NCheckbox v-model:checked="envelopeOn">幅度包络</NCheckbox>
+        <span>余辉</span>
+        <NSlider
+          v-model:value="persistenceVal"
+          :min="0"
+          :max="0.95"
+          :step="0.05"
+          :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+          style="width: 120px"
+        />
         <span>导出目录</span>
         <NInput :value="exportDir" readonly placeholder="默认下载目录" style="width: 220px" />
         <NButton size="small" @click="onPickExportDir">选择…</NButton>
@@ -194,6 +205,7 @@ watch(adapterKey, (v) => {
           :adapter="getAdapter() as never"
           :sample-rate="sampleRate"
           :envelope="envelopeOn"
+          :persistence="persistenceVal"
           :export-handler="handleExport"
           :height="420"
           @exported="onExported"

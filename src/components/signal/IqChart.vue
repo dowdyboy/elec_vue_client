@@ -8,7 +8,16 @@
  * 外观：theme 预置（light/dark/auto/spectrum 频谱仪黑底黄迹）+ style 字段级覆盖
  */
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { createLineRenderer, withAlpha, hexToRgba, type LineRenderer } from './core/gl'
+import {
+  createLineRenderer,
+  withAlpha,
+  hexToRgba,
+  createFadeRenderer,
+  createBlitRenderer,
+  type FadeRenderer,
+  type BlitRenderer,
+  type LineRenderer
+} from './core/gl'
 import { iqAdapters } from './core/adapters'
 import { drawAxisOverlay, drawChip, drawPanel, niceTicks, CHIP_H, type PlotRect } from './core/axis'
 import { MinMaxPyramid, type RangeStats } from './core/pyramid'
@@ -45,6 +54,17 @@ const overlayRef = ref<HTMLCanvasElement | null>(null)
 let renderer: LineRenderer | null = null
 let rendererQ: LineRenderer | null = null
 let rendererEnv: LineRenderer | null = null
+let fadeRenderer: FadeRenderer | null = null
+let blitRenderer: BlitRenderer | null = null
+// 余辉渐隐过渡：视口变化（缩放/平移）时旧余辉按此步数平滑淡出（约 0.2s），避免生硬瞬间清屏。
+// 旧拖影与旧视口绑定，新映射下必然错位——淡出后由新视口数据重绘
+const FADE_OUT_STEPS = 12
+const FADE_OUT_ALPHA = 0.25
+let fadeOutFrames = 0
+// 冻结态 GL 缓冲快照：画布被重建（窗口尺寸变化，如按 Alt 弹出菜单栏）后贴图回填，
+// 余辉像素不会随 canvas.width 重置而丢失
+let persistSnapshot: HTMLCanvasElement | null = null
+let needsRestore = false
 // 单 canvas 双 program 也可，此处双 renderer 简化（Q 用第二 canvas 叠加或同一 GL 分两 draw）
 // 为拷贝轻量：复用同一 canvas，绘制 I 后再绘制 Q（同一 GL 上下文分两次 draw）
 let gl: WebGL2RenderingContext | null = null
@@ -203,6 +223,11 @@ watch(
 
 // 外观配置变化：重绘（静态数据下也能立即看到切换效果）
 watch([() => props.theme, () => props.style], () => schedule(), { deep: true })
+// 余辉强度变化：立即重绘（暂停态下拖滑块也能实时看到拖影变化）
+watch(
+  () => props.persistence,
+  () => schedule()
+)
 
 /** 冻结 X 视口并钳制到可保留范围 [dropped, total]，保持窗宽 */
 function setFrozenX(min: number, max: number): void {
@@ -315,6 +340,8 @@ let lastView: {
   /** 当前帧缓冲切片 [s,e)（缓冲下标），供十字光标采样读数 */
   slice: { s: number; e: number }
 } | null = null
+// 上一帧真实窗口（不带留白外扩）；供余辉「视口是否变化」判断（与显示域 lastView.xRange 区分）
+let lastXrReal: { min: number; max: number } | null = null
 
 // 十字光标状态：绘图区内悬停位置；null=不显示
 let cursor: { px: number; py: number } | null = null
@@ -407,12 +434,58 @@ function draw(): void {
   // 先解析最终 Y 范围（决定网格/零线与刻度芯片位置）
   const yr = len > 0 ? resolveYRange(s, e) : { min: -1, max: 1 }
   const plot = computePlot(canvas)
-  // 背景（全画布；先关 scissor 再清屏；颜色由主题 bg 驱动）
+  // 背景（全画布；先关 scissor；颜色由主题 bg 驱动）。
+  // 余辉语义：
+  // - 流式跟随：每帧淡出合成（旧迹线逐帧衰减、持续累积）
+  // - 暂停且视口未变：不淡出不清理 → 绘图缓冲冻结，余辉停留在暂停瞬间（不随重绘衰减）
+  // - 暂停后缩放/平移（视口已变）：旧内容与新视口错位 → 清屏重绘
   gl.disable(gl.SCISSOR_TEST)
   const bgRgb = hexToRgba(th.value.bg)
-  gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
-  gl.clear(gl.COLOR_BUFFER_BIT)
+  const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
+  const fading = persist > 0 && fadeRenderer !== null
+  // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
+  if (needsRestore && persistSnapshot && blitRenderer) {
+    blitRenderer.draw(persistSnapshot)
+    needsRestore = false
+  }
+  // 视口比较用「真实窗」与「上一帧真实窗」（lastView.xRange 是带留白外扩的显示域，不可直接比较）
+  const viewChanged =
+    !lastView ||
+    !lastXrReal ||
+    xr.min !== lastXrReal.min ||
+    xr.max !== lastXrReal.max ||
+    yr.min !== lastView.yRange.min ||
+    yr.max !== lastView.yRange.max
+  lastXrReal = { min: xr.min, max: xr.max }
+  const fade = (a: number): void => fadeRenderer!.draw([bgRgb[0], bgRgb[1], bgRgb[2], a])
+  if (fading && view.follow) {
+    fadeOutFrames = 0
+    persistSnapshot = null // 跟随态快照无意义，回填需求作废
+    needsRestore = false
+    fade(1 - persist)
+  } else if (fading && !view.follow) {
+    // 暂停态：视口未变 → 缓冲冻结（余辉保留）；视口变化 → 旧余辉快速渐隐而非瞬间清屏
+    if (viewChanged) {
+      fadeOutFrames = FADE_OUT_STEPS
+      persistSnapshot = null // 旧视口快照作废，渐隐完成后重建
+    }
+    if (fadeOutFrames > 0) {
+      fade(FADE_OUT_ALPHA)
+      fadeOutFrames--
+      if (fadeOutFrames === 0) {
+        gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+      }
+    }
+  } else {
+    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  }
   if (len <= 0) {
+    // 无数据：强制完全清屏（余辉残影不保留）
+    fadeOutFrames = 0
+    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
     lastView = null
     clearOverlay()
     return
@@ -440,14 +513,17 @@ function draw(): void {
   // 抽稀索引空间同变换：idx=0 / idx=N-1 对齐 f 与 1-f 像素分数（与采样值域严格一致）
   const nIdx = Math.max(1, iDec.length - 1)
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
+  // 冻结稳定态：迹线不透明直写（幂等重绘）——半透明混合重复叠加会逐次变亮（Alt 循环下可见）
+  const opaque = fading && !view.follow && !viewChanged && fadeOutFrames === 0
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
   if (traceVisible.i) {
     renderer.setData(iDec)
     renderer.draw(
       { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
-      withAlpha(th.value.traceI, th.value.traceAlpha),
+      withAlpha(th.value.traceI, opaque ? 1 : th.value.traceAlpha),
       false,
-      plot
+      plot,
+      opaque
     )
   }
   // 绘制 Q（叠加，不再清空）
@@ -455,9 +531,10 @@ function draw(): void {
     rendererQ.setData(qDec)
     rendererQ.draw(
       { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
-      withAlpha(th.value.traceQ, th.value.traceAlpha),
+      withAlpha(th.value.traceQ, opaque ? 1 : th.value.traceAlpha),
       false,
-      plot
+      plot,
+      opaque
     )
   }
   // 绘制幅度包络 √(I²+Q²)（第三条叠加迹线；金字塔 env 聚合，大窗仍 O(块数)）
@@ -472,12 +549,27 @@ function draw(): void {
     rendererEnv.setData(envDec)
     rendererEnv.draw(
       { xMin: vpX.xMin, xMax: vpX.xMax, yMin: yr.min, yMax: yr.max },
-      withAlpha(th.value.envColor, th.value.traceAlpha * 0.8),
+      withAlpha(th.value.envColor, opaque ? 1 : th.value.traceAlpha * 0.8),
       false,
-      plot
+      plot,
+      opaque
     )
   }
   drawOverlay(xrView, yr, plot)
+  // 冻结态 + 余辉：记录 GL 缓冲快照（画布重建后可回填恢复余辉像素）
+  if (fading && !view.follow && !viewChanged && fadeOutFrames === 0) {
+    if (
+      !persistSnapshot ||
+      persistSnapshot.width !== canvas.width ||
+      persistSnapshot.height !== canvas.height
+    ) {
+      const snap = document.createElement('canvas')
+      snap.width = canvas.width
+      snap.height = canvas.height
+      snap.getContext('2d')?.drawImage(canvas, 0, 0)
+      persistSnapshot = snap
+    }
+  }
 }
 
 // ── 坐标轴覆盖层 ──
@@ -715,6 +807,8 @@ useGlChart(canvasRef, {
       ov.width = w
       ov.height = h
     }
+    // 画布被重建（缓冲已清空）：冻结态存在快照时标记回填，下一帧恢复余辉
+    if (persistSnapshot) needsRestore = true
   },
   onDraw: draw
 })
@@ -1048,6 +1142,16 @@ function onDblClick(): void {
   if (view.follow) {
     const xr = resolveXRange()
     setFrozenX(xr.min, xr.max)
+    // 快照冻结窗为「上一帧真实窗」：消除数据帧与重绘之间的竞态，
+    // 保证暂停后首帧不被误判为视口变化而清掉余辉
+    lastXrReal = { min: xr.min, max: xr.max }
+    // 冻结 Y 量程为当前平滑值：暂停后量程不再漂移，画面（含余辉）完全定格
+    if (lastView) {
+      view.yAuto = false
+      view.yMin = lastView.yRange.min
+      view.yMax = lastView.yRange.max
+    }
+    resetYAuto()
     schedule()
     emitViewportChange(true)
   } else {
@@ -1062,6 +1166,8 @@ function resumeFollow(): void {
   markers = []
   markerDrag = -1
   menu.show = false
+  persistSnapshot = null
+  needsRestore = false
   resetYAuto()
   schedule()
   emitViewportChange(true)
@@ -1204,7 +1310,12 @@ onMounted(async () => {
   await nextTick()
   const canvas = canvasRef.value
   if (!canvas) return
-  gl = canvas.getContext('webgl2', { antialias: true }) as WebGL2RenderingContext | null
+  // preserveDrawingBuffer：合成后保留绘图缓冲——余辉（persistence）淡出合成的前提；
+  // 关闭时浏览器每帧清空缓冲，淡出四边形无旧帧可混合，余辉完全无效
+  gl = canvas.getContext('webgl2', {
+    antialias: true,
+    preserveDrawingBuffer: true
+  }) as WebGL2RenderingContext | null
   if (!gl) {
     emit('error', 'WebGL2 not supported, fallback to Canvas2D (降低性能)')
     return
@@ -1212,6 +1323,8 @@ onMounted(async () => {
   renderer = createLineRenderer(canvas, gl)
   rendererQ = createLineRenderer(canvas, gl)
   rendererEnv = createLineRenderer(canvas, gl)
+  fadeRenderer = createFadeRenderer(gl)
+  blitRenderer = createBlitRenderer(gl)
   // 初始数据
   if (props.data !== undefined) setData(props.data)
   draw()
@@ -1221,6 +1334,8 @@ onUnmounted(() => {
   renderer?.dispose()
   rendererQ?.dispose()
   rendererEnv?.dispose()
+  fadeRenderer?.dispose()
+  blitRenderer?.dispose()
   if (raf) cancelAnimationFrame(raf)
   if (viewportNotifyTimer) {
     clearTimeout(viewportNotifyTimer)
@@ -1256,6 +1371,8 @@ function clear(needDraw = true): void {
   dropped = 0
   markers = []
   markerDrag = -1
+  persistSnapshot = null
+  needsRestore = false
   pyrDirty = true // 数据清空，下次推流重建金字塔
   zoomReset(false)
   if (needDraw) draw()
