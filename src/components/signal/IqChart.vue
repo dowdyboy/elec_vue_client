@@ -133,6 +133,8 @@ function schedule(): void {
 
 // 触发引擎：触发对齐显示模式（独立于跟随/暂停）
 const triggerEng = new TriggerEngine()
+// single 捕获后：是否已渲染过「触发对齐首帧」（首帧先绘制再冻结，避免冻结停在触发前滚动视图）
+let singleFiredShown = false
 let triggerCfg: TriggerConfig = {
   enabled: false,
   source: 'i',
@@ -165,7 +167,10 @@ function syncTriggerCfg(): void {
   trigUi.mode = triggerCfg.mode
   trigUi.edge = triggerCfg.edge
   trigUi.status = triggerCfg.mode === 'single' && !triggerEng.state.armed ? '已捕获' : '等待触发'
-  if (!t.enabled) triggerEng.reset()
+  if (!t.enabled) {
+    triggerEng.reset()
+    singleFiredShown = false
+  }
   schedule()
 }
 watch(
@@ -544,8 +549,9 @@ function draw(): void {
       : triggerEng.lastFeedHit
         ? '触发锁定'
         : '等待触发'
-  // 触发单次捕获（fired）后：整个画布冻结，保留捕获瞬间画面，等待重新武装（armTrigger）
-  if (triggerCfg.enabled && triggerCfg.mode === 'single' && !triggerEng.state.armed) return
+  // 触发单次捕获（fired）后：首帧先渲染「触发对齐窗口」，之后整画布冻结（保留捕获画面，等待 armTrigger）
+  const singleFired = triggerCfg.enabled && triggerCfg.mode === 'single' && !triggerEng.state.armed
+  if (singleFired && singleFiredShown) return
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
   if (needsRestore && persistSnapshot && blitRenderer) {
     blitRenderer.draw(persistSnapshot)
@@ -561,7 +567,12 @@ function draw(): void {
     yr.max !== lastView.yRange.max
   lastXrReal = { min: xr.min, max: xr.max }
   const fade = (a: number): void => fadeRenderer!.draw([bgRgb[0], bgRgb[1], bgRgb[2], a])
-  if (fading && view.follow) {
+  if (singleFired) {
+    // 单次捕获首帧：清屏 + 不透明直写，干净定格触发对齐画面（后续帧走冻结早退）
+    fadeOutFrames = 0
+    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  } else if (fading && view.follow) {
     fadeOutFrames = 0
     persistSnapshot = null // 跟随态快照无意义，回填需求作废
     needsRestore = false
@@ -621,7 +632,8 @@ function draw(): void {
   const nIdx = Math.max(1, iDec.length - 1)
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
   // 冻结稳定态：迹线不透明直写（幂等重绘）——半透明混合重复叠加会逐次变亮（Alt 循环下可见）
-  const opaque = fading && !view.follow && !viewChanged && fadeOutFrames === 0
+  // single 捕获首帧亦不透明直写（干净定格触发对齐画面）
+  const opaque = singleFired || (fading && !view.follow && !viewChanged && fadeOutFrames === 0)
   // mode:'dots' 时间域散点；点径随 lineWidth
   const pt = props.mode === 'dots' ? Math.max(1, Math.round(2 * (props.lineWidth || 1))) : 0
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
@@ -681,6 +693,8 @@ function draw(): void {
       persistSnapshot = snap
     }
   }
+  // single 捕获：本帧已渲染触发对齐画面，后续帧进入冻结
+  if (singleFired) singleFiredShown = true
 }
 
 // ── 坐标轴覆盖层 ──
@@ -1690,6 +1704,7 @@ defineExpose({
   /** single 触发模式：重新武装，捕获下一次触发 */
   armTrigger: () => {
     triggerEng.arm()
+    singleFiredShown = false
     schedule()
   },
   getView: (): IqViewInfo => ({
