@@ -65,8 +65,8 @@ const FS_LINE = `#version 300 es
 precision mediump float;
 uniform vec4 uColor;
 out vec4 outColor;
-// premultiplied 输出：配合 blendFunc(ONE, ONE_MINUS_SRC_ALPHA)，
-// outA = a + dstA*(1-a)，从不透明背景出发 alpha 恒为 1（半透明混合不抽干帧缓冲 alpha）
+// premultiplied output: blendFunc(ONE, ONE_MINUS_SRC_ALPHA)
+// outA = a + dstA*(1-a); alpha stays 1 from opaque clear (no drain)
 void main(){ outColor = vec4(uColor.rgb * uColor.a, uColor.a); }
 `
 
@@ -306,7 +306,7 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
 // 以指定透明度绘制背景色覆盖旧帧：旧内容按 (1-alpha) 逐帧衰减，形成磷光余辉
 const VS_FADE = `#version 300 es
 void main(){
-  // 全屏大三角：3 个顶点覆盖整个裁剪空间
+  // fullscreen triangle: 3 vertices cover the entire clip space
   vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
   gl_Position = vec4(p, 0.0, 1.0);
 }
@@ -315,7 +315,7 @@ const FS_FADE = `#version 300 es
 precision mediump float;
 uniform vec4 uColor;
 out vec4 outColor;
-// premultiplied 输出：outA = a + dstA*(1-a)，帧缓冲 alpha 恒 1（不抽干）
+// premultiplied output: outA = a + dstA*(1-a); framebuffer alpha stays 1 (no drain)
 void main(){ outColor = vec4(uColor.rgb * uColor.a, uColor.a); }
 `
 

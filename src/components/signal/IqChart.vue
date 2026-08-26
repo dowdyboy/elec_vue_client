@@ -29,6 +29,7 @@ import {
   type PlotRect
 } from './core/axis'
 import { MinMaxPyramid, type RangeStats } from './core/pyramid'
+import { TriggerEngine, triggerWindow, type TriggerConfig } from './core/trigger'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
 import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
@@ -79,6 +80,16 @@ let needsRestore = false
 const DATA_STALE_MS = 3000
 let lastDataAt = 0 // 最近一次实际接收数据的时间戳（performance.now）
 const dataStale = ref(false)
+
+// ── 触发显示 UI 状态（badge 需反应式）──
+const trigUi = reactive({
+  enabled: false,
+  level: 0,
+  mode: 'auto',
+  edge: 'rising',
+  status: '' // 触发锁定 / 等待触发 / 已捕获（single）
+})
+let levelDrag = false // 电平线拖拽中
 // 单 canvas 双 program 也可，此处双 renderer 简化（Q 用第二 canvas 叠加或同一 GL 分两 draw）
 // 为拷贝轻量：复用同一 canvas，绘制 I 后再绘制 Q（同一 GL 上下文分两次 draw）
 let gl: WebGL2RenderingContext | null = null
@@ -109,6 +120,59 @@ let dropped = 0
 // 极值金字塔：区间极值/按桶抽稀 O(块数) 替代每帧全量扫描；结构变化后需整树重建
 const pyr = new MinMaxPyramid(MAX_POINTS)
 let pyrDirty = true
+
+// rAF 调度（提前声明：触发 watch immediate 回调依赖 schedule）
+let raf = 0
+function schedule(): void {
+  if (raf) return
+  raf = requestAnimationFrame(() => {
+    raf = 0
+    draw()
+  })
+}
+
+// 触发引擎：触发对齐显示模式（独立于跟随/暂停）
+const triggerEng = new TriggerEngine()
+let triggerCfg: TriggerConfig = {
+  enabled: false,
+  source: 'i',
+  edge: 'rising',
+  level: 0,
+  mode: 'auto',
+  preTrigger: 0.25
+}
+
+/** 触发对齐的显示窗（绝对索引域）；无有效触发返回 null */
+function triggerViewWindow(span: number): { min: number; max: number } | null {
+  const c = triggerCfg
+  if (!c.enabled || triggerEng.state.lastTriggerAbs < 0) return null
+  return triggerWindow(triggerEng.state.lastTriggerAbs, span, c.preTrigger, dropped, totalAbs())
+}
+/** 外部/内部刷新 trigger 配置 */
+function syncTriggerCfg(): void {
+  const t = props.trigger
+  if (!t) return
+  triggerCfg = {
+    enabled: t.enabled,
+    source: t.source ?? 'i',
+    edge: t.edge ?? 'rising',
+    level: t.level ?? 0,
+    mode: t.mode ?? 'auto',
+    preTrigger: Math.min(1, Math.max(0, t.preTrigger ?? 0.25))
+  }
+  trigUi.enabled = triggerCfg.enabled
+  trigUi.level = triggerCfg.level
+  trigUi.mode = triggerCfg.mode
+  trigUi.edge = triggerCfg.edge
+  trigUi.status = triggerCfg.mode === 'single' && !triggerEng.state.armed ? '已捕获' : '等待触发'
+  if (!t.enabled) triggerEng.reset()
+  schedule()
+}
+watch(
+  () => props.trigger,
+  () => syncTriggerCfg(),
+  { deep: true, immediate: true }
+)
 function totalAbs(): number {
   return dropped + dataLen
 }
@@ -182,6 +246,11 @@ function pushNormalized(n: IqNormalized): void {
     pyrDirty = false
   } else {
     pyr.appendRange(iBuf, qBuf, prevLen, dataLen)
+  }
+  // 触发检测：在新增数据段上找边沿（源通道）
+  if (triggerCfg.enabled) {
+    const src = triggerCfg.source === 'i' ? iBuf : qBuf
+    triggerEng.feed(triggerCfg, src, prevLen, dataLen, dropped)
   }
   lastDataAt = performance.now() // 实际入缓冲才刷新（暂停态丢弃的帧不计）
   schedule()
@@ -273,6 +342,23 @@ function emitSpanChange(immediate = false): void {
 
 function resolveXRange(): { min: number; max: number } {
   const total = totalAbs()
+  // 触发对齐显示（独立于跟随/暂停）
+  if (triggerCfg.enabled) {
+    const tw = triggerViewWindow(view.span)
+    if (tw) {
+      // auto 模式：最近一次 feed 未命中触发 → 回退滚动（与 normal 定格区分）
+      if (triggerCfg.mode === 'auto' && !triggerEng.lastFeedHit) {
+        const span = Math.min(view.span, Math.max(MIN_SPAN, total))
+        return { min: Math.max(dropped, total - span), max: total }
+      }
+      return tw
+    }
+    // 尚无触发（lastTriggerAbs<0）：auto 直接滚动；normal/single 在首次触发前也跟随最新数据
+    if (triggerCfg.mode === 'auto' || triggerEng.state.lastTriggerAbs < 0) {
+      const span = Math.min(view.span, Math.max(MIN_SPAN, total))
+      return { min: Math.max(dropped, total - span), max: total }
+    }
+  }
   if (view.follow) {
     const span = Math.min(view.span, Math.max(MIN_SPAN, total))
     return { min: Math.max(dropped, total - span), max: total }
@@ -392,9 +478,9 @@ function markerHit(px: number): number {
   }
   return -1
 }
-/** 添加标记（刷新状态下禁止）；位置取整到采样点 */
+/** 添加标记（刷新状态下禁止；触发模式允许）；位置取整到采样点 */
 function addMarkerAt(dispX: number): void {
-  if (view.follow) return
+  if (view.follow && !triggerCfg.enabled) return
   markers.push(Math.round(dispX))
   schedule()
 }
@@ -429,15 +515,6 @@ function menuAction(act: 'add' | 'remove' | 'clear' | 'toggle'): void {
   schedule()
 }
 
-let raf = 0
-function schedule(): void {
-  if (raf) return
-  raf = requestAnimationFrame(() => {
-    raf = 0
-    draw()
-  })
-}
-
 function draw(): void {
   const canvas = canvasRef.value
   if (!canvas || !gl || !renderer) return
@@ -458,6 +535,17 @@ function draw(): void {
   const bgRgb = hexToRgba(th.value.bg)
   const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
   const fading = persist > 0 && fadeRenderer !== null
+  // 触发状态角标：single=等待触发/已捕获；auto/normal=最近帧命中触发→触发锁定/未命中→等待触发
+  trigUi.status =
+    triggerCfg.mode === 'single'
+      ? triggerEng.state.armed
+        ? '等待触发'
+        : '已捕获'
+      : triggerEng.lastFeedHit
+        ? '触发锁定'
+        : '等待触发'
+  // 触发单次捕获（fired）后：整个画布冻结，保留捕获瞬间画面，等待重新武装（armTrigger）
+  if (triggerCfg.enabled && triggerCfg.mode === 'single' && !triggerEng.state.armed) return
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
   if (needsRestore && persistSnapshot && blitRenderer) {
     blitRenderer.draw(persistSnapshot)
@@ -665,6 +753,53 @@ function drawOverlay(
     ctx.restore()
   }
 
+  // ── 触发显示：电平线（可拖拽）+ 触发点标记 + 状态 ──
+  if (triggerCfg.enabled) {
+    const ySpan = yr.max - yr.min
+    const ly =
+      ySpan > 1e-9
+        ? plot.y + plot.h - ((triggerCfg.level - yr.min) / ySpan) * plot.h
+        : plot.y + plot.h
+    if (ly >= plot.y - 2 && ly <= plot.y + plot.h + 2) {
+      ctx.save()
+      ctx.strokeStyle = t.zeroLine ?? t.text
+      ctx.setLineDash([6, 4])
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(plot.x, Math.round(ly) + 0.5)
+      ctx.lineTo(plot.x + plot.w, Math.round(ly) + 0.5)
+      ctx.stroke()
+      ctx.restore()
+      // 电平标签
+      ctx.font = '11px system-ui, -apple-system, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      const lvLbl = `Lv ${triggerCfg.level.toFixed(yDecimals())}`
+      const lvChipY = Math.min(
+        Math.max(Math.round(ly) - CHIP_H / 2, plot.y + 2),
+        plot.y + plot.h - CHIP_H - 2
+      )
+      drawChip(ctx, plot.x + plot.w - 64, lvChipY, lvLbl, t.labelChipBg, t.text)
+    }
+    // 状态文字（每帧更新角标，已在 draw() 顶部统一计算）
+    // 触发点标记（三角标，位于触发样本所在屏幕 x；计入 PAD_X 内缩与波形映射一致）
+    if (triggerEng.state.lastTriggerAbs >= 0 && lastView) {
+      const pre = triggerCfg.preTrigger
+      const tx = plot.x + PAD_X + pre * (plot.w - 2 * PAD_X)
+      if (tx >= plot.x && tx <= plot.x + plot.w) {
+        ctx.save()
+        ctx.fillStyle = t.crosshair
+        ctx.beginPath()
+        ctx.moveTo(Math.round(tx) + 0.5, plot.y + 1)
+        ctx.lineTo(Math.round(tx) - 3, plot.y + 8)
+        ctx.lineTo(Math.round(tx) + 3, plot.y + 8)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+      }
+    }
+  }
+
   // ── Shift+拖拽 框选矩形（松手放大到该区域）──
   if (boxSel) {
     const bx = Math.min(boxSel.x0, boxSel.x1)
@@ -721,6 +856,8 @@ function drawOverlay(
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     const chipBg2 = t.labelChipBg
+    const waveL = plot.x + PAD_X // 波形区左缘（PAD_X 内缩后）
+    const waveW = plot.w - 2 * PAD_X // 波形区宽度
     const readAt = (c: number): string | null => {
       const local = c - dropped
       if (local < 0 || local >= dataLen) return null
@@ -730,7 +867,8 @@ function drawOverlay(
     markers.forEach((c, i) => {
       if (!lastView) return
       const pl = lastView.plot
-      const px = markerPx(c)
+      const rel = (c - lastView.xRange.min) / (lastView.xRange.max - lastView.xRange.min)
+      const px = waveL + rel * waveW
       if (px < pl.x - 0.5 || px > pl.x + pl.w + 0.5) return
       const pxc = Math.round(px) + 0.5
       ctx.save()
@@ -1050,6 +1188,19 @@ function onKeyDown(evt: KeyboardEvent): void {
     else undoView()
     return
   }
+  // 触发模式：仅允许 +/- 调窗宽（保持触发对齐）；方向键平移破坏对齐，禁用
+  if (triggerCfg.enabled) {
+    const f =
+      evt.key === '+' || evt.key === '=' ? 1 / 1.2 : evt.key === '-' || evt.key === '_' ? 1.2 : 0
+    if (f) {
+      const limit = Math.max(totalAbs(), MIN_SPAN)
+      view.span = Math.min(Math.max(view.span * f, MIN_SPAN), limit)
+      commitViewState()
+      schedule()
+      emitViewportChange(true)
+    }
+    return
+  }
   if (view.follow) return // 跟随态不允许视口微调
   if (!lastView) return
   const commit = (fn: () => void): void => {
@@ -1140,6 +1291,15 @@ function onWheel(evt: WheelEvent): void {
   const p = clientToPlot(evt)
   if (!p) return
   const factor = evt.deltaY > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR
+  // 触发模式：缩放只改窗宽（span），不退出触发对齐、不暂停
+  if (triggerCfg.enabled && !evt.shiftKey) {
+    const limit = Math.max(totalAbs(), MIN_SPAN)
+    view.span = Math.min(Math.max(view.span * factor, MIN_SPAN), limit)
+    schedule()
+    commitViewState()
+    emitViewportChange()
+    return
+  }
   if (evt.shiftKey) {
     // Y 轴缩放：锚定光标处数据值
     const anchor = pyToDataY(p.py)
@@ -1187,9 +1347,9 @@ function onPointerDown(evt: PointerEvent): void {
   if (!p) return
   ;(evt.currentTarget as HTMLElement).setPointerCapture?.(evt.pointerId)
   // Alt+点击：空白处添加标记；命中标记则进入「按下-拖拽/松手清除」流程。
-  // 刷新（跟随）状态下不允许标记
+  // 刷新（跟随）状态下不允许标记（触发模式允许）
   if (evt.altKey) {
-    if (view.follow) return
+    if (view.follow && !triggerCfg.enabled) return
     const hit = markerHit(p.px)
     if (hit >= 0) {
       markerDrag = hit
@@ -1206,6 +1366,20 @@ function onPointerDown(evt: PointerEvent): void {
   if (evt.shiftKey) {
     boxSel = { x0: p.px, y0: p.py, x1: p.px, y1: p.py }
     return
+  }
+  // 触发模式：电平线拖拽（命中电平线 6px 内）
+  if (triggerCfg.enabled && lastView) {
+    const lvl = triggerCfg.level
+    const ys = lastView.yRange.max - lastView.yRange.min
+    const yPx =
+      ys > 1e-9
+        ? lastView.plot.y + lastView.plot.h - ((lvl - lastView.yRange.min) / ys) * lastView.plot.h
+        : lastView.plot.y + lastView.plot.h
+    if (Math.abs(yPx - p.py) <= 6) {
+      levelDrag = true
+      schedule()
+      return
+    }
   }
   // 刷新（跟随）状态下禁止拖拽平移：始终展示最新数据
   if (view.follow) return
@@ -1228,6 +1402,21 @@ function finishBoxZoom(): void {
   if (!boxSel || !lastView) return
   const { x0, y0, x1, y1 } = boxSel
   if (Math.abs(x1 - x0) < 8 || Math.abs(y1 - y0) < 8) return
+  if (triggerCfg.enabled) {
+    // 触发模式：框选只调整窗宽与 Y 量程，保持触发对齐
+    const span = Math.max(MIN_SPAN, Math.abs(pxToDataX(x1) - pxToDataX(x0)))
+    view.span = Math.min(span, Math.max(totalAbs(), MIN_SPAN))
+    const yHi = pyToDataY(Math.min(y0, y1))
+    const yLo = pyToDataY(Math.max(y0, y1))
+    if (yHi - yLo > 1e-9) {
+      view.yAuto = false
+      view.yMin = yLo
+      view.yMax = yHi
+      resetYAuto()
+    }
+    commitViewState()
+    return
+  }
   const rw = unpadX(pxToDataX(Math.min(x0, x1)), pxToDataX(Math.max(x0, x1)), lastView.xFrac)
   setFrozenX(rw.min, rw.max)
   const yHi = pyToDataY(Math.min(y0, y1))
@@ -1243,6 +1432,14 @@ function finishBoxZoom(): void {
 
 function onPointerMove(evt: PointerEvent): void {
   updateCursor(evt)
+  if (levelDrag) {
+    const p = clientToPlot(evt)
+    if (!p) return
+    triggerCfg.level = pyToDataY(p.py)
+    trigUi.level = triggerCfg.level
+    schedule()
+    return
+  }
   if (markerDrag >= 0) {
     const p = clientToPlot(evt)
     if (!p || !lastView) return
@@ -1288,6 +1485,11 @@ function onPointerMove(evt: PointerEvent): void {
 
 function onPointerUp(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (levelDrag) {
+    levelDrag = false
+    schedule()
+    return
+  }
   if (markerDrag >= 0) {
     // Alt+按下标记后未拖动即松手 = 清除该标记
     if (!markerMoved) markers.splice(markerDrag, 1)
@@ -1308,9 +1510,13 @@ function onPointerUp(evt: PointerEvent): void {
   emitViewportChange(true)
 }
 
-/** 取消进行中的手势（框选/拖拽/标记拖动），不产生任何视口变更 */
+/** 取消进行中的手势（框选/拖拽/标记/电平拖拽），不产生任何视口变更 */
 function onPointerCancel(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (levelDrag) {
+    levelDrag = false
+    schedule()
+  }
   if (boxSel) {
     boxSel = null
     schedule()
@@ -1481,6 +1687,11 @@ defineExpose({
   zoomReset,
   exportPNG,
   exportCSV,
+  /** single 触发模式：重新武装，捕获下一次触发 */
+  armTrigger: () => {
+    triggerEng.arm()
+    schedule()
+  },
   getView: (): IqViewInfo => ({
     follow: view.follow,
     yAuto: view.yAuto,
@@ -1605,6 +1816,14 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
       已暂停跟随 · 双击恢复
     </div>
     <div v-if="dataStale" class="sig-stale-badge" title="超过 3 秒未收到新数据">数据流中断</div>
+    <div
+      v-if="trigUi.enabled"
+      class="sig-trigger-badge"
+      title="触发对齐显示：虚线为电平（可拖拽），下方三角为触发点"
+    >
+      ⚡ {{ trigUi.mode }} · {{ trigUi.edge }} · Lv {{ trigUi.level.toFixed(yDecimals()) }} ·
+      {{ trigUi.status }}
+    </div>
     <div class="sig-legend" title="点击切换迹线显隐">
       <span
         class="sig-trace"
@@ -1738,6 +1957,19 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   border-radius: 10px;
   z-index: 2;
   pointer-events: none;
+}
+.sig-trigger-badge {
+  position: absolute;
+  right: 10px;
+  top: 34px;
+  font-size: 11px;
+  color: #18a058;
+  background: color-mix(in srgb, var(--sig-bg) 80%, transparent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 2;
+  pointer-events: none;
+  white-space: nowrap;
 }
 .sig-legend {
   position: absolute;

@@ -91,6 +91,20 @@ export interface IqProps extends ChartBaseProps {
   envelope?: boolean
   /** 余辉强度 0~0.95（0=关闭）：>0 时旧帧按 (1-强度) 逐帧衰减，形成数字荧光拖影 */
   persistence?: number
+  /** 触发显示配置：启用后进入触发对齐模式（独立于跟随/暂停） */
+  trigger?: {
+    enabled: boolean
+    /** 触发通道，默认 'i' */
+    source?: 'i' | 'q'
+    /** 边沿，默认 'rising' */
+    edge?: 'rising' | 'falling'
+    /** 电平阈值，默认 0 */
+    level?: number
+    /** 模式，默认 'auto' */
+    mode?: 'auto' | 'normal' | 'single'
+    /** 触发点屏幕位置比例 0~1（窗口起点在其左侧的比例），默认 0.25 */
+    preTrigger?: number
+  }
   /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
   span?: number
   /**

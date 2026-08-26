@@ -53,6 +53,24 @@ const styleOverrides = computed(() => {
   if (styleText.value) s.text = styleText.value
   return s
 })
+const triggerEnabled = ref(false)
+const triggerSource = ref<'i' | 'q'>('i')
+const triggerEdge = ref<'rising' | 'falling'>('rising')
+const triggerLevel = ref(0)
+const triggerMode = ref<'auto' | 'normal' | 'single'>('auto')
+const triggerPre = ref(0.25)
+const triggerConfig = computed(() => ({
+  enabled: triggerEnabled.value,
+  source: triggerSource.value,
+  edge: triggerEdge.value,
+  level: triggerLevel.value,
+  mode: triggerMode.value,
+  preTrigger: triggerPre.value
+}))
+function onArmTrigger(): void {
+  ;(iqRef.value as unknown as { armTrigger?: () => void } | null)?.armTrigger?.()
+  message.success('已重新武装（single 模式）')
+}
 const colorsPair = computed<[string, string] | undefined>(() => {
   const i = colorsI.value
   const q = colorsQ.value
@@ -381,6 +399,67 @@ watch(adapterKey, (v) => {
         <NButton size="tiny" @click="onGetView">getView</NButton>
         <NButton size="tiny" @click="onGetLength">getLength</NButton>
       </div>
+      <div
+        style="
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          align-items: center;
+          margin-top: 8px;
+          font-size: 12px;
+        "
+      >
+        <NCheckbox v-model:checked="triggerEnabled" size="small">触发</NCheckbox>
+        <span>源</span>
+        <NSelect
+          v-model:value="triggerSource"
+          size="small"
+          :options="[
+            { label: 'I', value: 'i' },
+            { label: 'Q', value: 'q' }
+          ]"
+          style="width: 56px"
+        />
+        <span>边沿</span>
+        <NSelect
+          v-model:value="triggerEdge"
+          size="small"
+          :options="[
+            { label: '↑ 上升', value: 'rising' },
+            { label: '↓ 下降', value: 'falling' }
+          ]"
+          style="width: 84px"
+        />
+        <span>电平</span>
+        <NInputNumber
+          v-model:value="triggerLevel"
+          size="small"
+          :step="0.1"
+          :show-button="false"
+          style="width: 72px"
+        />
+        <span>模式</span>
+        <NSelect
+          v-model:value="triggerMode"
+          size="small"
+          :options="[
+            { label: 'auto', value: 'auto' },
+            { label: 'normal', value: 'normal' },
+            { label: 'single', value: 'single' }
+          ]"
+          style="width: 84px"
+        />
+        <span>屏位</span>
+        <NSlider
+          v-model:value="triggerPre"
+          size="small"
+          :min="0"
+          :max="1"
+          :step="0.05"
+          style="width: 90px"
+        />
+        <NButton size="tiny" @click="onArmTrigger">arm</NButton>
+      </div>
     </NCard>
     <NCard content-style="padding: 0">
       <div style="position: relative; height: 420px">
@@ -400,6 +479,7 @@ watch(adapterKey, (v) => {
           :axis-labels="showAxisLabels"
           :envelope="envelopeOn"
           :persistence="persistenceVal"
+          :trigger="triggerConfig"
           :style="styleOverrides"
           :export-handler="handleExport"
           :height="420"

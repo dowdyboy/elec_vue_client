@@ -4,3 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# 开发日志（不入库）
+DEVLOG.md
+*.tsbuildinfo
