@@ -273,4 +273,51 @@ describe('MinMaxPyramid', () => {
       }
     }
   })
+
+  it('compactShift（环形淘汰增量）与整树重建结果一致', () => {
+    const CAP = 1 << 21
+    const i = new Float32Array(CAP)
+    const q = new Float32Array(CAP)
+    const rnd = makeRng(123)
+    const N = 600000
+    for (let j = 0; j < N; j++) {
+      i[j] = Math.sin(j * 0.01) + rnd() * 0.2
+      q[j] = Math.cos(j * 0.01) + rnd() * 0.2
+    }
+    // 模拟多轮淘汰：每轮保留 keep，淘汰量取 16 的整数倍（与组件 compact 对齐）
+    let keep = N
+    const ev = 65536 // 淘汰量（16 的整数倍）
+    const pyr = new MinMaxPyramid(CAP)
+    pyr.rebuild(i, q, keep)
+    for (let round = 0; round < 6; round++) {
+      // 模拟环形淘汰：数据前移 ev，金字塔 compactShift
+      i.copyWithin(0, ev, keep)
+      q.copyWithin(0, ev, keep)
+      keep -= ev
+      pyr.compactShift(keep, ev)
+      // 与全新重建对比
+      const ref = new MinMaxPyramid(CAP)
+      ref.rebuild(i, q, keep)
+      // 抽查多个区间：query 的 I/Q 极值应一致
+      for (let t = 0; t < 15; t++) {
+        const a = Math.floor(rnd() * keep * 0.9)
+        const b = Math.min(keep, a + 1 + Math.floor(rnd() * 30000))
+        const g = pyr.query(i, q, a, b)
+        const r = ref.query(i, q, a, b)
+        expect(g).not.toBeNull()
+        expect(r).not.toBeNull()
+        expect(g!.minI).toBeCloseTo(r!.minI, 4)
+        expect(g!.maxI).toBeCloseTo(r!.maxI, 4)
+        expect(g!.minQ).toBeCloseTo(r!.minQ, 4)
+        expect(g!.maxQ).toBeCloseTo(r!.maxQ, 4)
+      }
+      // bucketChannel 全范围抽稀亦一致
+      const gb = Array.from(pyr.bucketChannel(i, q, 0, keep, 500, 0))
+      const rb = Array.from(ref.bucketChannel(i, q, 0, keep, 500, 0))
+      expect(gb.length).toBe(rb.length)
+      for (let k = 0; k < gb.length; k++) {
+        expect(gb[k]!).toBeCloseTo(rb[k]!, 4)
+      }
+    }
+  })
 })

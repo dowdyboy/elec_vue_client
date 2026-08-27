@@ -117,6 +117,49 @@ export class MinMaxPyramid {
   }
 
   /**
+   * 环形淘汰增量更新：数据前移 evicted 样本（须为 block 整数倍，调用方保证）。
+   * 被保留块的极值/和值不变、仅整体平移（level0 块值 copyWithin，极值下标 -evicted），
+   * level1.. 再从子层重聚合——避免整树重建（1.8M 约 38ms → 增量约 3ms）。
+   */
+  compactShift(len: number, evicted: number): void {
+    if (this.levels.length === 0 || evicted <= 0) return
+    const s = Math.floor(evicted / this.block)
+    if (s <= 0) return
+    const lv0 = this.levels[0]!
+    const nBlocks = Math.ceil(len / this.block)
+    // 1) level0 值块平移（块 b ← 旧块 b+s）；下标块平移后再整体 -evicted
+    const valKeys = [
+      'minI',
+      'maxI',
+      'minQ',
+      'maxQ',
+      'envMin',
+      'envMax',
+      'sumI',
+      'sumSqI',
+      'sumQ',
+      'sumSqQ'
+    ] as const
+    for (const k of valKeys) lv0[k].copyWithin(0, s, s + nBlocks)
+    const idxKeys = ['iMinIdx', 'iMaxIdx', 'qMinIdx', 'qMaxIdx', 'envMinIdx', 'envMaxIdx'] as const
+    for (const k of idxKeys) {
+      const arr = lv0[k]
+      arr.copyWithin(0, s, s + nBlocks)
+      for (let b = 0; b < nBlocks; b++) arr[b] = (arr[b] ?? 0) - evicted
+    }
+    // 2) 高层从子层重聚合（computeBlock 子层分支不读 i/q，传空数组即可）
+    const empty = new Float32Array(0)
+    for (let L = 1; L < this.levels.length; L++) {
+      const lv = this.levels[L]!
+      const child = this.levels[L - 1]!
+      const nB = Math.ceil(len / lv.bs)
+      for (let b = 0; b < nB; b++) {
+        this.computeBlock(lv, child, empty, empty, b, Math.min(len, (b + 1) * lv.bs))
+      }
+    }
+  }
+
+  /**
    * 追加后增量更新受影响块：prevLen 为追加前有效长度，newLen 为追加后有效长度。
    * 每个层级仅重算与 [prevLen,newLen) 相交的块
    */

@@ -28,7 +28,7 @@ import {
   CHIP_H,
   type PlotRect
 } from './core/axis'
-import { MinMaxPyramid, type RangeStats } from './core/pyramid'
+import { MinMaxPyramid, PYRAMID_BLOCK, type RangeStats } from './core/pyramid'
 import { TriggerEngine, type TriggerConfig } from './core/trigger'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
@@ -226,13 +226,14 @@ function ensureCapacity(n: number): void {
   pyrDirty = true // 数据拷贝到新缓冲，金字塔需重建
 }
 
-/** 环形丢老：保留最近 keep 条，累计 dropped；数据搬移后需重建金字塔 */
-function compact(keep: number): void {
-  dropped += dataLen - keep
-  iBuf.copyWithin(0, dataLen - keep, dataLen)
-  qBuf.copyWithin(0, dataLen - keep, dataLen)
+/** 环形丢老：保留最近 keep 条，累计 dropped，数据前移；返回淘汰量（金字塔由调用方更新） */
+function compact(keep: number): number {
+  const evicted = dataLen - keep
+  dropped += evicted
+  iBuf.copyWithin(0, evicted, dataLen)
+  qBuf.copyWithin(0, evicted, dataLen)
   dataLen = keep
-  pyrDirty = true
+  return evicted
 }
 
 function normalize(raw: unknown): IqNormalized | null {
@@ -257,37 +258,48 @@ function pushNormalized(n: IqNormalized): void {
   // 缓冲零增长、环形淘汰永不发生，冻结窗内容像素级静止；恢复跟随（zoomReset）后自动继续接收
   if (!view.follow) return
   const prevLen = dataLen
+  // 金字塔已同步到的长度（追加样本先增量同步，淘汰时 compactShift 平移）
+  let pyrStart = prevLen
+  // 触发扫描起点（淘汰会使新样本前移：淘汰量累计扣除）
+  let trigStart = prevLen
+  const appendSample = (i: number, q: number): void => {
+    if (dataLen >= MAX_POINTS) {
+      // 先把本帧已追加样本同步进金字塔（compactShift 要求金字塔与淘汰前数据一致）
+      if (dataLen > pyrStart) pyr.appendRange(iBuf, qBuf, pyrStart, dataLen)
+      // 淘汰量取 PYRAMID_BLOCK 整数倍：保留数据与金字塔块对齐，可增量平移避免整树重建（~38ms）
+      const ev = Math.ceil((dataLen - RING_KEEP) / PYRAMID_BLOCK) * PYRAMID_BLOCK
+      const newLen = dataLen - ev
+      compact(newLen)
+      pyr.compactShift(newLen, ev)
+      pyrDirty = false
+      pyrStart = newLen
+      trigStart -= ev
+    }
+    iBuf[dataLen] = i
+    qBuf[dataLen] = q
+    dataLen++
+  }
   if (n instanceof Float32Array) {
     // 交织 [I0,Q0,I1,Q1...]
     const pairs = Math.floor(n.length / 2)
     ensureCapacity(dataLen + pairs)
-    for (let k = 0; k < pairs; k++) {
-      if (dataLen >= MAX_POINTS) compact(RING_KEEP)
-      iBuf[dataLen] = n[2 * k]
-      qBuf[dataLen] = n[2 * k + 1]
-      dataLen++
-    }
+    for (let k = 0; k < pairs; k++) appendSample(n[2 * k], n[2 * k + 1])
   } else {
     const len = Math.min(n.i.length, n.q.length)
     ensureCapacity(dataLen + len)
-    for (let k = 0; k < len; k++) {
-      if (dataLen >= MAX_POINTS) compact(RING_KEEP)
-      iBuf[dataLen] = n.i[k]
-      qBuf[dataLen] = n.q[k]
-      dataLen++
-    }
+    for (let k = 0; k < len; k++) appendSample(n.i[k], n.q[k])
   }
-  // 维护金字塔：结构变化（扩容/淘汰）整树重建，否则增量更新受影响块
+  // 维护金字塔：扩容 → 整树重建；否则增量同步本帧新样本（淘汰已 compactShift）
   if (pyrDirty) {
     pyr.rebuild(iBuf, qBuf, dataLen)
     pyrDirty = false
-  } else {
-    pyr.appendRange(iBuf, qBuf, prevLen, dataLen)
+  } else if (dataLen > pyrStart) {
+    pyr.appendRange(iBuf, qBuf, pyrStart, dataLen)
   }
   // 触发检测：在新增数据段上找边沿（源通道）
   if (triggerCfg.enabled) {
     const src = triggerCfg.source === 'i' ? iBuf : qBuf
-    triggerEng.feed(triggerCfg, src, prevLen, dataLen, dropped)
+    triggerEng.feed(triggerCfg, src, trigStart, dataLen, dropped)
   }
   lastDataAt = performance.now() // 实际入缓冲才刷新（暂停态丢弃的帧不计）
   schedule()
