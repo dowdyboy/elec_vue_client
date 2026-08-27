@@ -133,8 +133,10 @@ function schedule(): void {
 
 // 触发引擎：触发对齐显示模式（独立于跟随/暂停）
 const triggerEng = new TriggerEngine()
-// single 捕获后：是否已渲染过「触发对齐首帧」（首帧先绘制再冻结，避免冻结停在触发前滚动视图）
-let singleFiredShown = false
+// 最近已渲染的触发显示键（`触发点绝对索引:窗宽`）；空串=尚未渲染过。
+// normal/single 触发后首帧渲染「触发对齐窗口」并冻结，仅当触发点或窗宽变化才重绘——
+// 环形缓冲持续流入淘汰也不影响已冻结画面（消除周期性跳变）
+let lastShownTriggerKey = ''
 let triggerCfg: TriggerConfig = {
   enabled: false,
   source: 'i',
@@ -180,7 +182,7 @@ function syncTriggerCfg(): void {
     prev.preTrigger !== triggerCfg.preTrigger
   if (changed) {
     triggerEng.reset()
-    singleFiredShown = false
+    lastShownTriggerKey = ''
   }
   schedule()
 }
@@ -551,18 +553,31 @@ function draw(): void {
   const bgRgb = hexToRgba(th.value.bg)
   const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
   const fading = persist > 0 && fadeRenderer !== null
-  // 触发状态角标：single=等待触发/已捕获；auto/normal=最近帧命中触发→触发锁定/未命中→等待触发
+  // 触发状态角标：single=等待触发/已捕获；normal=定格显示触发窗→触发锁定/无触发滚动→等待触发；
+  // auto=最近帧命中→触发锁定/未命中→等待触发
   trigUi.status =
     triggerCfg.mode === 'single'
       ? triggerEng.state.armed
         ? '等待触发'
         : '已捕获'
-      : triggerEng.lastFeedHit
-        ? '触发锁定'
-        : '等待触发'
-  // 触发单次捕获（fired）后：首帧先渲染「触发对齐窗口」，之后整画布冻结（保留捕获画面，等待 armTrigger）
-  const singleFired = triggerCfg.enabled && triggerCfg.mode === 'single' && !triggerEng.state.armed
-  if (singleFired && singleFiredShown) return
+      : triggerCfg.mode === 'normal'
+        ? triggerEng.state.lastTriggerAbs >= 0
+          ? '触发锁定'
+          : '等待触发'
+        : triggerEng.lastFeedHit
+          ? '触发锁定'
+          : '等待触发'
+  // 触发对齐冻结：normal/single 触发后定格显示触发窗，仅当「触发点或窗宽变化」才重绘一帧。
+  // （缓冲持续流入淘汰也不影响已冻结画面，消除「隔几秒跳一次」的周期性跳变；缩放改 span 触发重绘）
+  const trigAbs = triggerCfg.enabled ? triggerEng.state.lastTriggerAbs : -1
+  const trigKey = `${trigAbs}:${view.span}`
+  const trigNew = trigAbs >= 0 && trigKey !== lastShownTriggerKey
+  const trigFrozen =
+    triggerCfg.enabled &&
+    trigAbs >= 0 &&
+    !trigNew &&
+    (triggerCfg.mode === 'normal' || (triggerCfg.mode === 'single' && !triggerEng.state.armed))
+  if (trigFrozen) return
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
   if (needsRestore && persistSnapshot && blitRenderer) {
     blitRenderer.draw(persistSnapshot)
@@ -578,8 +593,8 @@ function draw(): void {
     yr.max !== lastView.yRange.max
   lastXrReal = { min: xr.min, max: xr.max }
   const fade = (a: number): void => fadeRenderer!.draw([bgRgb[0], bgRgb[1], bgRgb[2], a])
-  if (singleFired) {
-    // 单次捕获首帧：清屏 + 不透明直写，干净定格触发对齐画面（后续帧走冻结早退）
+  if (trigNew) {
+    // 触发对齐渲染帧：清屏 + 不透明直写，干净定格（渲染完成后冻结）
     fadeOutFrames = 0
     gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
@@ -643,8 +658,8 @@ function draw(): void {
   const nIdx = Math.max(1, iDec.length - 1)
   const vpX = { xMin: (-xFrac * nIdx) / kS, xMax: nIdx + (xFrac * nIdx) / kS }
   // 冻结稳定态：迹线不透明直写（幂等重绘）——半透明混合重复叠加会逐次变亮（Alt 循环下可见）
-  // single 捕获首帧亦不透明直写（干净定格触发对齐画面）
-  const opaque = singleFired || (fading && !view.follow && !viewChanged && fadeOutFrames === 0)
+  // 触发对齐渲染帧亦不透明直写（干净定格触发画面）
+  const opaque = trigNew || (fading && !view.follow && !viewChanged && fadeOutFrames === 0)
   // mode:'dots' 时间域散点；点径随 lineWidth
   const pt = props.mode === 'dots' ? Math.max(1, Math.round(2 * (props.lineWidth || 1))) : 0
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
@@ -704,8 +719,8 @@ function draw(): void {
       persistSnapshot = snap
     }
   }
-  // single 捕获：本帧已渲染触发对齐画面，后续帧进入冻结
-  if (singleFired) singleFiredShown = true
+  // 触发对齐帧渲染完成：标记已渲染，后续帧进入冻结
+  if (trigNew) lastShownTriggerKey = trigKey
 }
 
 // ── 坐标轴覆盖层 ──
@@ -1715,7 +1730,7 @@ defineExpose({
   /** single 触发模式：重新武装，捕获下一次触发 */
   armTrigger: () => {
     triggerEng.arm()
-    singleFiredShown = false
+    lastShownTriggerKey = ''
     schedule()
   },
   getView: (): IqViewInfo => ({
