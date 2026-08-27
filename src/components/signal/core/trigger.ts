@@ -33,6 +33,8 @@ export interface TriggerState {
   lastTriggerAbs: number
   /** single 模式：armed=false 表示已捕获（fired），需重新武装 */
   armed: boolean
+  /** 最近一次触发命中时间（ms 时间戳）；-1=从未触发（auto 模式用于「触发失联超时 → free-run」） */
+  lastTriggerAt: number
 }
 
 /** 扫描数据段 [s,e) 中第一个跨电平边沿，返回绝对索引；未命中返回 -1 */
@@ -76,12 +78,12 @@ export function triggerWindow(
 }
 
 export class TriggerEngine {
-  state: TriggerState = { lastTriggerAbs: -1, armed: true }
+  state: TriggerState = { lastTriggerAbs: -1, armed: true, lastTriggerAt: -1 }
   /** 最近一次 feed 是否找到了触发（用于 auto 模式回退判断） */
   lastFeedHit = false
 
   reset(): void {
-    this.state = { lastTriggerAbs: -1, armed: true }
+    this.state = { lastTriggerAbs: -1, armed: true, lastTriggerAt: -1 }
     this.lastFeedHit = false
   }
 
@@ -102,6 +104,7 @@ export class TriggerEngine {
     this.lastFeedHit = hit >= 0
     if (hit >= 0) {
       this.state.lastTriggerAbs = hit
+      this.state.lastTriggerAt = Date.now()
       if (cfg.mode === 'single') this.state.armed = false // 单次捕获完成
     }
   }
@@ -110,5 +113,6 @@ export class TriggerEngine {
   arm(): void {
     this.state.armed = true
     this.state.lastTriggerAbs = -1
+    this.state.lastTriggerAt = -1
   }
 }

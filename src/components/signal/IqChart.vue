@@ -75,6 +75,9 @@ let fadeOutFrames = 0
 // 余辉像素不会随 canvas.width 重置而丢失
 let persistSnapshot: HTMLCanvasElement | null = null
 let needsRestore = false
+// auto 触发模式：触发失联超过该时长（ms）→ 回退自由滚动（free-run），避免信号消失后死屏；
+// 有触发期间 auto 与 normal 一样锁定显示触发对齐窗
+const AUTO_STALE_MS = 500
 
 // ── 数据流中断反馈（跟随态下超过阈值无新数据 → 顶部角标提示）──
 const DATA_STALE_MS = 3000
@@ -365,12 +368,17 @@ function emitSpanChange(immediate = false): void {
 
 function resolveXRange(): { min: number; max: number } {
   const total = totalAbs()
+  // auto 模式：触发失联超时 → 回退自由滚动（free-run），防死屏
+  const autoStale =
+    triggerCfg.mode === 'auto' &&
+    triggerEng.state.lastTriggerAt >= 0 &&
+    Date.now() - triggerEng.state.lastTriggerAt > AUTO_STALE_MS
   // 触发对齐显示（独立于跟随/暂停）
   if (triggerCfg.enabled) {
     const tw = triggerViewWindow(view.span)
     if (tw) {
-      // auto 模式：最近一次 feed 未命中触发 → 回退滚动（与 normal 定格区分）
-      if (triggerCfg.mode === 'auto' && !triggerEng.lastFeedHit) {
+      // auto 模式：触发失联超时 → 回退滚动（free-run）
+      if (triggerCfg.mode === 'auto' && autoStale) {
         const span = Math.min(view.span, Math.max(MIN_SPAN, total))
         return { min: Math.max(dropped, total - span), max: total }
       }
@@ -559,7 +567,11 @@ function draw(): void {
   const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
   const fading = persist > 0 && fadeRenderer !== null
   // 触发状态角标：single=等待触发/已捕获；normal=定格显示触发窗→触发锁定/无触发滚动→等待触发；
-  // auto=最近帧命中→触发锁定/未命中→等待触发
+  // auto=有触发且未失联→触发锁定/触发失联或无触发→等待触发（free-run）
+  const autoStale =
+    triggerCfg.mode === 'auto' &&
+    triggerEng.state.lastTriggerAt >= 0 &&
+    Date.now() - triggerEng.state.lastTriggerAt > AUTO_STALE_MS
   trigUi.status =
     triggerCfg.mode === 'single'
       ? triggerEng.state.armed
@@ -569,12 +581,15 @@ function draw(): void {
         ? triggerEng.state.lastTriggerAbs >= 0
           ? '触发锁定'
           : '等待触发'
-        : triggerEng.lastFeedHit
-          ? '触发锁定'
+        : triggerCfg.mode === 'auto'
+          ? !autoStale && triggerEng.state.lastTriggerAbs >= 0
+            ? '触发锁定'
+            : '等待触发'
           : '等待触发'
-  // 触发对齐冻结：normal/single 触发后定格显示触发窗，仅当「触发点或窗宽变化」才重绘一帧。
+  // 触发对齐冻结：normal/single/auto(触发未失联) 触发后定格显示触发窗，仅当「触发点或窗宽变化」才重绘一帧。
   // （缓冲持续流入淘汰也不影响已冻结画面；右侧数据未到位时 triggerViewWindow 返回 null，
   //   不冻结不渲染，等待数据到达后渲染对齐帧——避免窗口被钳制导致触发点偏离屏位）
+  // auto：有触发时锁定显示（同 normal），触发失联超 AUTO_STALE_MS 后回退自由滚动（free-run）
   const trigWin = triggerViewWindow(view.span)
   const trigAbs = trigWin ? triggerEng.state.lastTriggerAbs : -1
   const trigKey = trigWin ? `${trigAbs}:${view.span}` : ''
@@ -582,7 +597,9 @@ function draw(): void {
   const trigFrozen =
     !!trigWin &&
     !trigNew &&
-    (triggerCfg.mode === 'normal' || (triggerCfg.mode === 'single' && !triggerEng.state.armed))
+    (triggerCfg.mode === 'normal' ||
+      (triggerCfg.mode === 'single' && !triggerEng.state.armed) ||
+      (triggerCfg.mode === 'auto' && !autoStale))
   if (trigFrozen) return
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
   if (needsRestore && persistSnapshot && blitRenderer) {

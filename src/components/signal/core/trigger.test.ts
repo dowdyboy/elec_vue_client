@@ -55,6 +55,7 @@ describe('TriggerEngine', () => {
     e.feed(cfg, arr, 0, 2, 0)
     expect(e.state.lastTriggerAbs).toBe(1) // -1→1
     expect(e.state.armed).toBe(true)
+    expect(e.state.lastTriggerAt).toBeGreaterThan(0) // 记录触发时间（auto free-run 判断用）
   })
   it('auto：无触发保持 -1', () => {
     const e = new TriggerEngine()
