@@ -52,6 +52,7 @@ const effectiveRemoteUrl = computed(() => remoteUrlInput.value.trim() || builtin
 // 信源
 const freq = ref(50)
 const snr = ref(20)
+const amplitude = ref(1)
 const modType = ref<SignalAnalysisConfig['modType']>('sine')
 const sampleRate = ref(4096)
 const pointsPerFrame = ref(2048)
@@ -117,6 +118,7 @@ function loadLocal(): void {
     }
     if (typeof p.freq === 'number') freq.value = p.freq
     if (typeof p.snr === 'number') snr.value = p.snr
+    if (typeof p.amplitude === 'number') amplitude.value = p.amplitude
     if (p.modType) modType.value = p.modType as SignalAnalysisConfig['modType']
     if (typeof p.sampleRate === 'number') sampleRate.value = p.sampleRate
     if (typeof p.pointsPerFrame === 'number') pointsPerFrame.value = p.pointsPerFrame
@@ -161,6 +163,7 @@ async function refreshStatus(): Promise<void> {
       const c = st.config as Partial<SignalAnalysisConfig>
       if (typeof c.freq === 'number') freq.value = c.freq
       if (typeof c.snr === 'number') snr.value = c.snr
+      if (typeof c.amplitude === 'number') amplitude.value = c.amplitude
       if (c.modType) modType.value = c.modType
       if (typeof c.sampleRate === 'number') sampleRate.value = c.sampleRate
       if (typeof c.pointsPerFrame === 'number') pointsPerFrame.value = c.pointsPerFrame
@@ -186,6 +189,7 @@ async function applyConfig(): Promise<void> {
     const r = (await window.api.signalAnalysis.setConfig({
       freq: freq.value,
       snr: snr.value,
+      amplitude: amplitude.value,
       modType: modType.value,
       sampleRate: sampleRate.value,
       pointsPerFrame: pointsPerFrame.value,
@@ -271,6 +275,7 @@ async function startRemote(): Promise<void> {
   const cfgPatch = {
     freq: freq.value,
     snr: snr.value,
+    amplitude: amplitude.value,
     modType: modType.value,
     sampleRate: sampleRate.value,
     pointsPerFrame: pointsPerFrame.value,
@@ -454,6 +459,11 @@ onMounted(() => {
             </NFormItem>
           </NGi>
           <NGi>
+            <NFormItem label="幅度">
+              <NSlider v-model:value="amplitude" :min="0.1" :max="5" :step="0.1" />
+            </NFormItem>
+          </NGi>
+          <NGi>
             <NFormItem label="采样率">
               <NSelect
                 v-model:value="sampleRate"
@@ -580,6 +590,7 @@ onMounted(() => {
         <NDescriptionsItem label="调制方式">{{ effConfig?.modType ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="频率">{{ effConfig?.freq ?? '-' }} Hz</NDescriptionsItem>
         <NDescriptionsItem label="信噪比">{{ effConfig?.snr ?? '-' }} dB</NDescriptionsItem>
+        <NDescriptionsItem label="幅度">{{ effConfig?.amplitude ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="采样率">{{ effConfig?.sampleRate ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="每帧点数">{{
           effConfig?.pointsPerFrame ?? '-'

@@ -95,11 +95,12 @@ export function registerRemoteMockServer(): () => void {
     const n = cfg.pointsPerFrame,
       out = new Float32Array(n * 2),
       scale = noiseScale(cfg.snr),
+      amp = cfg.amplitude || 1,
       step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
     if (cfg.modType === 'sine') {
       for (let k = 0; k < n; k++) {
-        out[2 * k] = Math.cos(phase) + gaussian() * scale
-        out[2 * k + 1] = Math.sin(phase) + gaussian() * scale
+        out[2 * k] = amp * Math.cos(phase) + gaussian() * scale
+        out[2 * k + 1] = amp * Math.sin(phase) + gaussian() * scale
         phase += step
         if (phase > Math.PI * 2) phase -= Math.PI * 2
       }

@@ -13,6 +13,7 @@ export interface SignalAnalysisConfig {
   // ── 信号源 ──
   freq: number // Hz，相对采样率归一化频率
   snr: number // dB，噪声强度
+  amplitude: number // 载波幅度（sine 峰幅值），触发/包络测试可调
   modType: ModType
   sampleRate: number
   pointsPerFrame: number
@@ -55,6 +56,7 @@ export function defaultAnalysisConfig(): SignalAnalysisConfig {
   return {
     freq: 50,
     snr: 20,
+    amplitude: 1,
     modType: 'sine',
     sampleRate: 4096,
     pointsPerFrame: 2048,
@@ -104,6 +106,11 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
     const snr = num('snr')
     if (snr === null || snr < 0 || snr > 100) errors.push('snr 须为 0~100 的数')
     else out.snr = snr
+  }
+  if ('amplitude' in src) {
+    const amp = num('amplitude')
+    if (amp === null || amp <= 0 || amp > 10) errors.push('amplitude 须为 0~10 的数')
+    else out.amplitude = amp
   }
   if ('modType' in src) {
     if (typeof src.modType === 'string' && MOD_TYPES.includes(src.modType))

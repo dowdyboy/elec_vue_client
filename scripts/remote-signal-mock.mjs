@@ -119,9 +119,9 @@ let phase = 0
 const acc = new SpectrogramAccumulator()
 
 function genFrame(){
-  const n=cfg.pointsPerFrame, out=new Float32Array(n*2), scale=noiseScale(cfg.snr), step=(2*Math.PI*cfg.freq)/cfg.sampleRate
+  const n=cfg.pointsPerFrame, out=new Float32Array(n*2), scale=noiseScale(cfg.snr), amp=cfg.amplitude||1, step=(2*Math.PI*cfg.freq)/cfg.sampleRate
   if(cfg.modType==='sine'){
-    for(let k=0;k<n;k++){ out[2*k]=Math.cos(phase)+gaussian()*scale; out[2*k+1]=Math.sin(phase)+gaussian()*scale; phase+=step; if(phase>Math.PI*2) phase-=Math.PI*2 }
+    for(let k=0;k<n;k++){ out[2*k]=amp*Math.cos(phase)+gaussian()*scale; out[2*k+1]=amp*Math.sin(phase)+gaussian()*scale; phase+=step; if(phase>Math.PI*2) phase-=Math.PI*2 }
     return out
   }
   const S=Math.max(1,cfg.samplesPerSymbol|0); let symI=0,symQ=0,ph=0

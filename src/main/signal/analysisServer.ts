@@ -174,11 +174,12 @@ class LocalAnalysisSource implements SignalAnalysisSource {
     const n = cfg.pointsPerFrame
     const out = new Float32Array(n * 2)
     const scale = noiseScale(cfg.snr)
+    const amp = cfg.amplitude || 1
     const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
     if (cfg.modType === 'sine') {
       for (let k = 0; k < n; k++) {
-        const i = Math.cos(this.phase) + gaussian() * scale
-        const q = Math.sin(this.phase) + gaussian() * scale
+        const i = amp * Math.cos(this.phase) + gaussian() * scale
+        const q = amp * Math.sin(this.phase) + gaussian() * scale
         out[2 * k] = i
         out[2 * k + 1] = q
         this.phase += step
