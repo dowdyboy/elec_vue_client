@@ -29,7 +29,7 @@ import {
   type PlotRect
 } from './core/axis'
 import { MinMaxPyramid, type RangeStats } from './core/pyramid'
-import { TriggerEngine, triggerWindow, type TriggerConfig } from './core/trigger'
+import { TriggerEngine, type TriggerConfig } from './core/trigger'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
 import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
@@ -146,11 +146,16 @@ let triggerCfg: TriggerConfig = {
   preTrigger: 0.25
 }
 
-/** 触发对齐的显示窗（绝对索引域）；无有效触发返回 null */
+/** 触发对齐的显示窗（绝对索引域）。
+ *  触发点须锚定在屏上 preTrigger 比例处——若窗口右端超出当前数据（total）被钳制，
+ *  触发点会被推到窗口右缘（偏离屏位）；故右侧数据未到位时返回 null，等待数据到达后再渲染对齐帧 */
 function triggerViewWindow(span: number): { min: number; max: number } | null {
   const c = triggerCfg
   if (!c.enabled || triggerEng.state.lastTriggerAbs < 0) return null
-  return triggerWindow(triggerEng.state.lastTriggerAbs, span, c.preTrigger, dropped, totalAbs())
+  const min = triggerEng.state.lastTriggerAbs - Math.floor(c.preTrigger * span)
+  const max = min + span
+  if (max > totalAbs()) return null // 右侧数据未到位：等待，不渲染错位帧
+  return { min: Math.max(dropped, min), max }
 }
 /** 外部/内部刷新 trigger 配置 */
 function syncTriggerCfg(): void {
@@ -568,13 +573,14 @@ function draw(): void {
           ? '触发锁定'
           : '等待触发'
   // 触发对齐冻结：normal/single 触发后定格显示触发窗，仅当「触发点或窗宽变化」才重绘一帧。
-  // （缓冲持续流入淘汰也不影响已冻结画面，消除「隔几秒跳一次」的周期性跳变；缩放改 span 触发重绘）
-  const trigAbs = triggerCfg.enabled ? triggerEng.state.lastTriggerAbs : -1
-  const trigKey = `${trigAbs}:${view.span}`
-  const trigNew = trigAbs >= 0 && trigKey !== lastShownTriggerKey
+  // （缓冲持续流入淘汰也不影响已冻结画面；右侧数据未到位时 triggerViewWindow 返回 null，
+  //   不冻结不渲染，等待数据到达后渲染对齐帧——避免窗口被钳制导致触发点偏离屏位）
+  const trigWin = triggerViewWindow(view.span)
+  const trigAbs = trigWin ? triggerEng.state.lastTriggerAbs : -1
+  const trigKey = trigWin ? `${trigAbs}:${view.span}` : ''
+  const trigNew = !!trigWin && trigKey !== lastShownTriggerKey
   const trigFrozen =
-    triggerCfg.enabled &&
-    trigAbs >= 0 &&
+    !!trigWin &&
     !trigNew &&
     (triggerCfg.mode === 'normal' || (triggerCfg.mode === 'single' && !triggerEng.state.armed))
   if (trigFrozen) return
