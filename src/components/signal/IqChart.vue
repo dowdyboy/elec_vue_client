@@ -154,6 +154,7 @@ function triggerViewWindow(span: number): { min: number; max: number } | null {
 function syncTriggerCfg(): void {
   const t = props.trigger
   if (!t) return
+  const prev = triggerCfg
   triggerCfg = {
     enabled: t.enabled,
     source: t.source ?? 'i',
@@ -167,7 +168,17 @@ function syncTriggerCfg(): void {
   trigUi.mode = triggerCfg.mode
   trigUi.edge = triggerCfg.edge
   trigUi.status = triggerCfg.mode === 'single' && !triggerEng.state.armed ? '已捕获' : '等待触发'
-  if (!t.enabled) {
+  // 触发参数变化（开关/通道/边沿/电平/模式/屏位）：旧捕获点与阈值不再匹配，
+  // 重置触发状态等待新触发——否则残留 lastTriggerAbs/lastFeedHit 会让显示窗锚在旧捕获、
+  // 而阈值线已画到新电平，波形看起来「突破不了阈值线」
+  const changed =
+    prev.enabled !== triggerCfg.enabled ||
+    prev.source !== triggerCfg.source ||
+    prev.edge !== triggerCfg.edge ||
+    prev.level !== triggerCfg.level ||
+    prev.mode !== triggerCfg.mode ||
+    prev.preTrigger !== triggerCfg.preTrigger
+  if (changed) {
     triggerEng.reset()
     singleFiredShown = false
   }
