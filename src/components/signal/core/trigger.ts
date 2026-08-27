@@ -106,8 +106,9 @@ export class TriggerEngine {
     }
   }
 
-  /** single 模式重新武装 */
+  /** single 模式重新武装：清空上次触发点，等待下一次触发 */
   arm(): void {
     this.state.armed = true
+    this.state.lastTriggerAbs = -1
   }
 }

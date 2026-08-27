@@ -88,6 +88,8 @@ describe('TriggerEngine', () => {
     expect(e.state.lastTriggerAbs).toBe(1)
     // arm 后重新捕获
     e.arm()
+    expect(e.state.armed).toBe(true)
+    expect(e.state.lastTriggerAbs).toBe(-1) // arm 清空上次触发点，避免残留旧捕获锚定显示窗
     e.feed(cfg, buf, 6, 8, 0)
     expect(e.state.lastTriggerAbs).toBe(7)
   })
