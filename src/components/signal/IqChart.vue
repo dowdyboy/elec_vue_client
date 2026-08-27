@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * IqChart（可复制，零依赖，自带主题，高性能）
  * 复用：拷本文件 + core/* + composables/useGlChart.ts 到他项目即可
@@ -114,6 +114,10 @@ const ZOOM_FACTOR = 1.2 // 每次滚轮缩放系数
 
 // ── 数据缓冲（线性增长 + 环形丢老，保留最近 MAX_POINTS）──
 const MAX_POINTS = 2_000_000
+// 环形淘汰后保留的样本数（见 compact 调用）；follow/free-run 有效窗宽须 ≤ 该值，
+// 否则窗口左缘钳到 dropped、淘汰推进时产生可见跳变
+const RING_KEEP = Math.floor(MAX_POINTS * 0.9)
+const MAX_FOLLOW_SPAN = RING_KEEP
 let iBuf = new Float32Array(0)
 let qBuf = new Float32Array(0)
 let dataLen = 0
@@ -140,23 +144,28 @@ const triggerEng = new TriggerEngine()
 // normal/single 触发后首帧渲染「触发对齐窗口」并冻结，仅当触发点或窗宽变化才重绘——
 // 环形缓冲持续流入淘汰也不影响已冻结画面（消除周期性跳变）
 let lastShownTriggerKey = ''
-let triggerCfg: TriggerConfig = {
+// 组件级触发配置（在 TriggerConfig 基础上附加 autoTimeout，纯展示/回退逻辑用，引擎不感知）
+type IqTriggerCfg = TriggerConfig & { autoTimeout?: number }
+let triggerCfg: IqTriggerCfg = {
   enabled: false,
   source: 'i',
   edge: 'rising',
   level: 0,
   mode: 'auto',
-  preTrigger: 0.25
+  preTrigger: 0.25,
+  autoTimeout: undefined
 }
 
 /** 触发对齐的显示窗（绝对索引域）。
  *  触发点须锚定在屏上 preTrigger 比例处——若窗口右端超出当前数据（total）被钳制，
- *  触发点会被推到窗口右缘（偏离屏位）；故右侧数据未到位时返回 null，等待数据到达后再渲染对齐帧 */
+ *  触发点会被推到窗口右缘（偏离屏位）；故右侧数据未到位时返回 null，等待数据到达后再渲染对齐帧。
+ *  窗宽同时封顶到环形缓冲保留容量（RING_KEEP），避免过大窗宽左侧被淘汰钳制 */
 function triggerViewWindow(span: number): { min: number; max: number } | null {
   const c = triggerCfg
   if (!c.enabled || triggerEng.state.lastTriggerAbs < 0) return null
-  const min = triggerEng.state.lastTriggerAbs - Math.floor(c.preTrigger * span)
-  const max = min + span
+  const spanC = Math.min(span, MAX_FOLLOW_SPAN)
+  const min = triggerEng.state.lastTriggerAbs - Math.floor(c.preTrigger * spanC)
+  const max = min + spanC
   if (max > totalAbs()) return null // 右侧数据未到位：等待，不渲染错位帧
   return { min: Math.max(dropped, min), max }
 }
@@ -171,14 +180,15 @@ function syncTriggerCfg(): void {
     edge: t.edge ?? 'rising',
     level: t.level ?? 0,
     mode: t.mode ?? 'auto',
-    preTrigger: Math.min(1, Math.max(0, t.preTrigger ?? 0.25))
+    preTrigger: Math.min(1, Math.max(0, t.preTrigger ?? 0.25)),
+    autoTimeout: typeof t.autoTimeout === 'number' && t.autoTimeout > 0 ? t.autoTimeout : undefined
   }
   trigUi.enabled = triggerCfg.enabled
   trigUi.level = triggerCfg.level
   trigUi.mode = triggerCfg.mode
   trigUi.edge = triggerCfg.edge
   trigUi.status = triggerCfg.mode === 'single' && !triggerEng.state.armed ? '已捕获' : '等待触发'
-  // 触发参数变化（开关/通道/边沿/电平/模式/屏位）：旧捕获点与阈值不再匹配，
+  // 触发参数变化（开关/通道/边沿/电平/模式/屏位/失联超时）：旧捕获点与阈值不再匹配，
   // 重置触发状态等待新触发——否则残留 lastTriggerAbs/lastFeedHit 会让显示窗锚在旧捕获、
   // 而阈值线已画到新电平，波形看起来「突破不了阈值线」
   const changed =
@@ -187,7 +197,8 @@ function syncTriggerCfg(): void {
     prev.edge !== triggerCfg.edge ||
     prev.level !== triggerCfg.level ||
     prev.mode !== triggerCfg.mode ||
-    prev.preTrigger !== triggerCfg.preTrigger
+    prev.preTrigger !== triggerCfg.preTrigger ||
+    prev.autoTimeout !== triggerCfg.autoTimeout
   if (changed) {
     triggerEng.reset()
     lastShownTriggerKey = ''
@@ -251,7 +262,7 @@ function pushNormalized(n: IqNormalized): void {
     const pairs = Math.floor(n.length / 2)
     ensureCapacity(dataLen + pairs)
     for (let k = 0; k < pairs; k++) {
-      if (dataLen >= MAX_POINTS) compact(Math.floor(MAX_POINTS * 0.9))
+      if (dataLen >= MAX_POINTS) compact(RING_KEEP)
       iBuf[dataLen] = n[2 * k]
       qBuf[dataLen] = n[2 * k + 1]
       dataLen++
@@ -260,7 +271,7 @@ function pushNormalized(n: IqNormalized): void {
     const len = Math.min(n.i.length, n.q.length)
     ensureCapacity(dataLen + len)
     for (let k = 0; k < len; k++) {
-      if (dataLen >= MAX_POINTS) compact(Math.floor(MAX_POINTS * 0.9))
+      if (dataLen >= MAX_POINTS) compact(RING_KEEP)
       iBuf[dataLen] = n.i[k]
       qBuf[dataLen] = n.q[k]
       dataLen++
@@ -368,31 +379,31 @@ function emitSpanChange(immediate = false): void {
 
 function resolveXRange(): { min: number; max: number } {
   const total = totalAbs()
+  // follow/free-run 有效窗宽：封顶到环形缓冲保留容量（RING_KEEP），
+  // 避免窗口左缘钳到 dropped 后随淘汰推进产生可见跳变
+  const followSpan = Math.min(view.span, Math.max(MIN_SPAN, total), MAX_FOLLOW_SPAN)
   // auto 模式：触发失联超时 → 回退自由滚动（free-run），防死屏
   const autoStale =
     triggerCfg.mode === 'auto' &&
     triggerEng.state.lastTriggerAt >= 0 &&
-    Date.now() - triggerEng.state.lastTriggerAt > AUTO_STALE_MS
+    Date.now() - triggerEng.state.lastTriggerAt > (triggerCfg.autoTimeout ?? AUTO_STALE_MS)
   // 触发对齐显示（独立于跟随/暂停）
   if (triggerCfg.enabled) {
     const tw = triggerViewWindow(view.span)
     if (tw) {
       // auto 模式：触发失联超时 → 回退滚动（free-run）
       if (triggerCfg.mode === 'auto' && autoStale) {
-        const span = Math.min(view.span, Math.max(MIN_SPAN, total))
-        return { min: Math.max(dropped, total - span), max: total }
+        return { min: Math.max(dropped, total - followSpan), max: total }
       }
       return tw
     }
     // 尚无触发（lastTriggerAbs<0）：auto 直接滚动；normal/single 在首次触发前也跟随最新数据
     if (triggerCfg.mode === 'auto' || triggerEng.state.lastTriggerAbs < 0) {
-      const span = Math.min(view.span, Math.max(MIN_SPAN, total))
-      return { min: Math.max(dropped, total - span), max: total }
+      return { min: Math.max(dropped, total - followSpan), max: total }
     }
   }
   if (view.follow) {
-    const span = Math.min(view.span, Math.max(MIN_SPAN, total))
-    return { min: Math.max(dropped, total - span), max: total }
+    return { min: Math.max(dropped, total - followSpan), max: total }
   }
   let min = Math.max(dropped, view.xMin)
   let max = Math.min(total, view.xMax)
@@ -571,7 +582,7 @@ function draw(): void {
   const autoStale =
     triggerCfg.mode === 'auto' &&
     triggerEng.state.lastTriggerAt >= 0 &&
-    Date.now() - triggerEng.state.lastTriggerAt > AUTO_STALE_MS
+    Date.now() - triggerEng.state.lastTriggerAt > (triggerCfg.autoTimeout ?? AUTO_STALE_MS)
   trigUi.status =
     triggerCfg.mode === 'single'
       ? triggerEng.state.armed

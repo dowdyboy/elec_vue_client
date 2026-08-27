@@ -59,13 +59,15 @@ const triggerEdge = ref<'rising' | 'falling'>('rising')
 const triggerLevel = ref(0)
 const triggerMode = ref<'auto' | 'normal' | 'single'>('auto')
 const triggerPre = ref(0.25)
+const triggerAutoTimeout = ref<number | null>(500)
 const triggerConfig = computed(() => ({
   enabled: triggerEnabled.value,
   source: triggerSource.value,
   edge: triggerEdge.value,
   level: triggerLevel.value,
   mode: triggerMode.value,
-  preTrigger: triggerPre.value
+  preTrigger: triggerPre.value,
+  autoTimeout: triggerAutoTimeout.value ?? undefined
 }))
 function onArmTrigger(): void {
   ;(iqRef.value as unknown as { armTrigger?: () => void } | null)?.armTrigger?.()
@@ -457,6 +459,15 @@ watch(adapterKey, (v) => {
           :max="1"
           :step="0.05"
           style="width: 90px"
+        />
+        <span>auto超时</span>
+        <NInputNumber
+          v-model:value="triggerAutoTimeout"
+          size="small"
+          :min="50"
+          :step="50"
+          :show-button="false"
+          style="width: 72px"
         />
         <NButton size="tiny" @click="onArmTrigger">arm</NButton>
       </div>

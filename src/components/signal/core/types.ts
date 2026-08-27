@@ -104,6 +104,8 @@ export interface IqProps extends ChartBaseProps {
     mode?: 'auto' | 'normal' | 'single'
     /** 触发点屏幕位置比例 0~1（窗口起点在其左侧的比例），默认 0.25 */
     preTrigger?: number
+    /** auto 模式触发失联超时（ms，默认 500）：超过该时长无新触发 → 回退自由滚动（free-run）防死屏 */
+    autoTimeout?: number
   }
   /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
   span?: number
