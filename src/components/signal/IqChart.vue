@@ -623,7 +623,12 @@ function draw(): void {
     (triggerCfg.mode === 'normal' ||
       (triggerCfg.mode === 'single' && !triggerEng.state.armed) ||
       (triggerCfg.mode === 'auto' && !autoStale))
-  if (trigFrozen) return
+  if (trigFrozen) {
+    // 冻结：不重绘 GL 波形缓冲（保留捕获画面，余辉/拖影不衰减），
+    // 但 overlay 仍每帧重绘——十字光标/标记/电平线/框选继续跟随交互（不随冻结停滞）
+    if (lastView) drawOverlay(lastView.xRange, lastView.yRange, lastView.plot)
+    return
+  }
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
   if (needsRestore && persistSnapshot && blitRenderer) {
     blitRenderer.draw(persistSnapshot)
