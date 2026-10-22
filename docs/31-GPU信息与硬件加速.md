@@ -29,12 +29,12 @@ app.disableHardwareAcceleration()
 
 常用状态值对照：
 
-| 状态 | 含义 |
-|------|------|
-| `enabled` / `enabled_on` | 硬件加速 |
-| `enabled_readback` | 加速但需回读（性能略降） |
-| `disabled_software` | 软件渲染（加速被禁用） |
-| `disabled_off` / `unavailable_off` | 特性已关闭 / 不可用 |
+| 状态                               | 含义                     |
+| ---------------------------------- | ------------------------ |
+| `enabled` / `enabled_on`           | 硬件加速                 |
+| `enabled_readback`                 | 加速但需回读（性能略降） |
+| `disabled_software`                | 软件渲染（加速被禁用）   |
+| `disabled_off` / `unavailable_off` | 特性已关闭 / 不可用      |
 
 ## 三、"禁用后重启生效"的实现模式
 

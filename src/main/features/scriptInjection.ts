@@ -13,9 +13,13 @@
 
 import { ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export function registerScriptInjection(getMainWindow: MainWindowGetter): void {
-  ipcMain.handle('inject:execute', async (_e, code: string) => {
+  ipcMain.handle('inject:execute', async (e, code: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    // 轻量化安全提示：任意代码执行需可信来源；生产建议加白名单/签名校验
+    if (!code || code.length > 5000) return { ok: false, error: '代码不能为空或过长' }
     const win = getMainWindow()
     if (!win) return { ok: false, error: '无主窗口' }
     try {

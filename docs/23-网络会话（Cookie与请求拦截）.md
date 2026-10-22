@@ -8,7 +8,11 @@
 
 ```ts
 const cookies = await session.defaultSession.cookies.get({}) // 读取全部
-await session.defaultSession.cookies.set({ url: 'https://example.com', name: 'token', value: 'xxx' })
+await session.defaultSession.cookies.set({
+  url: 'https://example.com',
+  name: 'token',
+  value: 'xxx'
+})
 await session.defaultSession.cookies.remove('https://example.com', 'token')
 ```
 
@@ -27,12 +31,13 @@ session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
 ```
 
 常用拦截点：
-| 事件 | 时机 | 用途 |
-|------|------|------|
-| `onBeforeRequest` | 请求发出前 | 广告拦截（cancel）、重定向 |
-| `onBeforeSendHeaders` | 发送请求头前 | 注入/修改请求头 |
-| `onHeadersReceived` | 收到响应头时 | 修改响应头 |
-| `onCompleted` | 请求完成 | 日志统计 |
+
+| 事件                  | 时机         | 用途                       |
+| --------------------- | ------------ | -------------------------- |
+| `onBeforeRequest`     | 请求发出前   | 广告拦截（cancel）、重定向 |
+| `onBeforeSendHeaders` | 发送请求头前 | 注入/修改请求头            |
+| `onHeadersReceived`   | 收到响应头时 | 修改响应头                 |
+| `onCompleted`         | 请求完成     | 日志统计                   |
 
 **注意**：拦截的是 **Chromium 网络栈**（渲染进程 fetch、下载、页面资源）；主进程的 axios 请求不走此栈，拦截不到。
 

@@ -15,45 +15,43 @@ export type Channel = (typeof IPC)[keyof typeof IPC]   // 通道名联合类型
 // 主进程 / 渲染进程共用同一份常量 → 拼错通道名 = 编译错误`
 
 const payload = `// 惯用法二：事件载荷用判别联合，渲染进程安全分发
-// 类型定义（主进程推送、渲染进程消费共享）
+// 类型定义（主进程推送、渲染进程消费共享，6 分支与真实 autoUpdater 一致）
 type UpdateStatus =
   | { type: 'checking' }
   | { type: 'available'; version: string }
+  | { type: 'not-available' }
   | { type: 'progress'; percent: number }
   | { type: 'downloaded'; version: string }
   | { type: 'error'; message: string }
 
-// 渲染进程处理（本工程 AutoUpdatePage 即此模式）：
+function assertNever(x: never): never { throw new Error('Unhandled: ' + JSON.stringify(x)) }
+
+// 渲染进程处理（本工程 AutoUpdatePage 即此模式，穷尽检查）：
 function onStatus(status: UpdateStatus): void {
   switch (status.type) {
-    case 'available':
-      // 这里能用 status.version ✅
-      void status.version
-      break
-    case 'progress':
-      void status.percent
-      break
-    case 'error':
-      void status.message
-      break
+    case 'checking': break
+    case 'available': void status.version; break  // 这里能用 version ✅
+    case 'not-available': break
+    case 'progress': void status.percent; break
+    case 'downloaded': void status.version; break
+    case 'error': void status.message; break
+    default: assertNever(status)
   }
 }`
 
 const typing = `// 惯用法三：preload 把每个 API 的返回类型精确带给调用处
-// preload/index.ts（节选）：
-//   download: { list: () => ipcRenderer.invoke('download:list') }
-//   shell:    { openPath: (p: string) => ipcRenderer.invoke('shell:openPath', p) }
+// preload/index.ts（真实实现，Channel 为 as const 派生联合）：
+//   function invoke<T>(channel: Channel, ...args: unknown[]): Promise<T> {
+//     return ipcRenderer.invoke(channel, ...args) as Promise<T>
+//   }
+//   shell:    { openPath: (p: string) => invoke<ShellOpenResult>('shell:openPath', p) }
+//   download: { list: () => invoke<DownloadRecord[]>('download:list') }
 //
 // 通过 index.d.ts 的 declare global 把 window.api: Api 暴露给渲染进程，
 // 于是调用处自动获得类型补全：
 //   const res = await window.api.shell.openPath('C:/a.txt')
 //   res.ok / res.path / res.error   全部有类型提示
-
-// 也可以为通用 invoke 封装泛型签名：
-async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
-  return window.ipcRenderer.invoke(channel, ...args) as Promise<T>
-}
-// 使用时：const user = await invoke<User>('user:get', id)`
+//   const list = await window.api.download.list()   // list: DownloadRecord[]`
 
 const example = `// 惯用法四：主进程 handler 返回"判别联合结果"，跨进程保持类型一致
 // 主进程：

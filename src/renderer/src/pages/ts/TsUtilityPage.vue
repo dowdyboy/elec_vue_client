@@ -10,12 +10,12 @@ interface User {
   age?: number
 }
 
-type PartialUser = Partial<User>          // 所有属性可选
+type PartialUser = Partial<User>          // 所有属性可选（仅一层，非递归）
 type RequiredUser = Required<User>        // 所有属性必填
 type ReadonlyUser = Readonly<User>        // 所有属性只读
 type Picked = Pick<User, 'id' | 'name'>   // 只留 id/name
 type Omitted = Omit<User, 'email'>        // 去掉 email
-type JustName = Record<'a' | 'b', string> // 键→值的映射
+type JustName = Record<'a' | 'b', string> // 键→值的映射（K extends string, 键固定 vs 索引签名键任意）
 
 // 内置"状态对象"惯用法
 type State = Record<'idle' | 'loading' | 'done', boolean>`
@@ -31,9 +31,7 @@ const obj = { a: 1, b: 'x' }
 type ObjKey = keyof typeof obj       // 'a' | 'b'
 type ObjValues = (typeof obj)[keyof typeof obj]  // number | string
 
-type NonNull = NonNullable<string | null | undefined>  // string
-type MaybeArray = string | string[]
-type Element = string                // （取联合成员的单个元素用条件类型，见下一课）`
+type NonNull = NonNullable<string | null | undefined>  // string`
 
 const example = `// 实战：Omit + Pick 做"表单态"与"详情态"的派生
 interface Task {

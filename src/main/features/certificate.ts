@@ -11,14 +11,17 @@
  */
 
 import { ipcMain, session } from 'electron'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export function registerCertificate(): void {
-  ipcMain.handle('cert:setVerifyMode', (_e, mode: 'default' | 'trustAll') => {
+  ipcMain.handle('cert:setVerifyMode', (e, mode: 'default' | 'trustAll') => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (mode === 'default') {
       // 恢复默认校验（传 null 移除自定义处理器）
       session.defaultSession.setCertificateVerifyProc(null)
     } else {
       // 放行所有证书（0 = 通过；回调 (isTrusted: boolean)）
+      // ⚠️ 轻量化安全提示：trustAll 仅调试用，生产勿用（MITM 风险）
       session.defaultSession.setCertificateVerifyProc((_request, callback) => {
         callback(0)
       })

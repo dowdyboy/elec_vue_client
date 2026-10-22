@@ -245,23 +245,25 @@ VBW=0.1×RBW 时 α=0.9（强平滑）、0.5×RBW 时 α=0.5、≥RBW 视为关�
 与 `average` 的区别：VBW 是逐 bin 连续平滑（压低噪声底起伏而不牺牲保持类迹线），average 是 N 帧等权平均。
 信息栏显示 `VBW xxx (off)` 表示未生效（≥RBW 或 RBW 未知）；帧长变化/clear 自动以新帧为种子，显示不跳变。
 
-**峰值表**：`peakTable` 开启后右上角绘制 Top-N 表面板（`# / 频率 / 电平`，标记读数面板自动下移避让），
+**峰值表**：`peakTable` 开启后右上角绘制 Top-N 表面板（行内容为 序号/频率/电平，标记读数面板自动下移避让），
 复用 `findPeaks`（`thresholdDb`/`excursionDb`/`count` 可调，按当前显示数据单位解释：dB 模式为 dB，线性模式为幅度差）；
-候选峰按幅度降序截断到 128 个再做回落门限筛选，避免噪声谱的 O(k²) 区间扫描拖慢每帧重绘；`getPeaks()` 取同款数据供宿主导出 CSV。
+候选峰按幅度降序截断到 128 个再做回落门限筛选，避免噪声谱的 O(k²) 区间扫描拖慢每帧重绘。
+`getPeaks(opts?)` 与 UI 解耦：**无论 `peakTable` 是否开启都可调用**，峰值表面板只是它的可视化，宿主导出 CSV 不必先开面板。
 
-**测量**（作用于活动迹线 + 当前视窗，频率换算依赖 `binHz`；线性显示时先转 dB 再算）：
+**测量**（作用于活动迹线；默认当前视窗，可传 `range={loBin,hiBin}` 指定区间；频率换算依赖 `binHz`；线性显示时先转 dB 再算）：
 
-- `measureOBW(pct=0.99)`：占用带宽（两端各裁 (1−pct)/2 功率），绘制边界虚线 + 半透明区间 + 结果芯片
+- `measureOBW(pct=0.99, range?)`：占用带宽（两端各裁 (1−pct)/2 功率），绘制边界虚线 + 半透明区间 + 结果芯片；`range={loBin,hiBin}` 可测可见窗之外的区间
 - `measureNdB(nDb=3, opts?)`：峰值左右 (peak−nDb) 穿越点（线性插值亚 bin 精度）。
   默认带**抗噪**（`opts = {smooth:3, hold:3}`：轻度滑动平均 + 连续 3 点低于门限确认），
   避免噪声迹线上单 bin 噪谷造成虚假窄带宽（实测噪声平台 0.4 bin → 恢复 ~118 bin）；
-  穿越检测在包络上进行，报告峰值仍为原始峰值；传 `{smooth:1, hold:1}` 即裸测口径。
+  穿越检测在包络上进行，报告峰值仍为原始峰值；传 `{smooth:1, hold:1}` 即裸测口径；`{loBin,hiBin}` 可限定测量区间。
   注：N dB 带宽基于显示迹线的首个穿越点，对噪声/调制类信号建议先用 VBW（<RBW）或平均迹线平滑后再测
 - `measureChannelPower(range?)`：显式区间或视窗内线性功率和转 dB（bin 视作等功率密度样本的简化口径，未做 ENBW 归一）
 - 测量叠加在 `zoomReset()`/`clear()`/`clearMeasurements()` 时清除
 
-**图内参数栏**（`showInfo`，默认开）：左上 `Ref …· dB/div`（自动量程显示 `Auto`）、右上 `Center/Span`、
+**图内参数栏**（`showInfo`，默认开）：左上 `Ref …· dB/div`（自动量程显示 `自动`，en-US 为 `Auto`）、右上 `Center/Span`、
 左下 `RBW/VBW`；10px 半透明，避让图例/轴标题/峰值表。截图/PNG 导出自带参数，仪器观感。
+界面文案由 `locale`（`zh-CN`/`en-US`）+ `messages` 控制，`labels` 旧字段优先级最高（见 README「多语言」）。
 
 ## 十二、仪器化扩展（二）
 
@@ -296,7 +298,7 @@ Center/Start/Stop 在演示页做显示域换算）。
 
 **限制线**：`limitLines: [{ points:[{freqHz|bin, level}], type:'upper'|'lower' }]`——折线（超限区间红染）
 
-- 左上 `LIMIT PASS / FAIL ×n` 判定芯片；`getLimitResult()` 返回 `pass/violations/worstMarginDb`。
+- 左上 `限制通过 / 限制超限 ×n` 判定芯片（en-US 为 `LIMIT PASS / FAIL ×n`）；`getLimitResult()` 返回 `pass/violations/worstMarginDb`。
   `level` 使用当前数据单位（dB 模式为 dB，线性显示时为幅度），与活动迹线原始数据比较（不含显示偏移）。
 
 **迹线内存**：`saveTraceToMemory()` 活动迹线快照 → `showMemory(v)` 灰色参考线叠加

@@ -26,15 +26,16 @@ format(3.14159)          // "3.14"
 format(new Date())       // 本地日期
 
 // 不同参数组合的重载（常见于"可选开关"类 API）
-function createTimer(cb: () => void, ms?: number): void
-function createTimer(ms?: number): void
-function createTimer(cbOrMs: (() => void) | number, ms?: number): void {
-  // 实现签名只写一次，不对外
+function createTimer(cb: () => void, ms: number): void
+function createTimer(ms: number): void
+function createTimer(cbOrMs?: (() => void) | number, ms?: number): void {
+  // 实现签名只写一次，不对外；按 typeof 区分回调与毫秒数
+  void cbOrMs; void ms
 }`
 
 const guards = `// 自定义类型守卫：让函数返回 boolean 的同时把类型收窄
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((v) => typeof v === 'string')
+  return Array.isArray(value) && value.every((v: unknown) => typeof v === 'string')
 }
 function process(input: unknown): string[] {
   if (isStringArray(input)) {

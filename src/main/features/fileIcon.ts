@@ -10,10 +10,14 @@
  */
 
 import { app, ipcMain } from 'electron'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export function registerFileIcon(): void {
-  ipcMain.handle('fileIcon:get', async (_e, filePath: string) => {
+  ipcMain.handle('fileIcon:get', async (e, filePath: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (!filePath) return { ok: false, error: '路径不能为空' }
+    // 轻量化防护：限制路径长度，避免大图撑爆（教学提示）
+    if (filePath.length > 1024) return { ok: false, error: '路径过长' }
     try {
       const icon = await app.getFileIcon(filePath, { size: 'large' })
       return { ok: true, dataUrl: icon.toDataURL() }

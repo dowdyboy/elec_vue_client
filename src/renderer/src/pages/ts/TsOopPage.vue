@@ -2,10 +2,12 @@
 import TsPage from '../../components/ts/TsPage.vue'
 import TsExample from '../../components/ts/TsExample.vue'
 
-const modifiers = `// 访问修饰符：public（默认）/ private（类内）/ protected（子类可访问）
+const modifiers = `// 访问修饰符：public（默认）/ private（类内，编译期）/ protected（子类可访问）
+// private 是编译期检查（运行时仍可 (acc as any).balance 访问）；#balance 为 ES2022 运行时硬私有
 class Account {
   public readonly id: string      // 只读 + 公开
-  private balance = 0             // 私有：仅类内可改
+  private balance = 0             // 私有：仅类内可改（编译期）
+  #hardBalance = 0                // 硬私有：运行时也不可访问
   protected owner?: string        // 子类可读
 
   constructor(id: string) {
@@ -14,16 +16,18 @@ class Account {
 
   deposit(amount: number): void {
     this.balance += amount
+    this.#hardBalance += amount
   }
 
   getBalance(): number {
-    return this.balance
+    return this.balance + this.#hardBalance
   }
 }
 
 const acc = new Account('a1')
 acc.deposit(100)
 // acc.balance        // ❌ 私有属性不能外部访问
+// acc.#hardBalance   // ❌ 语法错误：硬私有外部不可访问
 acc.getBalance()      // ✅`
 
 const abstract = `// 抽象类：定义"骨架"，子类必须实现抽象成员

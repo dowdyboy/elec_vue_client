@@ -6,10 +6,10 @@
 
 渲染进程不能直接枚举/打开串口（浏览器安全模型）。Electron 提供两道关卡：
 
-| 关卡 | API | 作用 |
-|------|-----|------|
+| 关卡     | API                                  | 作用                                                     |
+| -------- | ------------------------------------ | -------------------------------------------------------- |
 | 设备权限 | `session.setDevicePermissionHandler` | 这个页面**能否申请**设备访问（按 origin + 设备类型裁决） |
-| 端口选择 | `session.on('select-serial-port')` | 用户**选了哪个**端口（默认是 Chromium 自带选择器） |
+| 端口选择 | `session.on('select-serial-port')`   | 用户**选了哪个**端口（默认是 Chromium 自带选择器）       |
 
 ## 二、最小实现（主进程）
 
@@ -86,12 +86,12 @@ await port.close()
 
 同一条链路，只改两个位置：
 
-| 设备类型 | deviceType 值 | 事件 | 渲染进程 API |
-|----------|--------------|------|-------------|
-| 串口 | `'serial'` | `select-serial-port` | `navigator.serial` |
-| USB | `'usb'` | `select-usb-device` | `navigator.usb` |
-| HID | `'hid'` | `select-hid-device` | `navigator.hid` |
-| 蓝牙 | `'bluetooth'` | `select-bluetooth-device` | `navigator.bluetooth` |
+| 设备类型 | deviceType 值 | 事件                      | 渲染进程 API          |
+| -------- | ------------- | ------------------------- | --------------------- |
+| 串口     | `'serial'`    | `select-serial-port`      | `navigator.serial`    |
+| USB      | `'usb'`       | `select-usb-device`       | `navigator.usb`       |
+| HID      | `'hid'`       | `select-hid-device`       | `navigator.hid`       |
+| 蓝牙     | `'bluetooth'` | `select-bluetooth-device` | `navigator.bluetooth` |
 
 选择器事件的回调参数结构不同（如 USB 是 `Device` 列表），但"权限裁决 + 选择器接管"模式完全一致。
 
@@ -105,12 +105,12 @@ await port.close()
 
 ## 六、无硬件如何验证功能（三档递进）
 
-| 链路环节 | 无硬件 | 虚拟串口对 | 硬件回环 |
-|---|---|---|---|
-| navigator.serial 可用性 / getPorts | ✅ | ✅ | ✅ |
-| 主进程 devicePermissionHandler 放行 + select-serial-port 拦截 + token 回传 | ✅（取消路径） | ✅ | ✅ |
-| 应用内弹窗（端口选择） | ❌ | ✅ | ✅ |
-| port.open / write / read / close | ❌ | ✅ | ✅ |
+| 链路环节                                                                   | 无硬件         | 虚拟串口对 | 硬件回环 |
+| -------------------------------------------------------------------------- | -------------- | ---------- | -------- |
+| navigator.serial 可用性 / getPorts                                         | ✅             | ✅         | ✅       |
+| 主进程 devicePermissionHandler 放行 + select-serial-port 拦截 + token 回传 | ✅（取消路径） | ✅         | ✅       |
+| 应用内弹窗（端口选择）                                                     | ❌             | ✅         | ✅       |
+| port.open / write / read / close                                           | ❌             | ✅         | ✅       |
 
 ### 第一档：纯软件自检（无需任何硬件）
 
@@ -132,6 +132,7 @@ await port.close()
 > ⚠️ 本应用有单实例锁，**无法开两个应用实例互测**——对端用外部终端（PowerShell 脚本即可）。
 
 **步骤**：
+
 1. 安装 com0com → 配置一对虚拟端口（如 CNCA0/CNCB0，重命名为 COM3/COM4）
 2. 应用内点「选择串口」→ 弹窗应出现 COM3/COM4 → 选 COM3 连接
 3. 对端运行 PowerShell 脚本（开 COM4，读 5 秒后回写一行）：
@@ -158,9 +159,9 @@ CH340 / CP2102 等 USB 转串口模块：把 **TX 与 RX 引脚短接**（自回
 
 **期望结果表**：
 
-| 观察点 | 正常表现 |
-|---|---|
-| 自检第 3 项 | ✅ NotFoundError 预期拒绝 |
-| 虚拟对连接后发送 | 对端收到原文（含换行） |
-| 对端回写 | 应用接收区显示"来自 PowerShell 的回复" |
-| 断开后重连 | 弹窗再次出现（端口重新选择） |
+| 观察点           | 正常表现                               |
+| ---------------- | -------------------------------------- |
+| 自检第 3 项      | ✅ NotFoundError 预期拒绝              |
+| 虚拟对连接后发送 | 对端收到原文（含换行）                 |
+| 对端回写         | 应用接收区显示"来自 PowerShell 的回复" |
+| 断开后重连       | 弹窗再次出现（端口重新选择）           |

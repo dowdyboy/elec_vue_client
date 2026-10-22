@@ -6,18 +6,18 @@
 
 桌面应用的数据分三类，放错目录是新手最常见的坑：
 
-| 分类 | 目录 | 特征 | 示例 |
-|------|------|------|------|
-| 私有数据 | `userData` / `sessionData` / `logs` | 不可见、卸载时清理 | SQLite 库、配置、Cookie、崩溃日志 |
-| 缓存临时 | `temp` / `sessionData` | 可随时删除 | 临时文件、Chromium 缓存 |
-| 用户可见 | `downloads` / `documents` / `desktop` | 用户感知、不应乱写 | 下载、导出、另存为 |
+| 分类     | 目录                                  | 特征               | 示例                              |
+| -------- | ------------------------------------- | ------------------ | --------------------------------- |
+| 私有数据 | `userData` / `sessionData` / `logs`   | 不可见、卸载时清理 | SQLite 库、配置、Cookie、崩溃日志 |
+| 缓存临时 | `temp` / `sessionData`                | 可随时删除         | 临时文件、Chromium 缓存           |
+| 用户可见 | `downloads` / `documents` / `desktop` | 用户感知、不应乱写 | 下载、导出、另存为                |
 
 ```ts
-app.getPath('userData')    // Windows: %APPDATA%/应用名；macOS: ~/Library/Application Support/应用名
+app.getPath('userData') // Windows: %APPDATA%/应用名；macOS: ~/Library/Application Support/应用名
 app.getPath('sessionData') // Chromium 会话数据（缓存/Cookie，sessionCleanup.ts 清理对象）
-app.getPath('logs')        // 崩溃日志
-app.getPath('downloads')   // 下载（download.ts 默认落点）
-app.getPath('exe')         // 可执行文件目录（生产=安装目录，dev=node_modules/electron）
+app.getPath('logs') // 崩溃日志
+app.getPath('downloads') // 下载（download.ts 默认落点）
+app.getPath('exe') // 可执行文件目录（生产=安装目录，dev=node_modules/electron）
 ```
 
 本工程实例：`sqlite.ts` 把 app.db 放 userData，`windowState.ts` 把 window-state.json 放 userData，
@@ -25,10 +25,10 @@ app.getPath('exe')         // 可执行文件目录（生产=安装目录，dev=
 
 ## 二、setPath 的时机限制（重点）
 
-| 目录 | 何时可 setPath |
-|------|---------------|
+| 目录                       | 何时可 setPath                                |
+| -------------------------- | --------------------------------------------- |
 | `userData` / `sessionData` | **仅 app ready 之前**（见下方"运行期会怎样"） |
-| `downloads` 等 | 运行期可改（立即生效，影响后续下载落点） |
+| `downloads` 等             | 运行期可改（立即生效，影响后续下载落点）      |
 
 ```ts
 // 必须放在 app.whenReady().then(...) 之前

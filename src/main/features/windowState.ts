@@ -15,7 +15,9 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 
-const STATE_FILE = join(app.getPath('userData'), 'window-state.json')
+function getStateFile(): string {
+  return join(app.getPath('userData'), 'window-state.json')
+}
 
 /** 持久化数据结构 */
 export interface WindowState {
@@ -29,7 +31,7 @@ export interface WindowState {
 /** 读取上次保存的窗口状态（文件不存在时返回 null） */
 export async function loadWindowState(): Promise<WindowState | null> {
   try {
-    const raw = await fs.readFile(STATE_FILE, 'utf-8')
+    const raw = await fs.readFile(getStateFile(), 'utf-8')
     const state = JSON.parse(raw) as WindowState
     // 基本校验：尺寸必须有效
     if (!state.width || !state.height) return null
@@ -41,7 +43,7 @@ export async function loadWindowState(): Promise<WindowState | null> {
 
 async function writeState(state: WindowState): Promise<void> {
   try {
-    await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8')
+    await fs.writeFile(getStateFile(), JSON.stringify(state, null, 2), 'utf-8')
   } catch {
     // 写入失败不影响运行（如磁盘只读）
   }

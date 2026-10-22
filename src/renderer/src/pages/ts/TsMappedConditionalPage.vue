@@ -14,7 +14,7 @@ type UserGetters = Getters<User>
 type RequiredAndReadonly<T> = {
   readonly [K in keyof T]-?: T[K]
 }
-type ReadonlyUser = RequiredAndReadonly<User>  // name/age 必填且只读`
+type ReadonlyRequiredUser = RequiredAndReadonly<User>  // name/age 必填且只读（Readonly<T> 本身不去可选）`
 
 const conditional = `// 条件类型：类型层面的 if-else（T extends U ? X : Y）
 type IsString<T> = T extends string ? true : false
@@ -36,8 +36,9 @@ const palette = {
   red: [255, 0, 0],
   green: '#00ff00',
   blue: [0, 0, 255]
-} satisfies Record<Partial<Keys>, unknown>
-// palette.red 推断为 number[]（保留精度），同时整体满足约束
+} satisfies Record<Keys, string | number[]>
+// palette.red 推断为 number[]（保留精度，若要元组 [number,number,number] 需 as const）；
+// 对比 const p: Record<Keys, unknown> 会丢失精度为 unknown，satisfies 兼顾校验与精度
 
 // as const：把字面量固化（配合映射/条件类型做"常量驱动类型"）
 const ROUTES = ['home', 'settings', 'about'] as const

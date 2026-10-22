@@ -16,15 +16,27 @@
 import { app, dialog, ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
 
-/** 跨模块共享的退出状态（index.ts 的窗口 close 拦截也读它） */
+/** @deprecated 直接读写 quitState 已过时，请用 isQuitting()/setQuitting()，保留兼容旧代码 */
 export const quitState = {
-  isQuitting: false
+  get isQuitting(): boolean {
+    return _isQuitting
+  },
+  set isQuitting(v: boolean) {
+    _isQuitting = v
+  }
+}
+let _isQuitting = false
+export function isQuitting(): boolean {
+  return _isQuitting
+}
+export function setQuitting(v: boolean): void {
+  _isQuitting = v
 }
 
 let hasUnsaved = false
 let forceQuit = false
 
-export function registerQuitGuard(getMainWindow: MainWindowGetter): void {
+export function registerQuitGuard(getMainWindow: MainWindowGetter): () => void {
   // 页面标记"有未保存修改"
   ipcMain.handle('quitGuard:setDirty', (_e, dirty: boolean) => {
     hasUnsaved = dirty
@@ -34,7 +46,7 @@ export function registerQuitGuard(getMainWindow: MainWindowGetter): void {
   ipcMain.handle('quitGuard:getDirty', () => hasUnsaved)
 
   // 退出拦截：有未保存修改时询问用户
-  app.on('before-quit', (event) => {
+  const onBeforeQuit = (event: Electron.Event): void => {
     if (!hasUnsaved || forceQuit) return // 无修改 / 已确认退出 → 放行
 
     // 拦截本次退出
@@ -61,7 +73,13 @@ export function registerQuitGuard(getMainWindow: MainWindowGetter): void {
       app.quit()
     } else {
       // 用户取消：复位退出状态（否则窗口 close 不再被"隐藏到托盘"拦截）
-      quitState.isQuitting = false
+      _isQuitting = false
     }
-  })
+  }
+  app.on('before-quit', onBeforeQuit)
+  return () => {
+    app.removeListener('before-quit', onBeforeQuit)
+    ipcMain.removeHandler('quitGuard:setDirty')
+    ipcMain.removeHandler('quitGuard:getDirty')
+  }
 }

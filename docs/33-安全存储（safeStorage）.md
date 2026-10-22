@@ -6,19 +6,19 @@
 
 密码、API 令牌、私钥、Cookie 等敏感数据的存储错误示范：
 
-| 做法 | 问题 |
-|------|------|
-| 明文写 JSON/数据库 | 任何人/任何进程可读 |
+| 做法                     | 问题                       |
+| ------------------------ | -------------------------- |
+| 明文写 JSON/数据库       | 任何人/任何进程可读        |
 | 代码里硬编码密钥再"加密" | 密钥随代码分发，等于没加密 |
-| 自定义"异或/凯撒加密" | 自制密码学，安全为零 |
+| 自定义"异或/凯撒加密"    | 自制密码学，安全为零       |
 
 **正确姿势**：把加密交给操作系统密钥体系——`safeStorage`：
 
-| 平台 | 后端 | 说明 |
-|------|------|------|
-| Windows | DPAPI（CryptProtectData） | 绑定当前用户账户 |
-| macOS | Keychain | 系统钥匙串 |
-| Linux | kwallet / gnome-libsecret | 依赖桌面环境，**必须先检测可用性** |
+| 平台    | 后端                      | 说明                               |
+| ------- | ------------------------- | ---------------------------------- |
+| Windows | DPAPI（CryptProtectData） | 绑定当前用户账户                   |
+| macOS   | Keychain                  | 系统钥匙串                         |
+| Linux   | kwallet / gnome-libsecret | 依赖桌面环境，**必须先检测可用性** |
 
 ## 二、基本用法
 
@@ -51,8 +51,10 @@ store.set('apiToken', safeStorage.encryptString(token).toString('base64'))
 const token = safeStorage.decryptString(Buffer.from(store.get('apiToken'), 'base64'))
 
 // 方案 B：SQLite 存敏感列（本工程 sqlite.ts 的 notes 表加一列 secret）
-db.prepare('INSERT INTO secrets (name, cipher) VALUES (?, ?)')
-  .run('apiToken', safeStorage.encryptString(token).toString('base64'))
+db.prepare('INSERT INTO secrets (name, cipher) VALUES (?, ?)').run(
+  'apiToken',
+  safeStorage.encryptString(token).toString('base64')
+)
 ```
 
 ## 四、复制到新工程的步骤

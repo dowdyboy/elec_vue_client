@@ -23,7 +23,7 @@ import { join } from 'path'
 import type { MainWindowGetter } from '../types'
 
 /** 下载记录（活动表与历史缓存共用的结构化数据） */
-interface DownloadRecord {
+export interface DownloadRecord {
   id: string
   url: string
   filename: string

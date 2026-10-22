@@ -4,11 +4,11 @@
 
 ## 一、方案选择：node:sqlite（零依赖）
 
-| 方案 | 依赖 | 编译 | 说明 |
-|------|------|:---:|------|
-| **node:sqlite**（本工程采用） | 无 | 无 | Node 22.13+ 内置（Electron 39 = Node 22.20 ✓），真实 SQLite |
-| better-sqlite3 | 原生模块 | 需要 | 生产主流，API 几乎与 node:sqlite 一一对应，可平滑迁移 |
-| sql.js | WASM | 无 | 数据需手动持久化，性能差，仅特殊场景 |
+| 方案                          | 依赖     | 编译 | 说明                                                               |
+| ----------------------------- | -------- | :--: | ------------------------------------------------------------------ |
+| **node:sqlite**（本工程采用） | 无       |  无  | Node 22.13+ 内置（当前 Electron 39.8 = Node 22.22 ✓），真实 SQLite |
+| better-sqlite3                | 原生模块 | 需要 | 生产主流，API 几乎与 node:sqlite 一一对应，可平滑迁移              |
+| sql.js                        | WASM     |  无  | 数据需手动持久化，性能差，仅特殊场景                               |
 
 **迁移到 better-sqlite3**（生产工程常用，仅 3 处差异）：
 
@@ -87,7 +87,7 @@ db.prepare('SELECT * FROM notes WHERE title LIKE ?').all(`%${keyword}%`)
 - node:sqlite 在 Node 22 的稳定性为 **1.1（Active development）**——含义是"未来版本
   API 可能变更/移除"，**不表示当前不可用**（Electron 39 上 CRUD 等核心 API 工作正常）
 - **关键区别**：纯 Node 项目里用户机器 Node 版本各异，实验性 API 确实可能"环境不一致"；
-  但 Electron **把 Node 版本捆绑进安装包**——Electron 39.x 固定捆绑 Node 22.20，
+  但 Electron **把 Node 版本捆绑进安装包**——当前 Electron 39.8 固定捆绑 Node 22.22，
   所有机器运行的是同一个 node:sqlite，不存在运行期跨环境不一致
 - **真实风险只在升级时**：升级 Electron 大版本（捆绑新 Node）时，sqlite API 可能有
   破坏性变更 → 按下方清单回归即可

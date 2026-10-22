@@ -17,26 +17,43 @@ export const IPC = {
   downloadProgress: 'download:progress',
   cookiesGetAll: 'cookies:getAll'
 } as const
-type Channel = (typeof IPC)[keyof typeof IPC]   // 通道名联合类型
+type Channel = (typeof IPC)[keyof typeof IPC] // 通道名联合类型
 // 主/渲染进程共用同一份常量 → 拼错通道名 = 编译错误
 
-// ② 事件载荷用判别联合（与 TS-03 一致）
+// ② 事件载荷用判别联合（与 TS-03 一致，穷尽检查）
 type UpdateStatus =
   | { type: 'checking' }
   | { type: 'available'; version: string }
   | { type: 'progress'; percent: number }
+  | { type: 'downloaded'; version: string }
   | { type: 'error'; message: string }
+function assertNever(x: never): never {
+  throw new Error('Unhandled: ' + JSON.stringify(x))
+}
 function onStatus(status: UpdateStatus): void {
   switch (status.type) {
-    case 'available': void status.version; break   // 分支内可安全访问独有字段
-    case 'progress':  void status.percent; break
-    case 'error':     void status.message; break
+    case 'checking':
+      break
+    case 'available':
+      void status.version
+      break // 分支内可安全访问独有字段
+    case 'progress':
+      void status.percent
+      break
+    case 'downloaded':
+      void status.version
+      break
+    case 'error':
+      void status.message
+      break
+    default:
+      assertNever(status)
   }
 }
 
-// ③ 通用 invoke 泛型封装
-async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
-  return window.ipcRenderer.invoke(channel, ...args) as Promise<T>
+// ③ 通用 invoke 泛型封装（非 async，Channel 为 as const 派生联合）
+function invoke<T>(channel: Channel, ...args: unknown[]): Promise<T> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<T>
 }
 
 // ④ handler 返回"结果对象"（判别联合），跨进程契约统一

@@ -41,8 +41,8 @@ anything = 'str'          // ✅ 但丢失了类型保护
 // unknown：未知但安全（必须收窄后才能用）
 let data: unknown = JSON.parse('{"a":1}')
 // data.a                  // ❌ 类型错误：unknown 不能直接访问属性
-if (typeof data === 'object' && data !== null && 'a' in data) {
-  const a = (data as { a: number }).a   // 收窄后再用
+if (typeof data === 'object' && data !== null && 'a' in data && typeof (data as { a: unknown }).a === 'number') {
+  const a = (data as { a: number }).a   // 收窄 + 校验后再用（生产建议封装 isRecord 守卫）
 }
 
 // never：永不发生的类型（穷尽检查的关键，见"收窄"一课）
@@ -50,17 +50,20 @@ function fail(msg: string): never {
   throw new Error(msg)
 }
 
-// void：函数"没有返回值"
+// void：返回值被忽略（可 return undefined；void 回调可赋返回任意值的函数）
+// 区别：(): void 可不写 return；(): undefined 必须 return undefined
 function log(msg: string): void {
   console.log(msg)
+  // return undefined  // ✅ 合法
 }`
 
-const example = `// 用 const 断言（as const）让对象所有值变成字面量类型
+const example = `// 用 const 断言（as const）让对象所有值变成字面量且只读
 const CONFIG = {
   appName: 'elec-vue',
   version: 1
 } as const
-// CONFIG.version 类型是 1（字面量），而不是 number`
+// CONFIG.version 类型是 1（字面量），而不是 number；整个对象变为 readonly
+// 注意：const msg = 'hello' 的 "hello" 已收窄为字面量；但 const obj = {a:1} 的 a 仍为 number，需 as const 才固化`
 </script>
 
 <template>
@@ -72,7 +75,7 @@ const CONFIG = {
       title="基础类型与字面量"
       explain="字符串/数字/布尔/数组/元组，以及'值本身作为类型'的字面量类型（配合联合类型就是最常用的'选项集'写法）。"
       :code="base"
-      tip="类型标注写在变量后（冒号）。能推断出来的可以省略；const 声明的字面量会收窄为字面量类型，let 则为宽类型。"
+      tip="类型标注写在变量后（冒号）。能推断出来的可省略；const 原始值收窄为字面量（如 'hello'），let 为宽类型；对象属性需 as const 才固化。"
     />
     <TsExample
       title="类型推断"

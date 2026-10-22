@@ -21,7 +21,27 @@ let server: http.Server | null = null
 let io: SocketIOServer | null = null
 let port = 0
 
-export function registerSocketServer(): void {
+/** 释放 socket.io 服务（供 before-quit 调用） */
+export function disposeSocketServer(): void {
+  if (io) {
+    try {
+      io.close()
+    } catch {
+      // ignore
+    }
+    io = null
+  }
+  if (server) {
+    try {
+      server.close()
+    } catch {
+      // ignore
+    }
+    server = null
+  }
+}
+
+export function registerSocketServer(): () => void {
   // ── 启动 socket.io 服务 ──
   ipcMain.handle('socketServer:start', (_e, targetPort = 8766) => {
     if (io) return { ok: false, error: `服务器已在运行（端口 ${port}）` }
@@ -93,4 +113,11 @@ export function registerSocketServer(): void {
     port,
     clients: io?.engine.clientsCount ?? 0
   }))
+
+  return () => {
+    disposeSocketServer()
+    ipcMain.removeHandler('socketServer:start')
+    ipcMain.removeHandler('socketServer:stop')
+    ipcMain.removeHandler('socketServer:getStatus')
+  }
 }

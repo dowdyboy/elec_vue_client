@@ -13,8 +13,8 @@
 // interface：专为对象结构设计
 interface User {
   name: string
-  age?: number          // 可选
-  readonly id: string   // 只读
+  age?: number // 可选
+  readonly id: string // 只读
 }
 
 // type：万能别名（联合/元组/函数/字面量等）
@@ -22,17 +22,34 @@ type Status = 'idle' | 'loading' | 'error'
 type Callback = (err: Error | null, data?: unknown) => void
 
 // 索引签名：键不固定时
-interface Dict { [key: string]: number }
+interface Dict {
+  [key: string]: number
+}
 const scores: Dict = { a: 1, b: 2 }
 
+// 函数类型两种写法
+interface CalcI {
+  (a: number, b: number): number
+}
+type CalcT = (a: number, b: number) => number
+
 // interface 继承（可多个） / type 交叉组合
-interface Base { id: string }
-interface User extends Base { name: string }
+interface Base {
+  id: string
+}
+interface User extends Base {
+  name: string
+}
 type UserT = Base & { name: string }
 
-// 声明合并：interface 独有（type 不允许重复声明）
-interface Box { w: number }
-interface Box { h: number }   // ✅ 合并为 { w, h }
+// 声明合并：interface 独有（type 重复声明直接报错）
+// 同名属性类型冲突时：interface 直接报错，type & 交叉为 never
+interface Box {
+  w: number
+}
+interface Box {
+  h: number
+} // ✅ 合并为 { w, h }（第三方库类型增强常用）
 ```
 
 ## 三、常见陷阱
@@ -42,6 +59,5 @@ interface Box { h: number }   // ✅ 合并为 { w, h }
 
 ## 四、与 Electron 实例对照
 
-本工程 `src/preload/index.d.ts` 用 `interface` 描述 `window.api` 分组结构；
-`src/renderer/src/pages/*.vue` 里的事件载荷、配置对象大量用 interface 建模。
+本工程 `src/preload/index.d.ts` 用 `interface Window { api: Api }` 声明合并暴露 `window.api`，而 `Api = typeof api` 为 `type` 别名（`api` 为对象字面量推断）；`src/renderer/src/pages/*.vue` 里的事件载荷、配置对象大量用 interface 建模。
 团队规范常见做法：对象/类用 interface，联合/函数签名/工具组合用 type。

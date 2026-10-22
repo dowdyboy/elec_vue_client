@@ -15,6 +15,7 @@ export interface RunResult {
 export function formatValue(fn: () => unknown): RunResult {
   try {
     const value = fn()
+    if (typeof value === 'bigint') return { ok: true, output: `${value}n` }
     const output =
       typeof value === 'string' ? value : (JSON.stringify(value, null, 2) ?? String(value))
     return { ok: true, output }

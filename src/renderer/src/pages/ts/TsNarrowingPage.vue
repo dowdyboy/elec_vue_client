@@ -10,11 +10,11 @@ function handle(input: string | number): number {
   return input * 2           // 这里 input: number ✅
 }
 
-// in 收窄（对象属性存在性）
+// in 收窄（对象属性存在性，注意需互斥；更可靠用判别联合）
 type Cat = { meow: () => void }
 type Dog = { bark: () => void }
 function speak(pet: Cat | Dog): void {
-  if ('meow' in pet) pet.meow()   // 有 meow → Cat
+  if ('meow' in pet) pet.meow()   // 有 meow → Cat（若两分支都有 meow 则不可靠）
   else pet.bark()
 }
 
@@ -36,8 +36,9 @@ function render(state: UiState): string {
     case 'loading':   return '加载中...' + state.since
     case 'error':     return '错误: ' + state.message
   }
-}
-// 每个分支都能访问该分支独有的字段，且 switch 穷尽时无需 default`
+  // 注意：此写法侥幸穷尽，若新增分支漏处理，TS 不会报错（仅推断 string|undefined）；
+  // 真穷尽需配合下一节的 assertNever 或开启 noImplicitReturns
+}`
 
 const exhaustive = `// 穷尽检查：加一个分支后编译器强制你处理它
 interface SavedState { status: 'saved'; at: number }

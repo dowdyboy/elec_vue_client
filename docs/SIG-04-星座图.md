@@ -1,6 +1,8 @@
 # SIG-04 - 星座图
 
 > `src/components/signal/ConstellationChart.vue`
+>
+> 状态：**演示级骨架**（WebGL Points；尚未做库化、Canvas2D 降级、i18n、像素回归）。
 
 ```vue
 <ConstellationChart
@@ -15,4 +17,4 @@
 
 **内部**：环形 500k 点，`WebGL POINTS` `alpha` 叠加，`x/yRange` 自动或 `viewport`
 
-**Props**：`pointSize/alpha/density`
+**Props**：`pointSize` / `alpha` + 通用项（`theme/width/height/fpsLimit/adapter/data/viewport`；无 `density` prop）

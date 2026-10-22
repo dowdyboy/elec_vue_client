@@ -19,13 +19,15 @@ enum Status {
 }
 const s: Status = Status.Idle
 
-// as const + 联合：更"现代"的替代（不生成运行时对象，类型更精确）
+// as const + 联合：更"现代"的替代（仍生成对象，但无数字枚举的 IIFE/反向映射开销，类型更精确）
 const Statuses = {
   Idle: 'idle',
   Loading: 'loading',
   Error: 'error'
 } as const
-type StatusT = (typeof Statuses)[keyof typeof Statuses]  // 'idle' | 'loading' | 'error'`
+type StatusT = (typeof Statuses)[keyof typeof Statuses]  // 'idle' | 'loading' | 'error'
+// 对比：数字枚举编译为 IIFE 且生成反向映射 Color[0]==="Red"；as const 对象仅为普通对象，无额外运行时开销
+// const enum 在编译期擦除（无对象），但在 isolatedModules/跨包场景下不可用，需权衡`
 
 const template = `// 模板字面量类型：在字符串类型层面做模板
 type Unit = 'px' | '%'
@@ -46,9 +48,12 @@ const example = `// 实战取舍：小型固定选项 → as const + 联合；�
 // 因为它类型精确、无运行时开销，且能和判别联合配合做穷尽检查。`
 
 /** 运行示例：数字枚举的反向映射（等价 JS 行为） */
-function colorDemo(): { Red: number; reverse: string } {
-  const Color = { Red: 0, Green: 1, Blue: 2 } as const
-  return { Red: Color.Red, reverse: 'Red' }
+function colorDemo(): { Red: number; reverse: string; hasReverse: boolean } {
+  // 模拟数字枚举的运行时形态：{0:"Red", Red:0}
+  const Color: Record<string, string | number> = { Red: 0, Green: 1, Blue: 2 }
+  Color[0] = 'Red' // 反向映射（数字枚举独有）
+  Color[1] = 'Green'
+  return { Red: Color.Red as number, reverse: Color[0] as string, hasReverse: Color[0] === 'Red' }
 }
 </script>
 

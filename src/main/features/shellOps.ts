@@ -13,24 +13,31 @@
  */
 
 import { ipcMain, shell } from 'electron'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
+
+/** 打开路径的结果对象（判别联合）：成功返回 path，失败返回 error */
+export type ShellOpenResult = { ok: true; path: string } | { ok: false; error: string }
 
 export function registerShellOps(): void {
   // 打开文件/文件夹（系统默认程序；返回错误字符串，空串 = 成功）
-  ipcMain.handle('shell:openPath', async (_e, target: string) => {
+  ipcMain.handle('shell:openPath', async (e, target: string): Promise<ShellOpenResult> => {
+    if (!isTrustedSender(e)) return FORBIDDEN as unknown as ShellOpenResult
     if (!target) return { ok: false, error: '路径不能为空' }
     const error = await shell.openPath(target)
-    return { ok: !error, error }
+    return error ? { ok: false, error } : { ok: true, path: target }
   })
 
   // 在资源管理器中定位（Windows 资源管理器 / macOS Finder）
-  ipcMain.handle('shell:showInFolder', (_e, target: string) => {
+  ipcMain.handle('shell:showInFolder', (e, target: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (!target) return { ok: false, error: '路径不能为空' }
     shell.showItemInFolder(target)
     return { ok: true }
   })
 
   // 移到回收站（可恢复，比 fs.unlink 安全）
-  ipcMain.handle('shell:trash', async (_e, target: string) => {
+  ipcMain.handle('shell:trash', async (e, target: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (!target) return { ok: false, error: '路径不能为空' }
     try {
       await shell.trashItem(target)

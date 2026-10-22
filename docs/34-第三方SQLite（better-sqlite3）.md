@@ -9,16 +9,17 @@
 better-sqlite3 是 Electron/Node 生态**最成熟**的 SQLite 方案（10+ 年维护史，
 Node 生态下载量前列），两者 API 风格几乎一一对应：
 
-| 维度 | node:sqlite（内置） | better-sqlite3（第三方） |
-|------|--------------------|-------------------------|
-| 依赖 | 零依赖（随 Electron 捆绑 Node） | npm 原生模块 |
-| API 稳定性 | 实验性（1.1） | 长期稳定 |
-| 构建链路 | 无 | Electron ABI ≠ Node ABI，需重编译 |
-| 打包 | 无特殊处理 | electron-builder 自动外置 .node 到 asar 外 |
-| 特色功能 | 核心 CRUD / 事务 | `transaction()` 自动事务、`backup()`、自定义函数、`explain()` 查询计划 |
-| 升级风险 | Electron 大版本升级时 API 可能变更 | 升级 Electron 仅需重编译（API 不变） |
+| 维度       | node:sqlite（内置）                | better-sqlite3（第三方）                                               |
+| ---------- | ---------------------------------- | ---------------------------------------------------------------------- |
+| 依赖       | 零依赖（随 Electron 捆绑 Node）    | npm 原生模块                                                           |
+| API 稳定性 | 实验性（1.1）                      | 长期稳定                                                               |
+| 构建链路   | 无                                 | Electron ABI ≠ Node ABI，需重编译                                      |
+| 打包       | 无特殊处理                         | electron-builder 自动外置 .node 到 asar 外                             |
+| 特色功能   | 核心 CRUD / 事务                   | `transaction()` 自动事务、`backup()`、自定义函数、`explain()` 查询计划 |
+| 升级风险   | Electron 大版本升级时 API 可能变更 | 升级 Electron 仅需重编译（API 不变）                                   |
 
 **选择建议**：
+
 - 教学/轻量/不想碰编译链路 → node:sqlite（本工程默认，零依赖）
 - 生产项目重视长期稳定与功能 → better-sqlite3（社区验证最充分）
 
@@ -49,11 +50,11 @@ insertMany()
 `better-sqlite3` 是 C++ 原生模块：**Node ABI ≠ Electron ABI**，直接用 npm 安装的
 prebuilt 可能无法在 Electron 中加载（报 `NODE_MODULE_VERSION` 不匹配）。三种处理方式：
 
-| 方式 | 命令 | 说明 |
-|------|------|------|
-| electron-builder 集成 | `electron-builder install-app-deps` | 本工程 postinstall 已自动执行（推荐） |
-| electron-rebuild | `npx electron-rebuild -f -w better-sqlite3` | 手工方式 |
-| prebuild 直接命中 | 无需操作 | 新版本 better-sqlite3 对 Electron ABI 也发布 prebuilt（本工程实测 v13 直接加载成功） |
+| 方式                  | 命令                                        | 说明                                                                                 |
+| --------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| electron-builder 集成 | `electron-builder install-app-deps`         | 本工程 postinstall 已自动执行（推荐）                                                |
+| electron-rebuild      | `npx electron-rebuild -f -w better-sqlite3` | 手工方式                                                                             |
+| prebuild 直接命中     | 无需操作                                    | 新版本 better-sqlite3 对 Electron ABI 也发布 prebuilt（本工程实测 v13 直接加载成功） |
 
 验证是否可用（无需打开窗口）：
 

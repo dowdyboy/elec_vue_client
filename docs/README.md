@@ -5,82 +5,98 @@
 
 ## 推荐阅读顺序
 
-| # | 文档 | 对应源码 | 难度 |
-|---|------|---------|------|
-| 00 | [项目总览与架构](./00-项目总览与架构.md) | `src/main/index.ts` | ⭐ |
-| 01 | [窗口管理](./01-窗口管理.md) | `src/main/features/windowManager.ts` | ⭐⭐ |
-| 02 | [IPC 通信](./02-IPC通信.md) | `src/main/features/ipcBridge.ts` + `src/preload/index.ts` | ⭐⭐⭐ |
-| 03 | [系统托盘](./03-系统托盘.md) | `src/main/features/tray.ts` | ⭐ |
-| 04 | [系统通知](./04-系统通知.md) | `src/main/features/notification.ts` | ⭐ |
-| 05 | [全局快捷键](./05-全局快捷键.md) | `src/main/features/globalShortcut.ts` | ⭐ |
-| 06 | [剪贴板](./06-剪贴板.md) | `src/main/features/clipboard.ts` | ⭐ |
-| 07 | [文件对话框](./07-文件对话框.md) | `src/main/features/dialog.ts` | ⭐ |
-| 08 | [文件系统](./08-文件系统.md) | `src/main/features/fileSystem.ts` | ⭐⭐ |
-| 09 | [原生菜单](./09-原生菜单.md) | `src/main/features/menu.ts` | ⭐ |
-| 10 | [屏幕信息](./10-屏幕信息.md) | `src/main/features/screenInfo.ts` | ⭐ |
-| 11 | [系统主题](./11-系统主题.md) | `src/main/features/theme.ts` | ⭐⭐ |
-| 12 | [安全实践](./12-安全实践.md) | `src/main/features/security.ts` | ⭐⭐⭐ |
-| 13 | [生命周期](./13-生命周期.md) | `src/main/features/appLifecycle.ts` | ⭐⭐ |
-| 14 | [网络通信](./14-网络通信.md) | `src/main/features/network.ts` | ⭐⭐ |
-| 15 | [自动更新](./15-自动更新.md) | `src/main/features/autoUpdater.ts` | ⭐⭐ |
-| 16 | [自定义协议与深链接](./16-自定义协议与深链接.md) | `src/main/features/protocol.ts` | ⭐⭐ |
-| 17 | [桌面捕获](./17-桌面捕获.md) | `src/main/features/desktopCapture.ts` | ⭐ |
-| 18 | [打印](./18-打印.md) | `src/main/features/print.ts` | ⭐ |
-| 19 | [TCP/UDP 通信](./19-TCP与UDP通信.md) | `src/main/features/socket.ts` | ⭐⭐⭐ |
-| 20 | [计算密集型与进程模型](./20-计算密集型与进程模型.md) | `src/main/features/utilityProcess.ts` | ⭐⭐⭐ |
-| 21 | [进阶工程实践](./21-进阶工程实践.md) | 配置与生产化（sandbox/调试/上报） | ⭐⭐ |
-| 22 | [下载管理](./22-下载管理.md) | `src/main/features/download.ts` | ⭐⭐ |
-| 23 | [网络会话（Cookie与请求拦截）](./23-网络会话（Cookie与请求拦截）.md) | `cookies.ts` + `webRequest.ts` | ⭐⭐ |
-| 24 | [自定义协议内容](./24-自定义协议内容.md) | `src/main/features/protocolContent.ts` | ⭐⭐ |
-| 25 | [SQLite 数据库](./25-数据库（SQLite）.md) | `src/main/features/sqlite.ts`（node:sqlite） | ⭐⭐ |
-| 26 | [平台特性](./26-平台特性.md) | `taskbar.ts`（JumpList/Dock）+ kiosk + 媒体控制 | ⭐⭐ |
-| 27 | [系统集成](./27-系统集成.md) | 权限/在线状态/缓存/按键/语言/崩溃恢复 | ⭐⭐ |
-| 28 | [会话配置与证书](./28-会话配置与证书.md) | 代理 / UA / 证书校验 | ⭐⭐ |
-| 29 | [媒体捕获（摄像头/麦克风/录屏）](./29-媒体捕获（摄像头麦克风录屏）.md) | `security.ts` 权限白名单 + getUserMedia/getDisplayMedia/MediaRecorder | ⭐⭐ |
-| 30 | [串口通信（Web Serial）](./30-串口通信（Web%20Serial）.md) | `src/main/features/serialPort.ts` | ⭐⭐⭐ |
-| 31 | [GPU 信息与硬件加速](./31-GPU信息与硬件加速.md) | `src/main/features/gpuInfo.ts` | ⭐⭐ |
-| 32 | [应用数据目录](./32-应用数据目录（getPath%20setPath）.md) | `src/main/features/appPaths.ts` | ⭐⭐ |
-| 33 | [安全存储（safeStorage）](./33-安全存储（safeStorage）.md) | `src/main/features/safeStorage.ts` | ⭐⭐ |
-| 34 | [第三方 SQLite（better-sqlite3）](./34-第三方SQLite（better-sqlite3）.md) | `src/main/features/betterSqlite.ts` | ⭐⭐⭐ |
+| #   | 文档                                                                      | 对应源码                                                              | 难度   |
+| --- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------ |
+| 00  | [项目总览与架构](./00-项目总览与架构.md)                                  | `src/main/index.ts`                                                   | ⭐     |
+| 01  | [窗口管理](./01-窗口管理.md)                                              | `src/main/features/windowManager.ts`                                  | ⭐⭐   |
+| 02  | [IPC 通信](./02-IPC通信.md)                                               | `src/main/features/ipcBridge.ts` + `src/preload/index.ts`             | ⭐⭐⭐ |
+| 03  | [系统托盘](./03-系统托盘.md)                                              | `src/main/features/tray.ts`                                           | ⭐     |
+| 04  | [系统通知](./04-系统通知.md)                                              | `src/main/features/notification.ts`                                   | ⭐     |
+| 05  | [全局快捷键](./05-全局快捷键.md)                                          | `src/main/features/globalShortcut.ts`                                 | ⭐     |
+| 06  | [剪贴板](./06-剪贴板.md)                                                  | `src/main/features/clipboard.ts`                                      | ⭐     |
+| 07  | [文件对话框](./07-文件对话框.md)                                          | `src/main/features/dialog.ts`                                         | ⭐     |
+| 08  | [文件系统](./08-文件系统.md)                                              | `src/main/features/fileSystem.ts`                                     | ⭐⭐   |
+| 09  | [原生菜单](./09-原生菜单.md)                                              | `src/main/features/menu.ts`                                           | ⭐     |
+| 10  | [屏幕信息](./10-屏幕信息.md)                                              | `src/main/features/screenInfo.ts`                                     | ⭐     |
+| 11  | [系统主题](./11-系统主题.md)                                              | `src/main/features/theme.ts`                                          | ⭐⭐   |
+| 12  | [安全实践](./12-安全实践.md)                                              | `src/main/features/security.ts`                                       | ⭐⭐⭐ |
+| 13  | [生命周期](./13-生命周期.md)                                              | `src/main/features/appLifecycle.ts`                                   | ⭐⭐   |
+| 14  | [网络通信](./14-网络通信.md)                                              | `src/main/features/network.ts`                                        | ⭐⭐   |
+| 15  | [自动更新](./15-自动更新.md)                                              | `src/main/features/autoUpdater.ts`                                    | ⭐⭐   |
+| 16  | [自定义协议与深链接](./16-自定义协议与深链接.md)                          | `src/main/features/protocol.ts`                                       | ⭐⭐   |
+| 17  | [桌面捕获](./17-桌面捕获.md)                                              | `src/main/features/desktopCapture.ts`                                 | ⭐     |
+| 18  | [打印](./18-打印.md)                                                      | `src/main/features/print.ts`                                          | ⭐     |
+| 19  | [TCP/UDP 通信](./19-TCP与UDP通信.md)                                      | `src/main/features/socket.ts`                                         | ⭐⭐⭐ |
+| 20  | [计算密集型与进程模型](./20-计算密集型与进程模型.md)                      | `src/main/features/utilityProcess.ts`                                 | ⭐⭐⭐ |
+| 21  | [进阶工程实践](./21-进阶工程实践.md)                                      | 配置与生产化（sandbox/调试/上报）                                     | ⭐⭐   |
+| 22  | [下载管理](./22-下载管理.md)                                              | `src/main/features/download.ts`                                       | ⭐⭐   |
+| 23  | [网络会话（Cookie与请求拦截）](./23-网络会话（Cookie与请求拦截）.md)      | `cookies.ts` + `webRequest.ts`                                        | ⭐⭐   |
+| 24  | [自定义协议内容](./24-自定义协议内容.md)                                  | `src/main/features/protocolContent.ts`                                | ⭐⭐   |
+| 25  | [SQLite 数据库](./25-数据库（SQLite）.md)                                 | `src/main/features/sqlite.ts`（node:sqlite）                          | ⭐⭐   |
+| 26  | [平台特性](./26-平台特性.md)                                              | `taskbar.ts`（JumpList/Dock）+ kiosk + 媒体控制                       | ⭐⭐   |
+| 27  | [系统集成](./27-系统集成.md)                                              | 权限/在线状态/缓存/按键/语言/崩溃恢复                                 | ⭐⭐   |
+| 28  | [会话配置与证书](./28-会话配置与证书.md)                                  | 代理 / UA / 证书校验                                                  | ⭐⭐   |
+| 29  | [媒体捕获（摄像头/麦克风/录屏）](./29-媒体捕获（摄像头麦克风录屏）.md)    | `security.ts` 权限白名单 + getUserMedia/getDisplayMedia/MediaRecorder | ⭐⭐   |
+| 30  | [串口通信（Web Serial）](./30-串口通信（Web%20Serial）.md)                | `src/main/features/serialPort.ts`                                     | ⭐⭐⭐ |
+| 31  | [GPU 信息与硬件加速](./31-GPU信息与硬件加速.md)                           | `src/main/features/gpuInfo.ts`                                        | ⭐⭐   |
+| 32  | [应用数据目录](./32-应用数据目录（getPath%20setPath）.md)                 | `src/main/features/appPaths.ts`                                       | ⭐⭐   |
+| 33  | [安全存储（safeStorage）](./33-安全存储（safeStorage）.md)                | `src/main/features/safeStorage.ts`                                    | ⭐⭐   |
+| 34  | [第三方 SQLite（better-sqlite3）](./34-第三方SQLite（better-sqlite3）.md) | `src/main/features/betterSqlite.ts`                                   | ⭐⭐⭐ |
 
 ## TypeScript 惯用法文档（TS-00~12）
 
 > 对应侧边栏「TypeScript 惯用法」板块；每篇对应一个演示页（路由见「对应演示页」）。
 
-| # | 文档 | 对应演示页 |
-|---|------|-----------|
-| 00 | [TS 总览](./TS-00-总览.md) | /ts（学习路径与 Electron 对照） |
-| 01 | [类型标注与推断](./TS-01-类型标注与推断.md) | /ts/intro |
-| 02 | [interface 与 type](./TS-02-interface与type.md) | /ts/interface-type |
-| 03 | [联合类型与收窄](./TS-03-联合类型与收窄.md) | /ts/narrowing |
-| 04 | [泛型](./TS-04-泛型.md) | /ts/generics |
-| 05 | [工具类型](./TS-05-工具类型.md) | /ts/utility |
-| 06 | [映射与条件类型](./TS-06-映射与条件类型.md) | /ts/mapped-conditional |
-| 07 | [函数惯用法](./TS-07-函数惯用法.md) | /ts/function |
-| 08 | [枚举与常量断言](./TS-08-枚举与常量断言.md) | /ts/enum-literal |
-| 09 | [异步惯用法](./TS-09-异步惯用法.md) | /ts/async |
-| 10 | [模块与导入导出](./TS-10-模块与导入导出.md) | /ts/module |
-| 11 | [类与面向对象](./TS-11-类与面向对象.md) | /ts/oop |
-| 12 | [与 Electron 结合（IPC 类型安全）](./TS-12-与Electron结合（IPC类型安全）.md) | /ts/electron-bridge |
+| #   | 文档                                                                         | 对应演示页                      |
+| --- | ---------------------------------------------------------------------------- | ------------------------------- |
+| 00  | [TS 总览](./TS-00-总览.md)                                                   | /ts（学习路径与 Electron 对照） |
+| 01  | [类型标注与推断](./TS-01-类型标注与推断.md)                                  | /ts/intro                       |
+| 02  | [interface 与 type](./TS-02-interface与type.md)                              | /ts/interface-type              |
+| 03  | [联合类型与收窄](./TS-03-联合类型与收窄.md)                                  | /ts/narrowing                   |
+| 04  | [泛型](./TS-04-泛型.md)                                                      | /ts/generics                    |
+| 05  | [工具类型](./TS-05-工具类型.md)                                              | /ts/utility                     |
+| 06  | [映射与条件类型](./TS-06-映射与条件类型.md)                                  | /ts/mapped-conditional          |
+| 07  | [函数惯用法](./TS-07-函数惯用法.md)                                          | /ts/function                    |
+| 08  | [枚举与常量断言](./TS-08-枚举与常量断言.md)                                  | /ts/enum-literal                |
+| 09  | [异步惯用法](./TS-09-异步惯用法.md)                                          | /ts/async                       |
+| 10  | [模块与导入导出](./TS-10-模块与导入导出.md)                                  | /ts/module                      |
+| 11  | [类与面向对象](./TS-11-类与面向对象.md)                                      | /ts/oop                         |
+| 12  | [与 Electron 结合（IPC 类型安全）](./TS-12-与Electron结合（IPC类型安全）.md) | /ts/electron-bridge             |
+
+## 信号分析组件（SIG-00~04）
+
+> IQ/频谱已完成库化（公共入口、int16 适配器、Canvas2D 降级、i18n、dist-signal 包、像素回归）；
+> 时频/星座为演示级骨架。
+
+| #   | 文档                                     | 对应源码                                       | 状态       |
+| --- | ---------------------------------------- | ---------------------------------------------- | ---------- |
+| 00  | [信号组件总览](./SIG-00-信号组件总览.md) | `src/components/signal/`                       | 总览       |
+| 01  | [IQ 时域图](./SIG-01-IQ时域图.md)        | `src/components/signal/IqChart.vue`            | 已完成库化 |
+| 02  | [频谱仪](./SIG-02-频谱图.md)             | `src/components/signal/SpectrumChart.vue`      | 已完成库化 |
+| 03  | [时频图（瀑布）](./SIG-03-时频图.md)     | `src/components/signal/SpectrogramChart.vue`   | 演示级骨架 |
+| 04  | [星座图](./SIG-04-星座图.md)             | `src/components/signal/ConstellationChart.vue` | 演示级骨架 |
+
+- 集成指南（尺寸/适配器/props/事件/方法/性能/限制）：[`src/components/signal/README.md`](../src/components/signal/README.md)
+- 独立 Vite Playground / Worker 示例：[`playground/README.md`](../playground/README.md)
 
 ## 扩展特性（并入既有文档）
 
-| 特性 | 文档位置 |
-|------|---------|
-| 任务栏进度 / 角标 / 窗口状态持久化 / 拖拽区 / 自定义标题栏 / 毛玻璃 / 闪屏 / 缩放 / 尺寸限制 / 透明度 / 窗口事件 / PDF 查看 | 01-窗口管理 第五~七节 |
-| BroadcastChannel 多窗口直连 | 02-IPC通信 第五节 |
-| 通知动作按钮 | 04-系统通知 第五节 |
-| 目录监听（fs.watch） | 08-文件系统 第八节 |
-| DNS 解析 / 在线状态 / HTTP 服务器 / WebSocket 自闭环演示 | 14-网络通信 第五~七节 |
-| 文件关联（open-file） / 内嵌网页导航历史 / 加载状态与脚本注入 | 16-自定义协议与深链接 第五~七节 |
-| 静默权限检查 | 12-安全实践（两个权限处理器） |
-| 退出前未保存询问 / 崩溃转储 | 13-生命周期 第九、十节 |
-| 系统强调色 | 11-系统主题 第五节 |
-| 会话分区（无痕/多账号） | 23-网络会话 第四节 |
-| 拖拽文件真实路径 / 拖出窗口 / 系统文件图标 / shell 文件操作 | 08-文件系统 第四~七节 |
-| 电源监控 / 全局错误处理 / 阻止系统睡眠 / 应用重启 | 13-生命周期 第五~八节 |
-| 点击穿透（setIgnoreMouseEvents） | 01-窗口管理 第八节 |
-| 缩略图按钮（Thumbar） / 任务栏闪烁 | 26-平台特性 第六、七节 |
+| 特性                                                                                                                        | 文档位置                        |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 任务栏进度 / 角标 / 窗口状态持久化 / 拖拽区 / 自定义标题栏 / 毛玻璃 / 闪屏 / 缩放 / 尺寸限制 / 透明度 / 窗口事件 / PDF 查看 | 01-窗口管理 第五~七节           |
+| BroadcastChannel 多窗口直连                                                                                                 | 02-IPC通信 第五节               |
+| 通知动作按钮                                                                                                                | 04-系统通知 第五节              |
+| 目录监听（fs.watch）                                                                                                        | 08-文件系统 第八节              |
+| DNS 解析 / 在线状态 / HTTP 服务器 / WebSocket 自闭环演示                                                                    | 14-网络通信 第五~七节           |
+| 文件关联（open-file） / 内嵌网页导航历史 / 加载状态与脚本注入                                                               | 16-自定义协议与深链接 第五~七节 |
+| 静默权限检查                                                                                                                | 12-安全实践（两个权限处理器）   |
+| 退出前未保存询问 / 崩溃转储                                                                                                 | 13-生命周期 第九、十节          |
+| 系统强调色                                                                                                                  | 11-系统主题 第五节              |
+| 会话分区（无痕/多账号）                                                                                                     | 23-网络会话 第四节              |
+| 拖拽文件真实路径 / 拖出窗口 / 系统文件图标 / shell 文件操作                                                                 | 08-文件系统 第四~七节           |
+| 电源监控 / 全局错误处理 / 阻止系统睡眠 / 应用重启                                                                           | 13-生命周期 第五~八节           |
+| 点击穿透（setIgnoreMouseEvents）                                                                                            | 01-窗口管理 第八节              |
+| 缩略图按钮（Thumbar） / 任务栏闪烁                                                                                          | 26-平台特性 第六、七节          |
 
 ## 每篇文档的结构
 

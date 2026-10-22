@@ -20,11 +20,23 @@ import { parse } from 'node:url'
 let server: http.Server | null = null
 let port = 0
 
+/** 释放 HTTP 服务（供 before-quit 调用） */
+export function disposeHttpServer(): void {
+  if (server) {
+    try {
+      server.close()
+    } catch {
+      // ignore
+    }
+    server = null
+  }
+}
+
 /** 下载端点的数据块（64KB 重复模式，避免真实分配大文件内存） */
 const CHUNK = Buffer.alloc(64 * 1024)
 for (let i = 0; i < CHUNK.length; i++) CHUNK[i] = (i * 31 + 7) % 256
 
-export function registerHttpServer(): void {
+export function registerHttpServer(): () => void {
   // ── 启动本地 HTTP 服务器 ──
   ipcMain.handle('httpServer:start', (_e, targetPort = 8765) => {
     if (server) return { ok: false, error: `服务器已在运行（端口 ${port}）` }
@@ -163,4 +175,11 @@ export function registerHttpServer(): void {
     running: server !== null,
     port
   }))
+
+  return () => {
+    disposeHttpServer()
+    ipcMain.removeHandler('httpServer:start')
+    ipcMain.removeHandler('httpServer:stop')
+    ipcMain.removeHandler('httpServer:getStatus')
+  }
 }

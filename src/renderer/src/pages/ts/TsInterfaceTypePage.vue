@@ -14,9 +14,11 @@ type Status = 'idle' | 'loading' | 'error'
 type Callback = (err: Error | null, data?: unknown) => void
 type Point = { x: number; y: number }
 
-// 对象结构两者等价，可互换：
+// 对象结构在结构类型上可互相赋值，但语义不等：
+// interface 支持声明合并与严格同名属性检查；type & 冲突时交叉为 never 不报错
 interface A { x: number }
-type B = { x: number }`
+type B = { x: number }
+// interface A 冲突会报错，type A & B 冲突得 {x: never} 需注意`
 
 const indexSig = `// 索引签名：不确定有哪些键时
 interface Dict {
@@ -24,11 +26,13 @@ interface Dict {
 }
 const scores: Dict = { a: 1, b: 2 }
 
-// 函数类型（interface 写法）
-interface Calc {
+// 函数类型两种写法
+interface CalcI {
   (a: number, b: number): number
 }
-const add: Calc = (a, b) => a + b`
+type CalcT = (a: number, b: number) => number
+const add: CalcI = (a, b) => a + b
+const add2: CalcT = (a, b) => a + b`
 
 const extend = `// interface 通过 extends 继承（可多个）
 interface Base { id: string }
@@ -40,9 +44,10 @@ type BaseT = { id: string }
 type WithNameT = { name: string }
 type UserT = BaseT & WithNameT & { email?: string }
 
-// 二者主要区别：同名 interface 会合并（声明合并），type 不允许重复声明
+// 二者主要区别：同名 interface 会合并（声明合并），type 重复声明直接报错；
+// 冲突时 interface 同名属性类型不一致直接报错，type & 冲突属性变为 never
 interface Box { w: number }
-interface Box { h: number }   // ✅ 合并成 { w, h }`
+interface Box { h: number }   // ✅ 合并成 { w, h }（第三方库类型增强常用，滥用会意外合并）`
 
 const example = `// 实战惯用法：可选 + 只读 + 联合，就是"配置对象"的标准形态
 interface AppOptions {

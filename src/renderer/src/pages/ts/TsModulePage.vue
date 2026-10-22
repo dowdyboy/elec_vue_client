@@ -2,8 +2,13 @@
 import TsPage from '../../components/ts/TsPage.vue'
 import TsExample from '../../components/ts/TsExample.vue'
 
-const importType = `// import type / export type：仅类型导入，运行时被擦除（利于 tree-shaking）
-import type { User } from './types'
+const importType = `// import type / export type：仅类型导入，运行时被擦除（利于语义清晰与 verbatimModuleSyntax）
+// types.ts
+export interface User { id: string; name: string }
+export interface Task { id: string; title: string }
+
+// 使用处
+import type { User, Task } from './types'
 import { fetchUser } from './api'   // 运行时导入
 
 export type { User, Task }

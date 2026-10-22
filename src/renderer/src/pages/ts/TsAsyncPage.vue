@@ -6,7 +6,7 @@ const asyncBasics = `// async/await：让异步代码像同步一样写
 async function fetchUser(id: string): Promise<User> {
   const res = await fetch(\`/api/user/\${id}\`)
   if (!res.ok) throw new Error('请求失败: ' + res.status)
-  return (await res.json()) as User   // 收窄 unknown → User
+  return (await res.json()) as User   // 断言 unknown → User（生产建议 zod/io-ts 运行时校验）
 }
 interface User { id: string; name: string }
 
@@ -44,11 +44,14 @@ async function fetchResult(id: string): Promise<Result<User>> {
   }
 }`
 
-const combos = `// 并发组合
-const [a, b] = await Promise.all([p1(), p2()])      // 全部成功才继续（任一失败即 reject）
-const winner = await Promise.race([p1(), timeout()]) // 谁先完成用谁
-const settled = await Promise.allSettled([p1(), p2()])
-// settled: PromiseSettledResult[] —— 每个都是成功/失败，不会整体 reject
+const combos = `// 并发组合（需在 async 函数内使用）
+async function demoCombos(): Promise<void> {
+  const [a, b] = await Promise.all([p1(), p2()])      // 全部成功才继续（任一失败即 reject）
+  const winner = await Promise.race([p1(), timeout()]) // 谁先完成用谁（timeout 永不兑现，类型 never）
+  const settled = await Promise.allSettled([p1(), p2()])
+  // settled: PromiseSettledResult<User>[] —— 每个都是成功/失败，不会整体 reject
+  void a; void b; void winner; void settled
+}
 
 // 用 allSettled 做"不因单个失败中断"的批量任务
 async function loadAll(ids: string[]): Promise<User[]> {
@@ -60,14 +63,18 @@ async function loadAll(ids: string[]): Promise<User[]> {
 
 function timeout(ms = 3000): Promise<never> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error('超时')), ms))
-}`
+}
+// 演示桩
+declare function p1(): Promise<User>
+declare function p2(): Promise<User>`
 
-const example = `// 实战：Electron IPC 也是 Promise 化
-const res = await window.api.shell.openPath('C:/tmp/a.txt')
-if (res.ok) console.log('已打开', res.path)
-else message.error(res.error ?? '打开失败')
-
-// 与"结果对象"惯用法一致：IPC handler 返回 { ok, ... } 判别联合`
+const example = `// 实战：Electron IPC 也是 Promise 化（需在 async 函数内）
+async function openDemo(): Promise<void> {
+  const res = await window.api.shell.openPath('C:/tmp/a.txt')
+  if (res.ok) console.log('已打开', res.path)
+  else console.error(res.error)
+}
+// 与"结果对象"惯用法一致：IPC handler 返回 { ok, path } | { ok, error } 判别联合`
 </script>
 
 <template>

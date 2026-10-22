@@ -26,12 +26,12 @@ longest('abc', 'de')      // ✅ 字符串有 length
 longest([1, 2], [3])      // ✅ 数组有 length
 // longest(1, 2)          // ❌ number 没有 length
 
-// 泛型默认参数
-function makeArray<T = string>(n: number): T[] {
-  return new Array(n)
+// 泛型默认参数（修正：new Array(n) 是稀疏数组，需用值填充）
+function makeArray<T = string>(value: T, n: number): T[] {
+  return Array.from({ length: n }, () => value)
 }
-const arr = makeArray(3)          // string[]
-const numArr = makeArray<number>(3) // number[]`
+const arr = makeArray('x', 3)          // string[] -> ['x','x','x']
+const numArr = makeArray<number>(0, 3) // number[] -> [0,0,0]`
 
 const genericTypes = `// 泛型接口
 interface Box<T> {
@@ -52,10 +52,14 @@ class Stack<T> {
 const s = new Stack<number>()
 s.push(1)`
 
-const example = `// 本工程实战（preload 类型）：IPC invoke 封装用泛型把返回类型带给调用方
-// 例如 window.api.download.list() 返回 Promise<DownloadRecord[]>
-// 定义时可写成:  list: <T>() => Promise<T>  在具体实现处注入真实类型
-// 好处：调用处直接获得类型补全，无需手动断言`
+const example = `// 本工程实战（preload）：invoke<T> 泛型封装把 IPC 返回类型带给调用方
+// preload/index.ts（真实实现）：
+//   function invoke<T>(channel: Channel, ...args: unknown[]): Promise<T> {
+//     return ipcRenderer.invoke(channel, ...args) as Promise<T>
+//   }
+//   download: { list: () => invoke<DownloadRecord[]>('download:list') }
+// 调用处：const list = await window.api.download.list()   // list: DownloadRecord[]
+// 好处：调用处直接获得类型补全，无需手动断言；Channel 为 as const 派生的联合，拼错即编译错`
 
 /** 运行示例：泛型 first 取首元素（等价 JS 行为） */
 function firstDemo(): number | undefined {

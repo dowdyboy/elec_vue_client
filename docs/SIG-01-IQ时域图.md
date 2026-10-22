@@ -3,17 +3,22 @@
 > `src/components/signal/IqChart.vue` 拷贝即用
 
 ```vue
-<IqChart
-  :adapter="myAdapter"
-  theme="dark"
-  :colors="['#00bcd4', '#ff4081']"
-  :viewport="{ xMin: 0, xMax: 2000, autoScale: true }"
-  :fps-limit="60"
-  @error="onErr"
-/>
-<script setup>
-const iqRef = useTemplateRef('iq')
-ws.onmessage = (e) => iqRef.value.appendData(e.data) // RawInput 任意
+<template>
+  <IqChart
+    ref="iq"
+    :adapter="myAdapter"
+    theme="dark"
+    :colors="['#00bcd4', '#ff4081']"
+    :viewport="{ xMin: 0, xMax: 2000, autoScale: true }"
+    :fps-limit="60"
+    @error="onErr"
+  />
+</template>
+<script setup lang="ts">
+import { ref } from 'vue'
+// myAdapter：业务侧把后端帧转成 {i,q}/交织 Float32Array（可用 iqAdapters.int16Interleaved）
+const iq = ref<InstanceType<typeof IqChart> | null>(null)
+ws.onmessage = (e) => iq.value?.appendData(e.data, { sampleRate: 1_000_000 })
 </script>
 ```
 
@@ -87,7 +92,7 @@ interface ChartStyle {
 语义：流式跟随态持续累积衰减；**暂停后波形冻结、余辉停留在暂停瞬间**（鼠标移动/新数据触发的重绘不会让它衰减；
 暂停期间数据持续摄入不丢样本，缓冲满后冻结窗随环形淘汰滑动）；
 暂停中缩放/平移（视口变化）→ 旧余辉经 12 次重绘（60fps 约 0.2s）平滑淡出后由新视口重绘（旧拖影与新视口错位，属仪器标准行为）；
-恢复跟随继续累积。要求 WebGL 上下文 `preserveDrawingBuffer: true`；清空数据时强制完全清屏。Y 轴量程变化期间旧帧尺度不一致属正常现象。
+恢复跟随继续累积。WebGL 后端要求上下文 `preserveDrawingBuffer: true`（Canvas2D 回退用背景覆盖模拟余辉）；清空数据时强制完全清屏。Y 轴量程变化期间旧帧尺度不一致属正常现象。
 注：触发模式下每次新触发对齐帧会清屏重绘，余辉不会跨触发累积（见「触发显示」）
 
 **窗口自动测量**：暂停态下左上角显示窗口统计——样本数、I/Q 各自峰峰值 Vpp、均值、RMS
@@ -182,6 +187,7 @@ interface ChartStyle {
 Y 轴自适应统计与按桶抽稀均为 O(块数)：200 万点全窗下 Y 统计 ~0.001ms、抽稀 ~0.75ms（旧全扫描分别 ~4.3ms/~3.4ms）；
 追加数据仅增量更新受影响块；扩容/清空整树重建，环形淘汰走 `compactShift` 增量平移（level0 copyWithin + 高层重聚合）；
 `WebGL2` 绘制 I/Q/包络各一条 `LINE_STRIP`（`mode:'dots'` 为 `POINTS`；`lineWidth>1` 时改用 `TRIANGLE_STRIP` ribbon 几何展开）；
+Canvas2D 回退后端使用普通折线/散点（无 ribbon，`lineWidth` 直接作为 Canvas 线宽）；
 GL 视口/scissor 与 overlay 轴层均按「背板设备像素 ÷ 元素 CSS 实测尺寸」做真实比例映射，
 页面缩放/系统非整数缩放场景下波形与网格对齐（不依赖全局 DPR 缓存）。
 注：波形顶点按抽稀输出索引均匀铺满窗宽，深缩放（窗宽→16）时与网格/光标存在最大约 1 个样本的映射偏差

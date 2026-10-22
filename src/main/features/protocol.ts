@@ -43,11 +43,28 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
     getMainWindow()?.webContents.send('protocol:deep-link', url)
   }
 
-  // Windows/Linux：通过 second-instance 的 argv 携带链接
-  app.on('second-instance', (_event, argv) => {
+  // Windows/Linux：通过 second-instance 的 argv 携带链接（合并处理：深链接 + 文件关联）
+  // 注意：appLifecycle.ts 也有一个 second-instance 聚焦监听，此处额外处理协议/文件分发，两者共存
+  const handleSecondInstance = (_event: Electron.Event, argv: string[]): void => {
     const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
-    if (url) handleDeepLink(url)
-  })
+    if (url) {
+      handleDeepLink(url)
+      return
+    }
+    if (process.defaultApp) return // 开发模式参数混杂，不识别文件
+    const fileArg = argv.find((arg) => {
+      if (arg.startsWith('-') || arg.startsWith(PROTOCOL)) return false
+      const normalized = arg.replace(/\\/g, '/')
+      if (!isAbsolute(normalized)) return false
+      try {
+        return existsSync(arg)
+      } catch {
+        return false
+      }
+    })
+    if (fileArg) handleFileOpen(fileArg)
+  }
+  app.on('second-instance', handleSecondInstance)
 
   // macOS：通过 open-url 事件携带链接
   app.on('open-url', (event, url) => {
@@ -80,30 +97,6 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
   app.on('open-file', (event, filePath) => {
     event.preventDefault()
     handleFileOpen(filePath)
-  })
-
-  // Windows/Linux：从 second-instance 参数中识别文件路径
-  // 严格校验：绝对路径 + 文件真实存在（避免把 electron 自身参数误判为文件）
-  app.on('second-instance', (_event, argv) => {
-    const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
-    if (url) {
-      handleDeepLink(url)
-      return
-    }
-    // 开发模式参数混杂（electron.exe / 入口脚本等），不在此识别文件
-    if (process.defaultApp) return
-    const fileArg = argv.find((arg) => {
-      if (arg.startsWith('-') || arg.startsWith(PROTOCOL)) return false
-      // 需为绝对路径且文件真实存在（Windows 路径 / Unix 路径）
-      const normalized = arg.replace(/\\/g, '/')
-      if (!isAbsolute(normalized)) return false
-      try {
-        return existsSync(arg)
-      } catch {
-        return false
-      }
-    })
-    if (fileArg) handleFileOpen(fileArg)
   })
 
   // 演示按钮：模拟"收到一个文件打开请求"

@@ -13,6 +13,23 @@
 
 import { app, ipcMain, session, shell } from 'electron'
 
+/**
+ * 为指定 session 应用权限白名单（默认 defaultSession）。
+ * 分区窗口（partition.ts 创建的无痕/持久分区）默认不受保护，
+ * 如需保护分区，请在创建窗口后调用 registerSecurityForSession(session.fromPartition(...))。
+ */
+export function registerSecurityForSession(targetSession: Electron.Session): void {
+  const allowedPermissions = new Set(['clipboard-read', 'media', 'display-capture', 'serial'])
+  targetSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (allowedPermissions.has(permission)) {
+      callback(true)
+      return
+    }
+    callback(false)
+    webContents.send('security:permission-denied', permission)
+  })
+}
+
 export function registerSecurity(): void {
   // ── ① 权限请求白名单 ───────────────────────────────
   // 页面请求任何浏览器权限（摄像头/麦克风/剪贴板/通知等）都会走到这里
@@ -21,6 +38,8 @@ export function registerSecurity(): void {
   // 'serial' 供"静默检查处理器"使用（见下方 ①.5，串口走 devicePermissionHandler + 检查处理器）
   // 注意：'media' 放行后，macOS 还需通过 systemPreferences.askForMediaAccess
   // 获得系统级授权（见 systemAccess.ts 与 docs/29 的"双重权限"说明）
+  // ⚠️ 轻量化安全提示：本模块默认仅保护 defaultSession；分区窗口需自行调用
+  //    registerSecurityForSession(session.fromPartition(partition)) 另行保护
   const allowedPermissions = new Set(['clipboard-read', 'media', 'display-capture', 'serial'])
 
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {

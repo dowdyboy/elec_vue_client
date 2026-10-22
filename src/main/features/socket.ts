@@ -22,7 +22,36 @@ interface SocketLog {
   msg: string
 }
 
-export function registerSockets(getMainWindow: MainWindowGetter): void {
+/** 释放所有 TCP/UDP 资源（供 before-quit 统一调用） */
+export function disposeSockets(): void {
+  try {
+    tcpServer?.close()
+  } catch {
+    // ignore
+  }
+  tcpServer = null
+  try {
+    tcpClient?.destroy()
+  } catch {
+    // ignore
+  }
+  tcpClient = null
+  for (const s of udpSockets.values()) {
+    try {
+      s.close()
+    } catch {
+      // ignore
+    }
+  }
+  udpSockets.clear()
+}
+
+// 提升到模块作用域以便 dispose 访问
+let tcpServer: net.Server | null = null
+let tcpClient: net.Socket | null = null
+const udpSockets = new Map<number, dgram.Socket>()
+
+export function registerSockets(getMainWindow: MainWindowGetter): () => void {
   const push = (channel: 'socket:tcp-log' | 'socket:udp-log', log: SocketLog): void => {
     getMainWindow()?.webContents.send(channel, log)
   }
@@ -30,9 +59,6 @@ export function registerSockets(getMainWindow: MainWindowGetter): void {
   // ═══════════════════════════════════════════
   // TCP：本地服务端 + 本地客户端（自连自）
   // ═══════════════════════════════════════════
-  let tcpServer: net.Server | null = null
-  let tcpClient: net.Socket | null = null
-
   ipcMain.handle('tcp:startServer', (_e, port: number) => {
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       tcpServer = net.createServer((socket) => {
@@ -109,8 +135,6 @@ export function registerSockets(getMainWindow: MainWindowGetter): void {
   // ═══════════════════════════════════════════
   // UDP：无连接，直接"绑定端口" + "向目标端口发送"
   // ═══════════════════════════════════════════
-  const udpSockets = new Map<number, dgram.Socket>()
-
   ipcMain.handle('udp:bind', (_e, port: number) => {
     if (udpSockets.has(port)) return { ok: true, error: '端口已绑定' }
     const socket = dgram.createSocket('udp4')
@@ -154,4 +178,16 @@ export function registerSockets(getMainWindow: MainWindowGetter): void {
       return { ok: true }
     }
   )
+
+  return () => {
+    disposeSockets()
+    ipcMain.removeHandler('tcp:startServer')
+    ipcMain.removeHandler('tcp:stopServer')
+    ipcMain.removeHandler('tcp:connect')
+    ipcMain.removeHandler('tcp:disconnect')
+    ipcMain.removeHandler('tcp:send')
+    ipcMain.removeHandler('udp:bind')
+    ipcMain.removeHandler('udp:unbind')
+    ipcMain.removeHandler('udp:send')
+  }
 }
