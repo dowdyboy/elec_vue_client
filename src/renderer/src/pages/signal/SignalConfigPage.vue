@@ -7,7 +7,7 @@
  *  端口约束：本地服务与内置远端Mock同端口互斥（OS 端口占用即互斥）；
  *  远程模式支持自定义 socket.io 后端地址，留空则连接同端口内置 Mock。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   NCard,
   NGrid,
@@ -37,7 +37,8 @@ const remoteConnected = sigStatus.remoteConnected
 const remoteError = sigStatus.remoteError
 sigStatus.onRemoteStatus((s) => {
   if (!s.connected && s.error) message.warning(`远程连接异常: ${s.error}`)
-  void refreshAllStatus()
+  // 只刷新运行状态，不回填表单：远程状态事件可能发生在用户编辑配置的过程中
+  void refreshAllStatus(false)
 })
 
 const LS_KEY = 'signal:configPage:v1'
@@ -50,7 +51,7 @@ const remoteUrlInput = ref('')
 const builtinMockUrl = computed(() => `http://127.0.0.1:${port.value}`)
 const effectiveRemoteUrl = computed(() => remoteUrlInput.value.trim() || builtinMockUrl.value)
 // 信源
-const freq = ref(50)
+const freq = ref(512)
 const snr = ref(20)
 const amplitude = ref(1)
 const modType = ref<SignalAnalysisConfig['modType']>('sine')
@@ -71,6 +72,12 @@ const curRemoteUrl = ref('')
 const effConfig = ref<SignalAnalysisConfig | null>(null)
 const remoteMockRunning = ref(false)
 const remoteMockPort = ref(0)
+
+/** 频率上限：必须 < 采样率/2（默认 512 Hz 在 4096 采样率下有效；切到 1024 时自动钳到 511） */
+const maxFreq = computed(() => Math.max(1, Math.floor(sampleRate.value / 2) - 1))
+watch(sampleRate, () => {
+  if (freq.value > maxFreq.value) freq.value = maxFreq.value
+})
 
 function saveLocal(): void {
   try {
@@ -103,11 +110,11 @@ function loadLocal(): void {
     const p = JSON.parse(raw) as Record<string, unknown>
     if (p.modeSelect === 'local' || p.modeSelect === 'remote') modeSelect.value = p.modeSelect
     if (typeof p.port === 'number') port.value = p.port
-    // remoteUrl：旧版本存完整地址（从中提取端口兼容），等于内置地址则视为留空
+    // remoteUrl：旧版本存完整地址；等于内置地址则视为留空。
+    // 注意不要从这里回写 port —— 远程地址的端口与本地/内置 Mock 端口是两回事。
     if (typeof p.remoteUrl === 'string' && p.remoteUrl.trim()) {
       try {
         const u = new URL(p.remoteUrl.trim())
-        if (u.port) port.value = Number(u.port)
         const host = u.hostname
         const isBuiltin =
           (host === '127.0.0.1' || host === 'localhost') && Number(u.port || '80') === port.value
@@ -131,6 +138,8 @@ function loadLocal(): void {
   } catch {
     void 0
   }
+  // 兼容旧版本保存的超 Nyquist 频率（如 sampleRate=1024 + freq=512）
+  if (freq.value > maxFreq.value) freq.value = maxFreq.value
 }
 
 async function refreshRemoteMockStatus(): Promise<void> {
@@ -143,7 +152,7 @@ async function refreshRemoteMockStatus(): Promise<void> {
   }
 }
 
-async function refreshStatus(): Promise<void> {
+async function refreshStatus(syncForm = true): Promise<void> {
   try {
     const st = (await window.api.signalAnalysis.getStatus()) as {
       running: boolean
@@ -158,66 +167,79 @@ async function refreshStatus(): Promise<void> {
     curRemoteUrl.value = st.remoteUrl || ''
     if (st.mode === 'local' || st.mode === 'remote')
       modeSelect.value = st.mode as 'local' | 'remote'
-    if (st.port) port.value = st.port
+    if (st.running && st.port) port.value = st.port
     if (st.config) {
       const c = st.config as Partial<SignalAnalysisConfig>
-      if (typeof c.freq === 'number') freq.value = c.freq
-      if (typeof c.snr === 'number') snr.value = c.snr
-      if (typeof c.amplitude === 'number') amplitude.value = c.amplitude
-      if (c.modType) modType.value = c.modType
-      if (typeof c.sampleRate === 'number') sampleRate.value = c.sampleRate
-      if (typeof c.pointsPerFrame === 'number') pointsPerFrame.value = c.pointsPerFrame
-      if (typeof c.samplesPerSymbol === 'number') samplesPerSymbol.value = c.samplesPerSymbol
-      if (typeof c.enabled === 'boolean') enabled.value = c.enabled
-      if (typeof c.fftSize === 'number') fftSize.value = c.fftSize
-      if (c.window) windowType.value = c.window
-      if (typeof c.dbScale === 'boolean') dbScale.value = c.dbScale
-      if (typeof c.overlap === 'number') overlap.value = c.overlap
       effConfig.value = c as SignalAnalysisConfig
+      // 只在明确需要同步时回填表单，避免远程连接状态事件把用户正在编辑的值冲掉
+      if (syncForm) {
+        if (typeof c.freq === 'number') freq.value = c.freq
+        if (typeof c.snr === 'number') snr.value = c.snr
+        if (typeof c.amplitude === 'number') amplitude.value = c.amplitude
+        if (c.modType) modType.value = c.modType
+        if (typeof c.sampleRate === 'number') sampleRate.value = c.sampleRate
+        if (typeof c.pointsPerFrame === 'number') pointsPerFrame.value = c.pointsPerFrame
+        if (typeof c.samplesPerSymbol === 'number') samplesPerSymbol.value = c.samplesPerSymbol
+        if (typeof c.enabled === 'boolean') enabled.value = c.enabled
+        if (typeof c.fftSize === 'number') fftSize.value = c.fftSize
+        if (c.window) windowType.value = c.window
+        if (typeof c.dbScale === 'boolean') dbScale.value = c.dbScale
+        if (typeof c.overlap === 'number') overlap.value = c.overlap
+      }
     }
   } catch {
     running.value = false
   }
 }
 
-async function refreshAllStatus(): Promise<void> {
-  await Promise.all([refreshStatus(), refreshRemoteMockStatus()])
+async function refreshAllStatus(syncForm = true): Promise<void> {
+  await Promise.all([refreshStatus(syncForm), refreshRemoteMockStatus()])
+}
+
+/** 当前表单 → 配置补丁 */
+function currentConfigPatch(): Partial<SignalAnalysisConfig> {
+  return {
+    freq: freq.value,
+    snr: snr.value,
+    amplitude: amplitude.value,
+    modType: modType.value,
+    sampleRate: sampleRate.value,
+    pointsPerFrame: pointsPerFrame.value,
+    samplesPerSymbol: samplesPerSymbol.value,
+    enabled: enabled.value,
+    fftSize: fftSize.value,
+    window: windowType.value,
+    dbScale: dbScale.value,
+    overlap: overlap.value
+  }
+}
+
+/**
+ * 下发配置（校验/合并/持久化在主进程）。
+ * 返回 false 时调用方不要继续启动服务，否则会带着旧配置启动。
+ */
+async function pushConfig(showMessage = true): Promise<boolean> {
+  try {
+    const r = (await window.api.signalAnalysis.setConfig(
+      currentConfigPatch() as unknown as Record<string, unknown>
+    )) as { ok: boolean; error?: string; config?: unknown }
+    if (!r.ok) {
+      if (showMessage) message.error(r.error || '应用失败')
+      return false
+    }
+    saveLocal()
+    if (r.config) effConfig.value = r.config as SignalAnalysisConfig
+    if (showMessage) message.success('已保存，配置即时生效')
+    return true
+  } catch (e) {
+    if (showMessage) message.error(e instanceof Error ? e.message : String(e))
+    return false
+  }
 }
 
 async function applyConfig(): Promise<void> {
-  try {
-    const r = (await window.api.signalAnalysis.setConfig({
-      freq: freq.value,
-      snr: snr.value,
-      amplitude: amplitude.value,
-      modType: modType.value,
-      sampleRate: sampleRate.value,
-      pointsPerFrame: pointsPerFrame.value,
-      samplesPerSymbol: samplesPerSymbol.value,
-      enabled: enabled.value,
-      fftSize: fftSize.value,
-      window: windowType.value,
-      dbScale: dbScale.value,
-      overlap: overlap.value
-    } as unknown as Record<string, unknown>)) as { ok: boolean; error?: string }
-    // 同步更新远端Mock的配置（若远端Mock正在运行，需重启才生效，此处仅更新内存并提示）
-    try {
-      if (remoteMockRunning.value) {
-        // 远端Mock的配置通过下次 restart 时的 start 参数传入，此处不单独 patch
-      }
-    } catch {
-      void 0
-    }
-    saveLocal()
-    if (r.ok) {
-      message.success('已保存，配置即时生效')
-      await refreshAllStatus()
-    } else {
-      message.error((r as unknown as { error?: string }).error || '应用失败')
-    }
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e))
-  }
+  await pushConfig(true)
+  await refreshAllStatus(false)
 }
 
 async function startLocal(): Promise<void> {
@@ -225,6 +247,8 @@ async function startLocal(): Promise<void> {
     message.error(`端口 ${port.value} 已被远端Mock占用，请先停止远端Mock`)
     return
   }
+  // 先下发当前表单，避免用户改完没点“应用配置”就启动，跑的是上次持久化的旧配置
+  if (!(await pushConfig(true))) return
   const r = (await window.api.signalAnalysis.start({ mode: 'local', port: port.value })) as {
     ok: boolean
     mode?: string
@@ -234,7 +258,7 @@ async function startLocal(): Promise<void> {
   saveLocal()
   if (!r.ok) message.error(r.error || '启动失败')
   else message.success(`本地已启动 :${r.port}`)
-  await refreshAllStatus()
+  await refreshAllStatus(false)
 }
 
 /** 判断地址是否指向本机同端口（即内置 Mock） */
@@ -252,6 +276,8 @@ function isBuiltinMockUrl(u: string): boolean {
 
 async function startRemote(): Promise<void> {
   const url = effectiveRemoteUrl.value
+  // 外部后端也要先把当前配置持久化/下发（连接成功时 RemoteAnalysisSource 会 emit 给后端）
+  if (!(await pushConfig(true))) return
   saveLocal()
   if (!isBuiltinMockUrl(url)) {
     // 直连外部 socket.io 后端
@@ -262,7 +288,7 @@ async function startRemote(): Promise<void> {
     }
     if (!r.ok) message.error(r.error || '远程连接失败')
     else message.success(`远程已启动 ${url}`)
-    await refreshAllStatus()
+    await refreshAllStatus(false)
     return
   }
 
@@ -272,26 +298,7 @@ async function startRemote(): Promise<void> {
     return
   }
   // 1) 起内置远端Mock（同端口）
-  const cfgPatch = {
-    freq: freq.value,
-    snr: snr.value,
-    amplitude: amplitude.value,
-    modType: modType.value,
-    sampleRate: sampleRate.value,
-    pointsPerFrame: pointsPerFrame.value,
-    samplesPerSymbol: samplesPerSymbol.value,
-    enabled: enabled.value,
-    fftSize: fftSize.value,
-    window: windowType.value,
-    dbScale: dbScale.value,
-    overlap: overlap.value
-  }
-  // 同步持久化配置，供远端客户端连接时下发
-  try {
-    await window.api.signalAnalysis.setConfig(cfgPatch as unknown as Record<string, unknown>)
-  } catch {
-    void 0
-  }
+  const cfgPatch = currentConfigPatch()
   const rm = (await window.api.remoteMock.start({ port: port.value, config: cfgPatch })) as {
     ok: boolean
     port?: number
@@ -300,7 +307,7 @@ async function startRemote(): Promise<void> {
   if (!rm.ok) {
     // 可能是端口被本地占用（EADDRINUSE）或已运行
     message.error(rm.error || '远端Mock启动失败')
-    await refreshAllStatus()
+    await refreshAllStatus(false)
     return
   }
   // 小延时等待远端Mock监听就绪
@@ -322,7 +329,7 @@ async function startRemote(): Promise<void> {
   } else {
     message.success(`远端已启动 ${url} (内置Mock :${port.value})`)
   }
-  await refreshAllStatus()
+  await refreshAllStatus(false)
 }
 
 async function startServer(): Promise<void> {
@@ -330,7 +337,7 @@ async function startServer(): Promise<void> {
     if (modeSelect.value === 'remote') await startRemote()
     else await startLocal()
   } catch (e) {
-    await refreshAllStatus()
+    await refreshAllStatus(false)
     message.error(e instanceof Error ? e.message : String(e))
   }
 }
@@ -340,7 +347,7 @@ async function restartServer(): Promise<void> {
     // 互斥：先停所有（主进程 stop 已等待端口释放），刷新状态后再启动
     if (running.value) await window.api.signalAnalysis.stop()
     if (remoteMockRunning.value) await window.api.remoteMock.stop()
-    await refreshAllStatus()
+    await refreshAllStatus(false)
     await startServer()
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e))
@@ -353,7 +360,7 @@ async function stopServer(): Promise<void> {
     if (running.value) await window.api.signalAnalysis.stop()
     if (remoteMockRunning.value) await window.api.remoteMock.stop()
     message.success('已停止')
-    await refreshAllStatus()
+    await refreshAllStatus(false)
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e))
   }
@@ -369,9 +376,12 @@ async function triggerOnce(): Promise<void> {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadLocal()
-  void refreshAllStatus()
+  // 先只刷新运行状态；服务未运行时表单以 localStorage 为准，不能拿主进程的默认配置把它冲掉
+  await refreshAllStatus(false)
+  if (running.value) await refreshStatus(true)
+  else await pushConfig(false)
 })
 </script>
 
@@ -450,7 +460,7 @@ onMounted(() => {
           </NGi>
           <NGi>
             <NFormItem label="频率 (Hz)">
-              <NSlider v-model:value="freq" :min="1" :max="500" />
+              <NSlider v-model:value="freq" :min="1" :max="maxFreq" />
             </NFormItem>
           </NGi>
           <NGi>

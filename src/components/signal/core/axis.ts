@@ -164,11 +164,15 @@ export function drawAxisOverlay(
     showGrid?: boolean
     /** 是否绘制四边边框盒；左轴带模式传 false，改用独立竖直轴线 */
     frame?: boolean
+    /** Y 刻度目标条数（默认 5；频谱仪可传 6~7 获得更细网格） */
+    yTickCount?: number
     /**
      * 覆盖 X 刻度：values 为绘图坐标域（如样本索引），labels 为显示文本（如时间单位）。
      * 用于样本索引 ↔ 物理单位换算；缺省按 1/2/5 步进自动取刻度
      */
     xTicksOverride?: { values: number[]; labels: string[] }
+    /** 覆盖 Y 刻度标签格式化（如幅度单位换算 dB→dBµV）；缺省按步长自动取小数位 */
+    yTickFormat?: (v: number) => string
     theme: AxisTheme
   }
 ): void {
@@ -181,7 +185,9 @@ export function drawAxisOverlay(
     showX = true,
     showGrid = true,
     frame = true,
+    yTickCount = 5,
     xTicksOverride,
+    yTickFormat,
     theme
   } = opts
   if (plot.w <= 0 || plot.h <= 0 || !(xMax > xMin) || !(yMax > yMin)) return
@@ -194,7 +200,7 @@ export function drawAxisOverlay(
     ctx.fillRect(plot.x, plot.y, plot.w, plot.h)
   }
 
-  const yTicks = niceTicks(yMin, yMax, 5)
+  const yTicks = niceTicks(yMin, yMax, yTickCount)
   const xTicks = showX ? (xTicksOverride?.values ?? niceTicks(xMin, xMax, 6)) : []
   const toPxY = (t: number): number => plot.y + plot.h - ((t - yMin) / (yMax - yMin)) * plot.h
   const toPxX = (t: number): number => plot.x + ((t - xMin) / (xMax - xMin)) * plot.w
@@ -292,7 +298,7 @@ export function drawAxisOverlay(
   ctx.stroke()
 
   // ── Y 刻度芯片（最后绘制，浮于网格/波形之上；半透明底色保证密集信号下可读）──
-  const yStep = niceStep(yMax - yMin, 5)
+  const yStep = niceStep(yMax - yMin, yTickCount)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const chipBg = theme.labelChipBg ?? 'rgba(127,127,127,0.35)'
@@ -304,6 +310,6 @@ export function drawAxisOverlay(
     cy = Math.min(Math.max(cy, plot.y + 2), plot.y + plot.h - CHIP_H - 2)
     // 轴钉在组件最左缘：有左刻度带时锚定画布左侧（与波形间留出整段带距）；无刻度带时内嵌绘图区左缘
     const cx = plot.x > 0 ? 2 : plot.x + CHIP_INSET
-    drawChip(ctx, cx, cy, fmtByStep(t, yStep), chipBg, theme.text)
+    drawChip(ctx, cx, cy, yTickFormat ? yTickFormat(t) : fmtByStep(t, yStep), chipBg, theme.text)
   }
 }

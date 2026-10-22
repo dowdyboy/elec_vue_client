@@ -12,74 +12,9 @@ import {
   sanitizeConfigPatch,
   type SignalAnalysisConfig
 } from '../../shared/signal'
-import { applyWindow, getWindow, magnitudeSpectrum, toDB } from '../../shared/signalDsp'
-
-function gaussian(): number {
-  const u = Math.random() || 1e-12
-  const v = Math.random()
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
-}
-function noiseScale(snrDb: number): number {
-  return Math.pow(10, -snrDb / 20)
-}
-const QPSK_MAP: Array<[number, number]> = [
-  [1, 1],
-  [-1, 1],
-  [-1, -1],
-  [1, -1]
-]
-const BPSK_MAP: Array<[number, number]> = [
-  [1, 0],
-  [-1, 0]
-]
-function computeRow(slice: Float32Array, cfg: SignalAnalysisConfig): Float32Array {
-  const n = cfg.fftSize
-  const re = new Float32Array(n),
-    im = new Float32Array(n)
-  const count = Math.min(n, Math.floor(slice.length / 2))
-  for (let k = 0; k < count; k++) {
-    re[k] = slice[2 * k]
-    im[k] = slice[2 * k + 1]
-  }
-  const win = getWindow(cfg.window, n)
-  applyWindow(re, win)
-  applyWindow(im, win)
-  let mag = magnitudeSpectrum(re, im)
-  if (cfg.dbScale) mag = toDB(mag)
-  return mag
-}
-class SpectrogramAccumulator {
-  private buf = new Float32Array(0)
-  private len = 0
-  private pos = 0
-  push(iq: Float32Array, cfg: SignalAnalysisConfig): Float32Array[] {
-    if (this.buf.length < this.len + iq.length) {
-      const next = Math.max(this.len + iq.length, this.buf.length ? this.buf.length * 2 : 8192)
-      const nb = new Float32Array(next)
-      nb.set(this.buf.subarray(0, this.len))
-      this.buf = nb
-    }
-    this.buf.set(iq, this.len)
-    this.len += iq.length
-    const need = cfg.fftSize * 2,
-      step = Math.max(2, Math.floor(cfg.fftSize * (1 - cfg.overlap)) * 2)
-    const rows: Float32Array[] = []
-    while (this.pos + need <= this.len) {
-      rows.push(computeRow(this.buf.subarray(this.pos, this.pos + need), cfg))
-      this.pos += step
-    }
-    if (this.pos > cfg.fftSize * 4) {
-      this.buf.copyWithin(0, this.pos, this.len)
-      this.len -= this.pos
-      this.pos = 0
-    }
-    return rows
-  }
-  reset(): void {
-    this.len = 0
-    this.pos = 0
-  }
-}
+import { createSignalGenerator, type SignalGenerator } from '../../shared/signalDsp'
+import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export function registerRemoteMockServer(): () => void {
   let io: SocketIOServer | null = null
@@ -88,53 +23,18 @@ export function registerRemoteMockServer(): () => void {
   let port = 0
   let cfg: SignalAnalysisConfig = defaultAnalysisConfig()
   let seq = 0
-  let phase = 0
+  let gen: SignalGenerator | null = null
   const acc = new SpectrogramAccumulator()
+  const spec = new SpectrumAnalyzer()
 
   function genFrame(): Float32Array {
-    const n = cfg.pointsPerFrame,
-      out = new Float32Array(n * 2),
-      scale = noiseScale(cfg.snr),
-      amp = cfg.amplitude || 1,
-      step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
-    if (cfg.modType === 'sine') {
-      for (let k = 0; k < n; k++) {
-        out[2 * k] = amp * Math.cos(phase) + gaussian() * scale
-        out[2 * k + 1] = amp * Math.sin(phase) + gaussian() * scale
-        phase += step
-        if (phase > Math.PI * 2) phase -= Math.PI * 2
-      }
-      return out
-    }
-    const S = Math.max(1, cfg.samplesPerSymbol | 0)
-    let symI = 0,
-      symQ = 0,
-      ph = 0
-    for (let k = 0; k < n; k++) {
-      if (k % S === 0) {
-        if (cfg.modType === 'BPSK') {
-          const b = Math.random() > 0.5 ? 1 : 0
-          ;[symI, symQ] = BPSK_MAP[b]!
-        } else if (cfg.modType === 'QPSK') {
-          const b = Math.floor(Math.random() * 4)
-          ;[symI, symQ] = QPSK_MAP[b]!
-        } else if (cfg.modType === '16QAM') {
-          const lv = [-3, -1, 1, 3]
-          symI = lv[Math.floor(Math.random() * 4)]! / 3
-          symQ = lv[Math.floor(Math.random() * 4)]! / 3
-        }
-      }
-      const ci = Math.cos(ph),
-        si = Math.sin(ph)
-      ph += step
-      out[2 * k] = symI * ci - symQ * si + gaussian() * scale * 0.3
-      out[2 * k + 1] = symI * si + symQ * ci + gaussian() * scale * 0.3
-    }
-    return out
+    return (gen ??= createSignalGenerator(cfg)).next(cfg.pointsPerFrame)
   }
 
   function tick(force = false): void {
-    if (!io || !cfg.enabled) return
+    if (!io) return
+    // 与本地源一致：关闭推送后仍允许 trigger 强制单帧
+    if (!force && !cfg.enabled) return
     // 空闲跳过：无订阅客户端时不做生成/FFT 重计算（trigger 强制一帧不受限）
     if (!force && io.engine.clientsCount === 0) return
     const iq = genFrame(),
@@ -142,25 +42,30 @@ export function registerRemoteMockServer(): () => void {
     io.emit('signal:analysis', {
       type: 2,
       seq: s,
+      sampleRate: cfg.sampleRate,
       buffer: Buffer.from(iq.buffer, iq.byteOffset, iq.byteLength),
       modType: cfg.modType
     })
-    const need = cfg.fftSize * 2,
-      slice = iq.length >= need ? iq.subarray(iq.length - need) : iq
-    const spec = computeRow(slice, cfg)
-    io.emit('signal:analysis', {
-      type: 0,
-      seq: s,
-      fftSize: cfg.fftSize,
-      buffer: Buffer.from(spec.buffer, spec.byteOffset, spec.byteLength),
-      modType: cfg.modType
-    })
+    const specRow = spec.push(iq, cfg)
+    if (specRow) {
+      io.emit('signal:analysis', {
+        type: 0,
+        seq: s,
+        fftSize: cfg.fftSize,
+        sampleRate: cfg.sampleRate,
+        dbScale: cfg.dbScale,
+        buffer: Buffer.from(specRow.buffer, specRow.byteOffset, specRow.byteLength),
+        modType: cfg.modType
+      })
+    }
     const rows = acc.push(iq, cfg)
     for (const row of rows) {
       io.emit('signal:analysis', {
         type: 1,
         seq: ++seq,
         fftSize: cfg.fftSize,
+        sampleRate: cfg.sampleRate,
+        dbScale: true,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType
       })
@@ -169,11 +74,25 @@ export function registerRemoteMockServer(): () => void {
 
   ipcMain.handle(
     'remoteMock:start',
-    async (_e, opts?: { port?: number; config?: Partial<SignalAnalysisConfig> }) => {
+    async (e, opts?: { port?: number; config?: Partial<SignalAnalysisConfig> }) => {
+      if (!isTrustedSender(e)) return FORBIDDEN
       if (server || io) return { ok: false, error: '远端Mock已运行，请先停止' }
       const p = opts?.port ?? 8767
       if (!Number.isInteger(p) || p < 1 || p > 65535) return { ok: false, error: `端口非法: ${p}` }
-      if (opts?.config) cfg = { ...cfg, ...opts.config }
+      if (opts?.config) {
+        const clean = sanitizeConfigPatch(opts.config)
+        if (!clean.ok || !clean.value) return { ok: false, error: clean.error }
+        const merged = { ...cfg, ...clean.value }
+        if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2))
+          return {
+            ok: false,
+            error: `freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})`
+          }
+        cfg = merged
+        gen = null
+        spec.reset()
+        acc.reset()
+      }
       return await new Promise<{ ok: boolean; port?: number; error?: string }>((resolve) => {
         try {
           server = http.createServer((_, res) => {
@@ -191,7 +110,16 @@ export function registerRemoteMockServer(): () => void {
                 console.warn('[remote-mock] invalid config ignored:', res.error)
                 return
               }
-              cfg = { ...cfg, ...res.value } as SignalAnalysisConfig
+              const merged = { ...cfg, ...res.value } as SignalAnalysisConfig
+              if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2)) {
+                console.warn(
+                  `[remote-mock] freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})，配置忽略`
+                )
+                return
+              }
+              cfg = merged
+              gen = null // 配置变更：重建生成器
+              spec.reset()
               acc.reset()
             })
             sock.on('signal:analysis:trigger', () => tick(true))
@@ -255,7 +183,8 @@ export function registerRemoteMockServer(): () => void {
     }
   )
 
-  ipcMain.handle('remoteMock:stop', async () => {
+  ipcMain.handle('remoteMock:stop', async (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (timer) {
       clearInterval(timer)
       timer = null
@@ -277,7 +206,8 @@ export function registerRemoteMockServer(): () => void {
     }
     port = 0
     seq = 0
-    phase = 0
+    gen = null
+    spec.reset()
     acc.reset()
     return { ok: true }
   })

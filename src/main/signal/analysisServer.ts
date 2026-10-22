@@ -25,7 +25,18 @@ import {
   type ModType,
   type SignalAnalysisConfig
 } from '../../shared/signal'
-import { applyWindow, getWindow, magnitudeSpectrum, toDB } from '../../shared/signalDsp'
+import { createSignalGenerator, type SignalGenerator } from '../../shared/signalDsp'
+import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
+import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
+
+/** 仍在接收信号帧的 webContents（引用计数，由渲染进程 subscribe/unsubscribe 维护） */
+const analysisSubscribers = new Map<number, number>()
+/** 已挂过 destroyed 监听的 webContents，避免重复挂 */
+const analysisWatchedSenders = new Set<number>()
+/** 未知远端帧类型的告警节流 */
+let lastUnknownTypeAt = 0
+/** 不支持的 typed-array 负载告警节流 */
+let lastTypedArrayWarnAt = 0
 
 export interface SignalAnalysisSource {
   readonly mode: 'local' | 'remote'
@@ -40,93 +51,19 @@ export interface SignalAnalysisSource {
 // 本地生成 + 处理
 // ──────────────────────────────────────────────────
 
-// 高斯噪声（Box-Muller）
-function gaussian(): number {
-  const u = Math.random() || 1e-12
-  const v = Math.random()
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
-}
-function noiseScale(snrDb: number): number {
-  return Math.pow(10, -snrDb / 20)
-}
-
-const QPSK_MAP: Array<[number, number]> = [
-  [1, 1],
-  [-1, 1],
-  [-1, -1],
-  [1, -1]
-]
-const BPSK_MAP: Array<[number, number]> = [
-  [1, 0],
-  [-1, 0]
-]
-
-/** 从交织复数切片算一行幅度谱（线性或 dB） */
-function computeRow(slice: Float32Array, cfg: SignalAnalysisConfig): Float32Array {
-  const n = cfg.fftSize
-  const re = new Float32Array(n)
-  const im = new Float32Array(n)
-  const count = Math.min(n, Math.floor(slice.length / 2))
-  for (let k = 0; k < count; k++) {
-    re[k] = slice[2 * k]
-    im[k] = slice[2 * k + 1]
-  }
-  const win = getWindow(cfg.window, n)
-  applyWindow(re, win)
-  applyWindow(im, win)
-  let mag = magnitudeSpectrum(re, im)
-  if (cfg.dbScale) mag = toDB(mag)
-  return mag
-}
-
-/** 时频图行累计器（按 overlap 在帧间滑动） */
-class SpectrogramAccumulator {
-  private buf = new Float32Array(0)
-  private len = 0
-  private pos = 0
-
-  push(iq: Float32Array, cfg: SignalAnalysisConfig): Float32Array[] {
-    if (this.buf.length < this.len + iq.length) {
-      const next = Math.max(this.len + iq.length, this.buf.length ? this.buf.length * 2 : 8192)
-      const nb = new Float32Array(next)
-      nb.set(this.buf.subarray(0, this.len))
-      this.buf = nb
-    }
-    this.buf.set(iq, this.len)
-    this.len += iq.length
-
-    const need = cfg.fftSize * 2
-    const step = Math.max(2, Math.floor(cfg.fftSize * (1 - cfg.overlap)) * 2)
-    const rows: Float32Array[] = []
-    while (this.pos + need <= this.len) {
-      rows.push(computeRow(this.buf.subarray(this.pos, this.pos + need), cfg))
-      this.pos += step
-    }
-    // 压缩已消费部分
-    if (this.pos > cfg.fftSize * 4) {
-      this.buf.copyWithin(0, this.pos, this.len)
-      this.len -= this.pos
-      this.pos = 0
-    }
-    return rows
-  }
-
-  reset(): void {
-    this.len = 0
-    this.pos = 0
-  }
-}
-
 class LocalAnalysisSource implements SignalAnalysisSource {
   readonly mode = 'local' as const
   private config: SignalAnalysisConfig
   private timer: NodeJS.Timeout | null = null
   private seq = 0
-  private phase = 0
   private acc = new SpectrogramAccumulator()
+  /** 跨帧频谱分析器：pointsPerFrame < fftSize 时凑满窗再算，避免零填充 */
+  private spec = new SpectrumAnalyzer()
+  /** 有状态信号生成器（相位/符号时钟/成型滤波跨帧连续）；配置变更时重建 */
+  private gen: SignalGenerator | null = null
   private onFrame: ((f: AnalysisFrame) => void) | null = null
   private lastErrAt = 0
-  /** 消费者守卫：无窗口且无外部订阅时跳过重计算（trigger 强制一帧不受限） */
+  /** 消费者守卫：无订阅者且无外部 socket 观众时跳过重计算（trigger 强制一帧不受限） */
   hasConsumers: (() => boolean) | null = null
 
   constructor(initial?: SignalAnalysisConfig) {
@@ -151,6 +88,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
     this.config = { ...this.config, ...patch }
     this.acc.reset()
+    this.spec.reset()
+    this.gen = null // 配置变更：重建生成器（相位/符号历史重置）
   }
 
   getConfig(): SignalAnalysisConfig {
@@ -171,48 +110,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 
   private genFrame(): Float32Array {
     const cfg = this.config
-    const n = cfg.pointsPerFrame
-    const out = new Float32Array(n * 2)
-    const scale = noiseScale(cfg.snr)
-    const amp = cfg.amplitude || 1
-    const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
-    if (cfg.modType === 'sine') {
-      for (let k = 0; k < n; k++) {
-        const i = amp * Math.cos(this.phase) + gaussian() * scale
-        const q = amp * Math.sin(this.phase) + gaussian() * scale
-        out[2 * k] = i
-        out[2 * k + 1] = q
-        this.phase += step
-        if (this.phase > Math.PI * 2) this.phase -= Math.PI * 2
-      }
-      return out
-    }
-    // 调制（基带 × 载波搬频）
-    const S = Math.max(1, cfg.samplesPerSymbol | 0)
-    let symI = 0
-    let symQ = 0
-    let ph = 0
-    for (let k = 0; k < n; k++) {
-      if (k % S === 0) {
-        if (cfg.modType === 'BPSK') {
-          const b = Math.random() > 0.5 ? 1 : 0
-          ;[symI, symQ] = BPSK_MAP[b]!
-        } else if (cfg.modType === 'QPSK') {
-          const b = Math.floor(Math.random() * 4)
-          ;[symI, symQ] = QPSK_MAP[b]!
-        } else if (cfg.modType === '16QAM') {
-          const levels = [-3, -1, 1, 3]
-          symI = levels[Math.floor(Math.random() * 4)]! / 3
-          symQ = levels[Math.floor(Math.random() * 4)]! / 3
-        }
-      }
-      const ci = Math.cos(ph)
-      const si = Math.sin(ph)
-      ph += step
-      out[2 * k] = symI * ci - symQ * si + gaussian() * scale * 0.3
-      out[2 * k + 1] = symI * si + symQ * ci + gaussian() * scale * 0.3
-    }
-    return out
+    return (this.gen ??= createSignalGenerator(cfg)).next(cfg.pointsPerFrame)
   }
 
   private tick(force = false): void {
@@ -223,20 +121,28 @@ class LocalAnalysisSource implements SignalAnalysisSource {
       const cfg = this.config
       const iq = this.genFrame()
       const seq = ++this.seq
-      // IQ（时域图）
-      this.onFrame({ type: 'iq', seq, data: iq, modType: cfg.modType })
-      // 频谱（最新 fftSize 复数样本）
-      const need = cfg.fftSize * 2
-      const slice = iq.length >= need ? iq.subarray(iq.length - need) : iq
-      const spec = computeRow(slice, cfg)
+      // IQ（时域图）：带 sampleRate，宿主可直接用帧元数据换算时间轴
       this.onFrame({
-        type: 'spectrum',
+        type: 'iq',
         seq,
-        data: spec,
-        fftSize: cfg.fftSize,
+        data: iq,
+        sampleRate: cfg.sampleRate,
         modType: cfg.modType
       })
-      // 时频（重叠行）
+      // 频谱（跨帧凑满 fftSize；窗增益已在 computeSpectrumRow 内补偿）
+      const spec = this.spec.push(iq, cfg)
+      if (spec) {
+        this.onFrame({
+          type: 'spectrum',
+          seq,
+          data: spec,
+          fftSize: cfg.fftSize,
+          sampleRate: cfg.sampleRate,
+          dbScale: cfg.dbScale,
+          modType: cfg.modType
+        })
+      }
+      // 时频（重叠行，固定 dB 行——与谱图的 dbScale 显示开关解耦）
       const rows = this.acc.push(iq, cfg)
       for (const row of rows) {
         this.onFrame({
@@ -244,6 +150,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           seq: ++this.seq,
           data: row,
           fftSize: cfg.fftSize,
+          sampleRate: cfg.sampleRate,
+          dbScale: true,
           modType: cfg.modType
         })
       }
@@ -258,41 +166,33 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 // 远程后端（socket.io 客户端）
 // ──────────────────────────────────────────────────
 
+/** 字节流 → Float32Array（先拷贝到对齐缓冲，避免池化 Buffer 的 byteOffset 陷阱） */
+function bytesToFloat32(bytes: Uint8Array): Float32Array {
+  if (bytes.byteLength === 0 || bytes.byteLength % 4 !== 0) return new Float32Array(0)
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return new Float32Array(copy.buffer)
+}
+
 function toFloat32(buffer: unknown): Float32Array {
   if (!buffer) return new Float32Array(0)
-  if (buffer instanceof ArrayBuffer) {
-    return buffer.byteLength % 4 ? new Float32Array(0) : new Float32Array(buffer)
-  }
-  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buffer)) {
-    if (buffer.byteLength % 4 !== 0) return new Float32Array(0)
-    // Buffer 可能来自池化 ArrayBuffer，byteOffset 未 4 对齐会抛 RangeError，需拷贝
-    if (buffer.byteOffset % 4 === 0) {
-      try {
-        return new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4)
-      } catch {
-        // fallthrough to copy
-      }
-    }
-    const out = new Float32Array(buffer.byteLength / 4)
-    for (let i = 0; i < out.length; i++) out[i] = buffer.readFloatLE(i * 4)
-    return out
-  }
+  if (buffer instanceof ArrayBuffer) return bytesToFloat32(new Uint8Array(buffer))
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buffer))
+    return bytesToFloat32(new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength))
+  if (buffer instanceof Float32Array) return buffer
+  if (buffer instanceof Uint8Array) return bytesToFloat32(buffer)
+  if (buffer instanceof DataView)
+    return bytesToFloat32(new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength))
   if (ArrayBuffer.isView(buffer)) {
-    const v = buffer as ArrayBufferView
-    if (v.byteLength % 4 !== 0) return new Float32Array(0)
-    if (v.byteOffset % 4 === 0) {
-      try {
-        return new Float32Array(v.buffer, v.byteOffset, v.byteLength / 4)
-      } catch {
-        // fallthrough to copy
-      }
+    // Int16/Int32/Float64 等：协议约定 Float32 二进制；按字节重新解释只会得到垃圾数据，
+    // 这里显式丢弃并告警（比静默画出一条错误谱线更容易定位）。
+    const now = Date.now()
+    if (now - lastTypedArrayWarnAt > 5000) {
+      lastTypedArrayWarnAt = now
+      const name = (buffer as object).constructor?.name ?? 'unknown'
+      console.warn(`[signal:remote] unsupported typed-array payload: ${name} (expect Float32Array)`)
     }
-    // 非对齐或异常 → 按字节拷贝
-    const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
-    const copy = new Uint8Array(u8.length)
-    copy.set(u8)
-    // copy.buffer 此时对齐（0 偏移）
-    return new Float32Array(copy.buffer)
+    return new Float32Array(0)
   }
   if (Array.isArray(buffer)) {
     try {
@@ -303,23 +203,10 @@ function toFloat32(buffer: unknown): Float32Array {
   }
   if (typeof buffer === 'string') {
     try {
-      const bin = Buffer.from(buffer, 'base64')
-      if (bin.length % 4 === 0 && bin.length > 0) {
-        if (bin.byteOffset % 4 === 0) {
-          try {
-            return new Float32Array(bin.buffer, bin.byteOffset, bin.byteLength / 4)
-          } catch {
-            // fallthrough
-          }
-        }
-        const out = new Float32Array(bin.byteLength / 4)
-        for (let i = 0; i < out.length; i++) out[i] = bin.readFloatLE(i * 4)
-        return out
-      }
+      return bytesToFloat32(Buffer.from(buffer, 'base64'))
     } catch {
-      // ignore
+      return new Float32Array(0)
     }
-    return new Float32Array(0)
   }
   if (typeof buffer === 'object') {
     const obj = buffer as Record<string, unknown>
@@ -342,17 +229,14 @@ function extractRemotePayload(p: Record<string, unknown>): unknown {
   )
 }
 
-function parseRemoteType(raw: unknown): import('../../shared/signal').AnalysisFrameType {
+function parseRemoteType(raw: unknown): import('../../shared/signal').AnalysisFrameType | null {
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    return FRAME_TYPE_BY_CODE[raw] ?? 'iq'
+    return FRAME_TYPE_BY_CODE[raw] ?? null
   }
   if (typeof raw === 'string') {
     const s = raw.toLowerCase()
     if (s === 'spectrum' || s === 'spectrogram' || s === 'iq')
       return s as import('../../shared/signal').AnalysisFrameType
-    // string numeric "0"/"1"/"2"
-    const n = Number(s)
-    if (!Number.isNaN(n)) return FRAME_TYPE_BY_CODE[n] ?? 'iq'
     const map: Record<string, import('../../shared/signal').AnalysisFrameType> = {
       '0': 'spectrum',
       '1': 'spectrogram',
@@ -361,8 +245,12 @@ function parseRemoteType(raw: unknown): import('../../shared/signal').AnalysisFr
       waterfall: 'spectrogram'
     }
     if (map[s]) return map[s]
+    // string numeric "0"/"1"/"2"
+    const n = Number(s)
+    if (!Number.isNaN(n)) return FRAME_TYPE_BY_CODE[n] ?? null
   }
-  return 'iq'
+  // 未知类型不再静默按 IQ 解释（会把频谱/时频数据画成时域波形）
+  return null
 }
 
 function parseRemoteModType(raw: unknown): ModType | undefined {
@@ -404,6 +292,14 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
         const p = (raw ?? {}) as Record<string, unknown>
         const rawType = p.type as unknown
         const type = parseRemoteType(rawType)
+        if (!type) {
+          const now = Date.now()
+          if (now - lastUnknownTypeAt > 5000) {
+            lastUnknownTypeAt = now
+            console.warn('[signal:remote] unknown frame type, dropped:', rawType)
+          }
+          return
+        }
         const seq = typeof p.seq === 'number' ? p.seq : Date.now()
         const fftSize =
           typeof p.fftSize === 'number'
@@ -412,6 +308,18 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
               ? (p.fft_size as number)
               : undefined
         const modType = parseRemoteModType(p.modType) ?? parseRemoteModType(p.mod_type)
+        const sampleRate =
+          typeof p.sampleRate === 'number'
+            ? p.sampleRate
+            : typeof p.sample_rate === 'number'
+              ? (p.sample_rate as number)
+              : undefined
+        const dbScale =
+          typeof p.dbScale === 'boolean'
+            ? p.dbScale
+            : typeof p.dbScale === 'number'
+              ? p.dbScale !== 0
+              : undefined
         const payload = extractRemotePayload(p)
         let data: Float32Array
         if (
@@ -472,7 +380,15 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
               : 'null'
           })
         }
-        this.onFrame?.({ type, seq, data: data ?? new Float32Array(0), fftSize, modType })
+        this.onFrame?.({
+          type,
+          seq,
+          data: data ?? new Float32Array(0),
+          fftSize,
+          sampleRate,
+          dbScale,
+          modType
+        })
       } catch (e) {
         console.error('[signal:remote] parse failed', e)
       }
@@ -594,6 +510,8 @@ export function registerSignalAnalysisServer(): () => void {
         type: FRAME_TYPE_CODE[f.type],
         seq: f.seq,
         fftSize: f.fftSize,
+        sampleRate: f.sampleRate,
+        dbScale: f.dbScale,
         modType: f.modType,
         buffer: buf
       })
@@ -608,7 +526,8 @@ export function registerSignalAnalysisServer(): () => void {
 
   ipcMain.handle(
     'signalAnalysis:start',
-    async (_e, opts?: { mode?: 'local' | 'remote'; port?: number; remoteUrl?: string }) => {
+    async (e, opts?: { mode?: 'local' | 'remote'; port?: number; remoteUrl?: string }) => {
+      if (!isTrustedSender(e)) return FORBIDDEN
       if (source) return { ok: false, error: '已运行，请先停止' }
       const mode = opts?.mode ?? 'local'
       // 校验
@@ -636,8 +555,9 @@ export function registerSignalAnalysisServer(): () => void {
         } else {
           const p = opts?.port ?? 8767
           const local = new LocalAnalysisSource(persistedConfig)
-          // 消费者守卫：无窗口且无外部 socket.io 订阅时跳过重计算
-          local.hasConsumers = () => BrowserWindow.getAllWindows().length > 0 || io !== null
+          // 消费者守卫：渲染进程订阅数 > 0，或外部 socket.io 观众在线时才重计算
+          local.hasConsumers = () =>
+            analysisSubscribers.size > 0 || (io?.engine?.clientsCount ?? 0) > 0
           source = local
           // 本地模式同时起一个 socket.io 服务，供外部观众订阅 analysis 帧（同端口互斥）
           server = http.createServer((_, res) => {
@@ -704,7 +624,8 @@ export function registerSignalAnalysisServer(): () => void {
     }
   )
 
-  ipcMain.handle('signalAnalysis:stop', async () => {
+  ipcMain.handle('signalAnalysis:stop', async (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     const wasRemote = source?.mode === 'remote'
     source?.stop()
     source = null
@@ -724,7 +645,8 @@ export function registerSignalAnalysisServer(): () => void {
     config: source?.getConfig() ?? persistedConfig
   }))
 
-  ipcMain.handle('signalAnalysis:setConfig', (_e, patch: unknown) => {
+  ipcMain.handle('signalAnalysis:setConfig', (e, patch: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     // 即时生效：校验 → 更新持久化配置 → 同步运行中的 source（FFT/窗等变更由前端组件自适应）
     const res = sanitizeConfigPatch(patch)
     if (!res.ok || !res.value) return { ok: false, error: res.error }
@@ -747,8 +669,31 @@ export function registerSignalAnalysisServer(): () => void {
     }
   })
 
-  ipcMain.handle('signalAnalysis:trigger', () => {
+  ipcMain.handle('signalAnalysis:trigger', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     source?.trigger()
+    return { ok: true }
+  })
+
+  // 订阅登记：只有真正有人看图时才做 60fps 的生成/FFT/IPC（按 webContents 引用计数）
+  ipcMain.handle('signalAnalysis:subscribe', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const id = e.sender.id
+    analysisSubscribers.set(id, (analysisSubscribers.get(id) ?? 0) + 1)
+    if (!analysisWatchedSenders.has(id)) {
+      analysisWatchedSenders.add(id)
+      e.sender.once('destroyed', () => {
+        analysisWatchedSenders.delete(id)
+        analysisSubscribers.delete(id)
+      })
+    }
+    return { ok: true }
+  })
+  ipcMain.handle('signalAnalysis:unsubscribe', (e) => {
+    const id = e.sender.id
+    const left = (analysisSubscribers.get(id) ?? 0) - 1
+    if (left > 0) analysisSubscribers.set(id, left)
+    else analysisSubscribers.delete(id)
     return { ok: true }
   })
 
@@ -760,6 +705,8 @@ export function registerSignalAnalysisServer(): () => void {
     ipcMain.removeHandler('signalAnalysis:getStatus')
     ipcMain.removeHandler('signalAnalysis:setConfig')
     ipcMain.removeHandler('signalAnalysis:trigger')
+    ipcMain.removeHandler('signalAnalysis:subscribe')
+    ipcMain.removeHandler('signalAnalysis:unsubscribe')
     void closeIoAndServer()
   }
 }

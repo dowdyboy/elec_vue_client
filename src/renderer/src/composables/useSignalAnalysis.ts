@@ -27,6 +27,8 @@ export interface StartResult {
   started: boolean
   alreadyRunning: boolean
   mode: 'local' | 'remote' | 'none'
+  /** 启动失败原因（不再静默吞掉） */
+  error?: string
 }
 
 export interface UseSignalAnalysis {
@@ -66,6 +68,7 @@ export function useSignalAnalysis(
   let expectRemote = false
   let disposeFrame: (() => void) | null = null
   let disposeStatus: (() => void) | null = null
+  let subscribed = false
   let lastEmptyWarnAt = 0
 
   function handleFrame(payload: unknown): void {
@@ -100,8 +103,14 @@ export function useSignalAnalysis(
   }
 
   function ensureSubscription(): void {
-    if (!disposeFrame)
+    if (!disposeFrame) {
       disposeFrame = window.api.signalAnalysis.onFrame((p: unknown) => handleFrame(p))
+      // 先挂帧监听，再向主进程登记订阅，避免第一帧漏收
+      if (!subscribed) {
+        subscribed = true
+        void window.api.signalAnalysis.subscribe?.().catch(() => {})
+      }
+    }
     if (!disposeStatus && window.api.signalAnalysis.onStatus) {
       disposeStatus = window.api.signalAnalysis.onStatus((s: unknown) =>
         handleRemoteStatus(s as RemoteLinkStatus)
@@ -129,8 +138,18 @@ export function useSignalAnalysis(
   }): Promise<StartResult> {
     const st = await getStatus()
     if (!st.running) {
-      const r = await window.api.signalAnalysis.start(o).catch(() => ({ ok: false }))
-      if (!r.ok) return { started: false, alreadyRunning: false, mode: st.mode }
+      const r = (await window.api.signalAnalysis.start(o).catch((err: unknown) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      }))) as { ok: boolean; error?: string }
+      if (!r.ok) {
+        return {
+          started: false,
+          alreadyRunning: false,
+          mode: st.mode,
+          error: r.error ?? '启动失败'
+        }
+      }
     }
     if (o?.mode === 'remote') expectRemote = true
     ensureSubscription()
@@ -156,6 +175,10 @@ export function useSignalAnalysis(
     disposeFrame = null
     disposeStatus?.()
     disposeStatus = null
+    if (subscribed) {
+      subscribed = false
+      void window.api.signalAnalysis.unsubscribe?.().catch(() => {})
+    }
     spectrumCbs.clear()
     spectrogramCbs.clear()
     iqCbs.clear()

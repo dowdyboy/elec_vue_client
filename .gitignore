@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-signal
+playground/dist
 out
 .DS_Store
 .eslintcache

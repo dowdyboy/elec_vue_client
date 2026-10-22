@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.web.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist-signal/types",
+    "composite": false,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/components/signal/**/*.ts", "src/components/signal/**/*.vue"],
+  "exclude": ["src/components/signal/**/*.test.ts", "src/components/signal/**/*.test.tsx"]
+}

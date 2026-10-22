@@ -51,15 +51,48 @@ export interface ChartStyle {
   axisWidth?: number
   /** 十字光标线颜色（悬停读数功能） */
   crosshair?: string
+  /** 触发覆盖层强调色（电平虚线/触发三角/Lv 文字/右上触发角标文字） */
+  triggerColor?: string
+  /** 单迹线图表（频谱等）主迹线颜色 */
+  traceColor?: string
+  /** 多迹线调色板（频谱；按迹线序号回绕，覆盖主题预置） */
+  tracePalette?: string[]
+}
+
+/** 宿主可覆盖的界面文案（默认中文）；未传字段用默认值，便于英文/多语言宿主 */
+export interface ChartLabels {
+  /** Y 轴标题（默认「幅度」） */
+  y?: string
+  /** X 轴标题（默认「频率」/「样本」/「时间」） */
+  x?: string
+  /** 暂停/冻结角标（IQ 默认「已暂停跟随 · 双击恢复」；频谱默认「已冻结 · 点击恢复」） */
+  paused?: string
+  /** 数据流中断角标（默认「数据流中断」） */
+  stale?: string
+  /** 画布无障碍标签（默认「IQ 时域图」/「频谱图」） */
+  aria?: string
+  /** 迹线图例文案（频谱多迹线） */
+  legend?: {
+    clear?: string
+    average?: string
+    maxHold?: string
+    minHold?: string
+  }
 }
 
 export interface ChartBaseProps {
-  width?: number
-  height?: number
+  /** 宽度：数字按 px，字符串原样（如 '100%'） */
+  width?: number | string
+  /** 高度：数字按 px，字符串原样（如 '100%'）；未传时各组件有默认高度 */
+  height?: number | string
   theme?: Theme
   decimation?: 'minmax' | 'lttb' | false
   fpsLimit?: number
   viewport?: Viewport
+  /** WebGL 上下文是否保留绘图缓冲（余辉/导出需要；默认 true。不需要余辉可设 false 降低拷贝开销） */
+  preserveDrawingBuffer?: boolean
+  /** 渲染后端：auto=优先 WebGL2、不可用回退 Canvas2D；webgl2=强制；canvas2d=强制 2D（默认 auto） */
+  renderer?: 'auto' | 'webgl2' | 'canvas2d'
 }
 
 // ── IQ ──
@@ -75,6 +108,8 @@ export interface ExportPayload {
   filename: string
   /** png：dataURL（含 data:image/png;base64, 前缀） */
   dataUrl?: string
+  /** png：Blob（exportPNGAsync / 宿主可直接持久化，避免主线程转 base64） */
+  blob?: Blob
   /** csv：UTF-8 文本 */
   text?: string
 }
@@ -82,9 +117,11 @@ export interface ExportPayload {
 export interface IqProps extends ChartBaseProps {
   mode?: 'line' | 'dots'
   lineWidth?: number
-  colors?: [string, string] // [I 颜色, Q 颜色]；未传时取主题预置，style.traceI/Q 可再覆盖
-  /** 外观覆盖项，优先级：style > colors > 主题预置 */
-  style?: ChartStyle
+  colors?: [string, string] // [I 颜色, Q 颜色]；未传时取主题预置，chartStyle.traceI/Q 可再覆盖
+  /** 外观覆盖项，优先级：chartStyle > colors > 主题预置 */
+  chartStyle?: ChartStyle
+  /** 可覆盖的界面文案（轴标题/角标等；默认中文） */
+  labels?: ChartLabels
   /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
   sampleRate?: number
   /** 启用幅度包络通道 √(I²+Q²)（第三条叠加迹线，基于金字塔 env 聚合，大窗仍 O(块数)） */
@@ -109,6 +146,15 @@ export interface IqProps extends ChartBaseProps {
   }
   /** follow 模式默认视口窗宽（样本数，≥16，默认 4096）；缩放后作为复位基准，运行时修改实时生效 */
   span?: number
+  /**
+   * 受控跟随开关（可选）：传入后由宿主控制；组件内部缩放/暂停会发 update:follow，
+   * 配合 v-model:follow 使用。未传时组件自管。
+   */
+  follow?: boolean
+  /** 环形缓冲上限（样本数，默认 2,000,000，挂载时生效）；多实例/低内存场景可调小 */
+  maxPoints?: number
+  /** 是否显示内置右键菜单（默认 true；设 false 后仍会 emit contextmenu，由宿主自绘） */
+  contextMenu?: boolean
   /**
    * 导出交付回调：提供后 PNG/CSV 完全交由宿主持久化（组件不再内置浏览器下载，
    * 含未配置目录等场景的回退也由宿主负责）；未提供时组件回退 <a download> 行为
@@ -139,15 +185,242 @@ export interface IqViewInfo {
   yMax: number
 }
 
+/** IqChart 运行统计（getStats()） */
+export interface IqStats {
+  /** 当前缓冲样本数 */
+  length: number
+  /** 已淘汰的最老样本数（绝对索引偏移） */
+  dropped: number
+  /** 绝对样本总数 = dropped + length */
+  total: number
+  /** 环形缓冲上限 */
+  maxPoints: number
+  follow: boolean
+  span: number
+  sampleRate?: number
+}
+
+/** IqChart 光标读数（cursorChange 事件载荷；移出绘图区为 null） */
+export interface IqCursorInfo {
+  px: number
+  py: number
+  /** 绝对样本索引 */
+  dataX: number
+  i: number
+  q: number
+}
+
+/** IqChart 可见窗口原始数据（getVisibleData()，返回拷贝） */
+export interface IqVisibleData {
+  i: Float32Array
+  q: Float32Array
+  /** 起始绝对样本索引 */
+  startIndex: number
+}
+
+/** IqChart appendData/setData 的帧元数据（可选） */
+export interface IqFrameMeta {
+  /** 采样率 Hz：传后组件时间轴/读数立即使用该值（优先于 sampleRate prop） */
+  sampleRate?: number
+}
+
 // ── 频谱 ──
 // 组件只吃服务端算好的「dB 幅度谱」Float32Array（长度 = fftSize/2）
 export type SpectrumInput = Float32Array
 export type SpectrumAdapter = (raw: RawInput) => SpectrumInput | null
+
+/** 频谱迹线模式：clear=实时 / average=视频平均（最近 N 帧）/ maxHold=最大保持 / minHold=最小保持 */
+export type SpectrumTraceMode = 'clear' | 'average' | 'maxHold' | 'minHold'
+
+/** 多迹线配置项（traces prop；缺省色取主题 tracePalette，索引越界回绕） */
+export interface SpectrumTraceSpec {
+  mode: SpectrumTraceMode
+  /** 图例显示名（缺省按模式显示「实时/平均(N)/最大保持/最小保持」；宿主可传 "TX1"/"REF" 等） */
+  label?: string
+  /** 缺省 true；false 时隐藏（仍在后台累计，再开启即恢复最新状态） */
+  enabled?: boolean
+  /** 覆盖该迹线颜色（优先级：本字段 > style.traceColor(首条) > 主题 tracePalette） */
+  color?: string
+  /** 显示偏移 dB（仅绘制与该迹线读数芯片；测量按原始数据，见文档） */
+  offsetDb?: number
+  /** average 模式的平均语义：power=功率(RMS)平均（默认，真机口径）/ log=对数平均 */
+  avgMode?: 'power' | 'log'
+  /** 迹线运算（不占用自身缓冲）：显示 a−b（按迹线索引；dB 域相减）；参与排序的活动迹线/自动量程将跳过运算迹线 */
+  math?: { op: 'subtract'; a: number; b: number }
+}
+
+/** 频谱检波器（抽稀时每像素桶取值方式）：minmax=双极值（默认）/ posPeak 正峰 / negPeak 负峰 / sample 采样 / rms 功率平均 / average 对数平均 */
+export type SpectrumDetector = 'minmax' | 'posPeak' | 'negPeak' | 'sample' | 'rms' | 'average'
+
+/** 深缩放样本点显示：auto=可见样本间隔 >3px 时自动 / on 强制 / off 关闭 */
+export type SpectrumDots = 'auto' | 'on' | 'off'
+
+/** 限制线顶点（freqHz 与 bin 二者其一；同时给出时优先 freqHz） */
+export interface SpectrumLimitPoint {
+  freqHz?: number
+  bin?: number
+  level: number
+}
+
+/** 限制线（折线线性插值到全 bin；type 默认 upper） */
+export interface SpectrumLimitLine {
+  points: SpectrumLimitPoint[]
+  type?: 'upper' | 'lower'
+  label?: string
+}
+
+/** 频谱幅度显示单位（内部数据为归一化 dB：0 dB = 满量程复单音；dBm 等为宿主自行校准后的口径） */
+export type SpectrumUnit = 'dBFS' | 'dBm' | 'dBuV' | 'dBmV' | 'dBW'
+
+/** 峰值表面板参数（findPeaks 的可视化封装） */
+export interface SpectrumPeakTableOpts {
+  /** 列出峰值个数（默认 6） */
+  count?: number
+  /** 绝对门限（dB 域；低于忽略，缺省无门限） */
+  thresholdDb?: number
+  /** 回落门限 dB（默认 6） */
+  excursionDb?: number
+}
+
 export interface SpectrumProps extends ChartBaseProps {
-  /** 显示用线色（处理已由服务端完成） */
+  /** 显示用线色（旧 API；优先级低于 chartStyle.traceColor，未覆盖时取主题预置） */
   lineColor?: string
+  /** 外观覆盖项（优先级：chartStyle > lineColor > 主题预置） */
+  chartStyle?: ChartStyle
+  /** 可覆盖的界面文案（轴标题/角标/图例等；默认中文） */
+  labels?: ChartLabels
+  /** 折线宽度（CSS px；>1 时 ribbon 几何展开） */
+  lineWidth?: number
+  /** 采样率 Hz（帧元数据优先；与 fftSize 一起换算频率轴，缺省时 X 轴为 bin 索引） */
+  sampleRate?: number
+  /** FFT 大小（帧元数据优先；缺省用数据长度 ×2） */
+  fftSize?: number
+  /** 数据单位（帧元数据优先）：true=dB（默认）/ false=线性幅度 */
+  dbScale?: boolean
+  /** 手动纵轴参考电平 dB（autoScale=false 时生效；默认 0） */
+  refLevel?: number
+  /** 纵轴 dB/格（autoScale=false 时生效；默认 10） */
+  scaleDiv?: number
+  /** 纵轴自动缩放（默认 true） */
+  autoScale?: boolean
+  /** 冻结/暂停（受控，支持 v-model:paused）：true 时不再合并新帧；也可调用 setPaused() */
+  paused?: boolean
+  /** 迹线模式（默认 clear） */
+  traceMode?: SpectrumTraceMode
+  /** average 模式平均帧数（1~1024，默认 16） */
+  averageCount?: number
+  /** 余辉强度 0~0.95（0=关闭） */
+  persistence?: number
+  /** 显示窗宽（bin 数；缺省/0=全带宽；≥8） */
+  span?: number
+  /** 峰值跟踪：每帧自动把标记 1 移到可见跨度最大点 */
+  peakTrack?: boolean
+  /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */
+  axis?: boolean
+  /** 底部 X 轴（频率/bin）刻度，axis 开启时生效 */
+  xAxis?: boolean
+  /** 网格线，axis 开启时生效 */
+  grid?: boolean
+  /** 轴单位标题（默认开启） */
+  axisLabels?: boolean
+  /** 多迹线配置（提供且非空时生效，覆盖 traceMode 单迹线路径；v-model:traces 可同步图例开关） */
+  traces?: SpectrumTraceSpec[]
+  /** 迹线图例（实时/平均/最大保持/最小保持）是否显示；默认 true。图例固定在顶部居中 */
+  legend?: boolean
+  /** 是否显示内置右键菜单（默认 true；设 false 后仍会 emit contextmenu，由宿主自绘） */
+  contextMenu?: boolean
+  /** 幅度显示单位（默认 dBFS；仅影响显示格式化，内部数据为归一化 dB） */
+  unit?: SpectrumUnit
+  /** 阻抗（dBµV/dBmV 换算用；默认 50） */
+  impedance?: 50 | 75
+  /** 视频带宽 VBW Hz（0/缺省=关；比例模型 α=1−VBW/RBW，VBW≥RBW 视为关。先滤波再做平均/保持） */
+  vbw?: number
+  /** 图内参数栏（四角：Ref/Scale、Center/Span、RBW/VBW；默认开启） */
+  showInfo?: boolean
+  /** 峰值表面板（默认关闭） */
+  peakTable?: boolean
+  /** 峰值表参数 */
+  peakTableOpts?: SpectrumPeakTableOpts
+  /** 标记表（右侧面板：序号/频率/电平 + Δ 行；默认关闭时用紧凑读数条） */
+  markerTable?: boolean
+  /** 检波器（默认 minmax 双极值，行为与旧版一致） */
+  detector?: SpectrumDetector
+  /** 深缩放样本点显示（默认 auto） */
+  dots?: SpectrumDots
+  /** 频率偏移 Hz（仅显示层：刻度/读数/信息栏；API 返回值仍为原始 Hz） */
+  freqOffsetHz?: number
+  /** 幅度校准偏移 dB（仅显示层：轴刻度/读数/测量芯片；测量 API 返回值仍为原始 dB） */
+  ampOffsetDb?: number
+  /** 限制线（上下限折线 + 通/失败判定，判定基于活动迹线） */
+  limitLines?: SpectrumLimitLine[]
+  /** 导出交付回调：提供后 PNG/CSV 交由宿主持久化（同 IqChart） */
+  exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: SpectrumAdapter
   data?: RawInput | SpectrumInput
+}
+
+/** 频谱测量/峰值 API 的显式 bin 区间（缺省用当前可见窗） */
+export interface SpectrumBinRange {
+  loBin?: number
+  hiBin?: number
+}
+
+/** SpectrumChart 运行统计（getStats()） */
+export interface SpectrumStats {
+  bins: number
+  fftSize?: number
+  sampleRate?: number
+  dbScale: boolean
+  paused: boolean
+  traceCount: number
+  markerCount: number
+}
+
+/** SpectrumChart 光标读数（cursorChange 事件载荷；移出绘图区为 null） */
+export interface SpectrumCursorInfo {
+  px: number
+  py: number
+  bin: number
+  /** 频率（有 sampleRate/fftSize 时） */
+  freqHz?: number
+  /** 原始 dB 值（线性显示时已转 dB） */
+  levelDb: number
+  dbScale: boolean
+}
+
+/** SpectrumChart 可见窗口活动迹线数据（getVisibleData()，返回拷贝） */
+export interface SpectrumVisibleData {
+  /** 活动迹线原始数据（dB 或线性，随 dbScale） */
+  data: Float32Array
+  startBin: number
+  endBin: number
+}
+
+/** SpectrumChart getView() 返回值 / viewportChange 事件载荷 */
+export interface SpectrumViewInfo {
+  /** 可见窗（bin 索引域） */
+  xMin: number
+  xMax: number
+  /** 纵轴（dB 或线性幅度） */
+  yMin: number
+  yMax: number
+  /** 纵轴是否自动缩放 */
+  yAuto: boolean
+  /** 频率域换算（sampleRate/fftSize 未知时为 undefined） */
+  freqMin?: number
+  freqMax?: number
+  centerHz?: number
+  spanHz?: number
+}
+
+/** 频谱运行元数据（帧元数据优先，缺省由 props 推导） */
+export interface SpectrumMeta {
+  sampleRate?: number
+  fftSize?: number
+  /** bin 宽 Hz = sampleRate/fftSize（未知时 undefined） */
+  binHz?: number
+  /** 数据单位：true=dB / false=线性幅度 */
+  dbScale: boolean
 }
 
 // ── 时频（瀑布）──

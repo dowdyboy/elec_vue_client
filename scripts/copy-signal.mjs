@@ -1,7 +1,8 @@
 /**
  * 拷贝信号组件到他项目（轻量复用，拷贝即用）
  * 用法：
- *   node scripts/copy-signal.mjs ../other-app                 # 拷贝全部 4 组件 + core
+ *   node scripts/copy-signal.mjs ../other-app                 # 组件 + core + README（不含测试）
+ *   node scripts/copy-signal.mjs ../other-app --with-tests    # 连同 *.test.ts 一起拷贝
  *   node scripts/copy-signal.mjs --list
  *   node scripts/copy-signal.mjs --help
  */
@@ -11,55 +12,74 @@ import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const root = resolve(dirname(__filename), '..')
+const args = process.argv.slice(2)
+const withTests = args.includes('--with-tests')
 
-if (process.argv.includes('--help') || process.argv.includes('-h')) {
+function isTestFile(p) {
+  return p.endsWith('.test.ts')
+}
+
+if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-用法: node scripts/copy-signal.mjs [dest]
+用法: node scripts/copy-signal.mjs [dest] [--with-tests]
 
-  [dest]  目标项目根目录（默认 ../other-app）
-  --list  列出可拷贝文件
-  --help  帮助
+  [dest]         目标项目根目录（默认 ../other-app）
+  --with-tests   连同 core/*.test.ts 一起拷贝（宿主需安装 vitest）
+  --list         列出可拷贝文件
+  --help         帮助
 
 示例:
   node scripts/copy-signal.mjs ../my-electron-app
-  node scripts/copy-signal.mjs "D:\\my-app"
+  node scripts/copy-signal.mjs "D:\\\\my-app"
+  node scripts/copy-signal.mjs ../my-app --with-tests
 `)
   process.exit(0)
 }
 
-if (process.argv.includes('--list')) {
+if (args.includes('--list')) {
   // 递归列出（含 core/ 与 composables/ 子目录）
   function walk(dir, prefix = '') {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) walk(join(dir, entry.name), prefix + entry.name + '/')
-      else console.log(' ', prefix + entry.name)
+      else if (withTests || !isTestFile(entry.name)) console.log(' ', prefix + entry.name)
     }
   }
-  console.log('可拷贝:')
+  console.log(`可拷贝${withTests ? '（含测试）' : '（不含测试）'}:`)
   walk(join(root, 'src/components/signal'))
   process.exit(0)
 }
 
-const destArg = process.argv[2] ?? '../other-app'
+const destArg = args.find((a) => !a.startsWith('--')) ?? '../other-app'
 const destRoot = resolve(root, destArg)
 
 const srcSignal = join(root, 'src/components/signal')
 const destSignal = join(destRoot, 'src/components/signal')
 
 mkdirSync(destSignal, { recursive: true })
-cpSync(srcSignal, destSignal, { recursive: true })
+cpSync(srcSignal, destSignal, {
+  recursive: true,
+  // 默认排除测试：宿主未安装 vitest 时，拷贝过去的 *.test.ts 会让 typecheck 报错
+  filter: (src) => withTests || !isTestFile(src)
+})
 
-console.log(`✓ 已拷贝: src/components/signal -> ${destSignal}`)
-console.log(`\n他项目使用:`)
-console.log(`  import IqChart from '@/components/signal/IqChart.vue'`)
-console.log(`  import SpectrumChart from '@/components/signal/SpectrumChart.vue'`)
-console.log(`  import SpectrogramChart from '@/components/signal/SpectrogramChart.vue'`)
-console.log(`  import ConstellationChart from '@/components/signal/ConstellationChart.vue'`)
-console.log(`\n示例:`)
-console.log(`  <IqChart :adapter="myAdapter" ref="iqRef" theme="dark" />`)
-console.log(`  <SpectrumChart :fft-size="2048" db-scale />`)
-console.log(`  // 流式: iqRef.value.appendData(rawFromBackend)`)
 console.log(
-  `\n适配器见 src/components/signal/core/adapters.ts（passthrough/jsonInterleaved/arrayBuffer/base64）`
+  `✓ 已拷贝: src/components/signal -> ${destSignal}${withTests ? '（含测试）' : '（不含测试）'}`
 )
-console.log(`主题: props theme="light" | "dark" | "auto"（组件自带，无需 NaiveUI）`)
+console.log(`\n他项目使用（推荐公共入口）:`)
+console.log(
+  `  import { IqChart, SpectrumChart, iqAdapters, spectrumAdapters } from '@/components/signal'`
+)
+console.log(
+  `  // 或全局注册: import SignalCharts from '@/components/signal'; app.use(SignalCharts)`
+)
+console.log(`\n示例:`)
+console.log(`  <IqChart :adapter="iqAdapters.int16Interleaved" height="100%" />`)
+console.log(`  <SpectrumChart :traces="[{ mode: 'clear', label: 'TX1' }]" />`)
+console.log(`  iqRef.value?.appendData(rawFromBackend, { sampleRate: 1_000_000 })`)
+console.log(
+  `  specRef.value?.appendData(raw, { sampleRate: 1_000_000, fftSize: 4096, dbScale: true })`
+)
+console.log(`\n数据格式/适配器/props/事件/方法见 src/components/signal/README.md`)
+console.log(
+  `外观覆盖用 chart-style（不要用原生 style 传主题字段）；尺寸支持 number | '100%' 等字符串`
+)

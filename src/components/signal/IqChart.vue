@@ -1,11 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * IqChart（可复制，零依赖，自带主题，高性能）
  * 复用：拷本文件 + core/* + composables/useGlChart.ts 到他项目即可
  * 数据：经 adapter 自转 RawInput → IqNormalized（见 core/adapters.ts）
  * 渲染：WebGL2 折线 + Canvas2D 轴层覆盖，主线程仅 rAF
  * 交互：滚轮=X 轴缩放（光标锚点）· Shift+滚轮=Y 轴缩放 · 拖拽=平移 · 双击/角标=复位跟随
- * 外观：theme 预置（light/dark/auto/spectrum 频谱仪黑底黄迹）+ style 字段级覆盖
+ * 外观：theme 预置（light/dark/auto/spectrum 频谱仪黑底黄迹）+ chartStyle 字段级覆盖
  */
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import {
@@ -18,6 +18,7 @@ import {
   type BlitRenderer,
   type LineRenderer
 } from './core/gl'
+import { createCanvasLineRenderer } from './core/canvasRenderer'
 import { iqAdapters } from './core/adapters'
 import {
   drawAxisOverlay,
@@ -29,11 +30,23 @@ import {
   type PlotRect
 } from './core/axis'
 import { MinMaxPyramid, PYRAMID_BLOCK, type RangeStats } from './core/pyramid'
-import { TriggerEngine, type TriggerConfig } from './core/trigger'
+import { TriggerEngine, triggerRightNeed, type TriggerConfig } from './core/trigger'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
-import type { ExportPayload, IqProps, IqNormalized, IqViewInfo, Theme } from './core/types'
+import { cssSize } from './core/css'
+import type {
+  ExportPayload,
+  IqCursorInfo,
+  IqProps,
+  IqNormalized,
+  IqViewInfo,
+  IqStats,
+  IqVisibleData,
+  IqFrameMeta,
+  Theme
+} from './core/types'
 import { useGlChart } from './composables/useGlChart'
+import { usePrefersDark } from './composables/usePrefersDark'
 
 const props = withDefaults(defineProps<IqProps>(), {
   theme: 'auto' as Theme,
@@ -48,7 +61,12 @@ const props = withDefaults(defineProps<IqProps>(), {
   axis: true,
   xAxis: true,
   grid: true,
-  axisLabels: true
+  axisLabels: true,
+  // 注意：Vue 会把「未传的 Boolean prop」转为 false；follow 需要三态（未传=组件自管），
+  // 必须显式 default undefined，否则组件会默认进入暂停态
+  follow: undefined,
+  preserveDrawingBuffer: true,
+  contextMenu: true
 })
 
 const emit = defineEmits<{
@@ -56,7 +74,29 @@ const emit = defineEmits<{
   (e: 'viewportChange', v: IqViewInfo): void
   (e: 'exported', p: { kind: 'png' | 'csv'; filename: string }): void
   (e: 'update:span', span: number): void
+  (e: 'update:follow', v: boolean): void
+  (e: 'ready'): void
+  (e: 'contextLost'): void
+  (e: 'contextRestored'): void
+  (e: 'contextmenu', p: { x: number; y: number; dataX: number }): void
+  (e: 'cursorChange', p: IqCursorInfo | null): void
+  (e: 'errorDetail', p: { code: 'adapter' | 'webgl' | 'data' | 'export'; message: string }): void
 }>()
+
+/** 兼容旧 error(string)，同时提供带 code 的 errorDetail */
+function reportError(code: 'adapter' | 'webgl' | 'data' | 'export', message: string): void {
+  emit('error', message)
+  emit('errorDetail', { code, message })
+}
+
+/** 不依赖 Vite 的 DEV 判断（非 Vite 宿主也能安全运行） */
+const IS_DEV = (() => {
+  try {
+    return Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV)
+  } catch {
+    return false
+  }
+})()
 
 const rootRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -96,13 +136,63 @@ let levelDrag = false // 电平线拖拽中
 // 单 canvas 双 program 也可，此处双 renderer 简化（Q 用第二 canvas 叠加或同一 GL 分两 draw）
 // 为拷贝轻量：复用同一 canvas，绘制 I 后再绘制 Q（同一 GL 上下文分两次 draw）
 let gl: WebGL2RenderingContext | null = null
+// Canvas2D 降级后端（WebGL2 不可用/显式 renderer:'canvas2d'）
+let ctx2d: CanvasRenderingContext2D | null = null
+// WebGL 上下文丢失（GPU 重置/驱动崩溃）：丢失期间停止绘制；恢复事件到达后重建 renderer
+let contextLost = false
 
-// 主题解析：style 覆盖 > colors 迹线对 > 预置；spectrum 为固定观感不随系统切换
-const prefersDark = computed(
-  () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
-)
+/** 背景清屏：GL 用 clear，Canvas2D 用 fillRect（设备像素空间） */
+function clearBackground(): void {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const bg = hexToRgba(th.value.bg)
+  if (gl) {
+    gl.clearColor(bg[0], bg[1], bg[2], 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  } else if (ctx2d) {
+    ctx2d.save()
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+    ctx2d.fillStyle = th.value.bg
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height)
+    ctx2d.restore()
+  }
+}
+
+/** 余辉淡出：GL 用全屏混合四边形，Canvas2D 用低 alpha 背景覆盖 */
+function fadeBackground(alpha: number): void {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const bg = hexToRgba(th.value.bg)
+  if (gl && fadeRenderer) {
+    fadeRenderer.draw([bg[0], bg[1], bg[2], alpha])
+  } else if (ctx2d) {
+    ctx2d.save()
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+    ctx2d.globalAlpha = Math.min(1, Math.max(0, alpha))
+    ctx2d.fillStyle = th.value.bg
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height)
+    ctx2d.restore()
+  }
+}
+
+/** 尺寸重建后的冻结帧回填 */
+function restoreSnapshot(): void {
+  const canvas = canvasRef.value
+  if (!canvas || !persistSnapshot) return
+  if (blitRenderer && gl) {
+    blitRenderer.draw(persistSnapshot)
+  } else if (ctx2d) {
+    ctx2d.save()
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+    ctx2d.drawImage(persistSnapshot, 0, 0, canvas.width, canvas.height)
+    ctx2d.restore()
+  }
+}
+
+// 主题解析：chartStyle 覆盖 > colors 迹线对 > 预置；spectrum 为固定观感不随系统切换
+const prefersDark = usePrefersDark()
 const th = computed(() =>
-  resolveTheme(props.theme, prefersDark.value, { colors: props.colors, style: props.style })
+  resolveTheme(props.theme, prefersDark.value, { colors: props.colors, style: props.chartStyle })
 )
 
 // ── 布局常量（CSS px）──
@@ -111,13 +201,16 @@ const PAD_X = 24 // 波形左右内缩留白：避免满幅波形的左/右边�
 const MIN_SPAN = 16 // 最小可见样本数
 const DEFAULT_SPAN = 4096 // follow 模式默认窗宽（须明显大于单帧点数）
 const ZOOM_FACTOR = 1.2 // 每次滚轮缩放系数
+const WEBGL2_UNSUPPORTED_MSG = '当前环境不支持 WebGL2/Canvas2D，IQ 图无法渲染'
 
-// ── 数据缓冲（线性增长 + 环形丢老，保留最近 MAX_POINTS）──
-const MAX_POINTS = 2_000_000
+// ── 数据缓冲（线性增长 + 环形丢老，保留最近 maxPoints）──
+// 挂载时生效；宿主可调小以降低内存（2M 双缓冲 + 金字塔约 25~40MB）
+const requestedMaxPoints = Number.isFinite(props.maxPoints) ? Number(props.maxPoints) : 2_000_000
+const maxPoints = Math.max(1024, Math.floor(requestedMaxPoints))
 // 环形淘汰后保留的样本数（见 compact 调用）；follow/free-run 有效窗宽须 ≤ 该值，
 // 否则窗口左缘钳到 dropped、淘汰推进时产生可见跳变
-const RING_KEEP = Math.floor(MAX_POINTS * 0.9)
-const MAX_FOLLOW_SPAN = RING_KEEP
+const ringKeep = Math.floor(maxPoints * 0.9)
+const maxFollowSpan = ringKeep
 let iBuf = new Float32Array(0)
 let qBuf = new Float32Array(0)
 let dataLen = 0
@@ -125,15 +218,41 @@ let dataLen = 0
 // 视口用绝对索引表达，冻结视图不受环形丢数据影响
 let dropped = 0
 // 极值金字塔：区间极值/按桶抽稀 O(块数) 替代每帧全量扫描；结构变化后需整树重建
-const pyr = new MinMaxPyramid(MAX_POINTS)
+const pyr = new MinMaxPyramid(maxPoints)
 let pyrDirty = true
 
+// 采样率：appendData/setData 的 meta 优先，其次 sampleRate prop（时间轴/读数共用）
+const frameSampleRate = ref<number | undefined>(undefined)
+const effectiveSampleRate = computed(() => frameSampleRate.value ?? props.sampleRate)
+
 // rAF 调度（提前声明：触发 watch immediate 回调依赖 schedule）
+// 统一经此处节流：数据推送 / 交互 / 尺寸变化的所有重绘都受 fpsLimit 约束
 let raf = 0
+let lastDrawAt = 0
+// 离屏/销毁时暂停重绘：数据仍入缓冲，恢复可见后由 IntersectionObserver 触发一次
+let visible = true
+let disposed = false
+let io: IntersectionObserver | null = null
+// useGlChart 的 resize（setup 结束后赋值）：每帧校准画布 CSS/backing 与容器、实时 DPR 一致。
+// RO/DPR 事件在页面缩放/布局时序下可能漏触发，显式像素 style 一旦滞后会让
+// GL 层（clientWidth）与 overlay 层（容器宽度）参考系差出比例（曾导致导出轴层只覆盖左侧）
+let glChartResize: (() => void) | null = null
 function schedule(): void {
   if (raf) return
-  raf = requestAnimationFrame(() => {
+  if (disposed || !visible) return
+  // SSR / 无 rAF 环境直接跳过（组件渲染依赖浏览器）
+  if (typeof requestAnimationFrame === 'undefined') return
+  raf = requestAnimationFrame((now) => {
     raf = 0
+    glChartResize?.() // 内部带变化守卫：稳定时仅读尺寸、零写入
+    // 1ms 容差：rAF 间隔与 1000/fpsLimit 在浮点/显示刷新率边界上可能微差，
+    // 无容差会把 60Hz 显示器上的 60fps 限制误判为不满足而隔帧绘制（实际掉到 30fps）
+    const minInterval = 1000 / Math.max(1, props.fpsLimit) - 1
+    if (now - lastDrawAt < minInterval) {
+      schedule()
+      return
+    }
+    lastDrawAt = now
     draw()
   })
 }
@@ -159,15 +278,22 @@ let triggerCfg: IqTriggerCfg = {
 /** 触发对齐的显示窗（绝对索引域）。
  *  触发点须锚定在屏上 preTrigger 比例处——若窗口右端超出当前数据（total）被钳制，
  *  触发点会被推到窗口右缘（偏离屏位）；故右侧数据未到位时返回 null，等待数据到达后再渲染对齐帧。
- *  窗宽同时封顶到环形缓冲保留容量（RING_KEEP），避免过大窗宽左侧被淘汰钳制 */
+ *  窗宽同时封顶到环形缓冲保留容量（ringKeep），避免过大窗宽左侧被淘汰钳制 */
 function triggerViewWindow(span: number): { min: number; max: number } | null {
   const c = triggerCfg
   if (!c.enabled || triggerEng.state.lastTriggerAbs < 0) return null
-  const spanC = Math.min(span, MAX_FOLLOW_SPAN)
+  const spanC = Math.min(span, maxFollowSpan)
   const min = triggerEng.state.lastTriggerAbs - Math.floor(c.preTrigger * spanC)
   const max = min + spanC
   if (max > totalAbs()) return null // 右侧数据未到位：等待，不渲染错位帧
   return { min: Math.max(dropped, min), max }
+}
+/** auto/normal：待渲染触发点右侧数据补齐后提升为 lastTriggerAbs（此后才渲染对齐帧/冻结） */
+function promotePendingIfReady(): void {
+  const p = triggerEng.state.pendingAbs
+  if (p < 0) return
+  const need = triggerRightNeed(triggerCfg.preTrigger, Math.min(view.span, maxFollowSpan))
+  if (p + need <= totalAbs()) triggerEng.promote()
 }
 /** 外部/内部刷新 trigger 配置 */
 function syncTriggerCfg(): void {
@@ -216,7 +342,7 @@ function totalAbs(): number {
 
 function ensureCapacity(n: number): void {
   if (iBuf.length >= n) return
-  const next = Math.min(MAX_POINTS, Math.max(n, iBuf.length ? iBuf.length * 2 : 4096))
+  const next = Math.min(maxPoints, Math.max(n, iBuf.length ? iBuf.length * 2 : 4096))
   const ni = new Float32Array(next)
   const nq = new Float32Array(next)
   ni.set(iBuf.subarray(0, dataLen))
@@ -236,6 +362,7 @@ function compact(keep: number): number {
   return evicted
 }
 
+let adapterErrored = false
 function normalize(raw: unknown): IqNormalized | null {
   const fn = props.adapter ?? iqAdapters.passthrough
   try {
@@ -248,26 +375,26 @@ function normalize(raw: unknown): IqNormalized | null {
     }
     return v
   } catch (e) {
-    emit('error', e instanceof Error ? e.message : String(e))
+    adapterErrored = true
+    reportError('adapter', e instanceof Error ? e.message : String(e))
     return null
   }
 }
 
 function pushNormalized(n: IqNormalized): void {
-  // 完全暂停：冻结（非跟随）期间在入口丢弃新帧——
-  // 缓冲零增长、环形淘汰永不发生，冻结窗内容像素级静止；恢复跟随（zoomReset）后自动继续接收
-  if (!view.follow) return
+  // 暂停（非跟随）期间仍持续入缓冲与触发检测：不丢样本，恢复跟随后无缝续接；
+  // 缓冲满后环形淘汰会继续推进——冻结窗被淘汰时由 resolveXRange 锚定最老可用数据滑动
   const prevLen = dataLen
   // 金字塔已同步到的长度（追加样本先增量同步，淘汰时 compactShift 平移）
   let pyrStart = prevLen
   // 触发扫描起点（淘汰会使新样本前移：淘汰量累计扣除）
   let trigStart = prevLen
   const appendSample = (i: number, q: number): void => {
-    if (dataLen >= MAX_POINTS) {
+    if (dataLen >= maxPoints) {
       // 先把本帧已追加样本同步进金字塔（compactShift 要求金字塔与淘汰前数据一致）
       if (dataLen > pyrStart) pyr.appendRange(iBuf, qBuf, pyrStart, dataLen)
       // 淘汰量取 PYRAMID_BLOCK 整数倍：保留数据与金字塔块对齐，可增量平移避免整树重建（~38ms）
-      const ev = Math.ceil((dataLen - RING_KEEP) / PYRAMID_BLOCK) * PYRAMID_BLOCK
+      const ev = Math.ceil((dataLen - ringKeep) / PYRAMID_BLOCK) * PYRAMID_BLOCK
       const newLen = dataLen - ev
       compact(newLen)
       pyr.compactShift(newLen, ev)
@@ -275,8 +402,9 @@ function pushNormalized(n: IqNormalized): void {
       pyrStart = newLen
       trigStart -= ev
     }
-    iBuf[dataLen] = i
-    qBuf[dataLen] = q
+    // 真实硬件/解码异常可能产生 NaN/Inf：入口清洗为 0，避免金字塔 min/max 与 GL 被污染
+    iBuf[dataLen] = Number.isFinite(i) ? i : 0
+    qBuf[dataLen] = Number.isFinite(q) ? q : 0
     dataLen++
   }
   if (n instanceof Float32Array) {
@@ -300,8 +428,9 @@ function pushNormalized(n: IqNormalized): void {
   if (triggerCfg.enabled) {
     const src = triggerCfg.source === 'i' ? iBuf : qBuf
     triggerEng.feed(triggerCfg, src, trigStart, dataLen, dropped)
+    promotePendingIfReady()
   }
-  lastDataAt = performance.now() // 实际入缓冲才刷新（暂停态丢弃的帧不计）
+  lastDataAt = performance.now() // 实际入缓冲才刷新（数据流中断角标依据）
   schedule()
 }
 
@@ -316,6 +445,9 @@ const view = reactive({
   yMin: -1,
   yMax: 1
 })
+// 暂停（双击/角标）时的 Y 显示范围冻结：仅作显示层覆盖，不改 yAuto 语义——
+// 恢复跟随后自动继续自动、手动保持手动（避免双击恢复重置用户手动缩放的 Y）
+let pausedY: { min: number; max: number } | null = null
 
 // 调用方运行时修改窗宽：跟随状态下立即生效并重绘
 watch(
@@ -355,12 +487,33 @@ watch(
 )
 
 // 外观配置变化：重绘（静态数据下也能立即看到切换效果）
-watch([() => props.theme, () => props.style], () => schedule(), { deep: true })
+watch([() => props.theme, () => props.chartStyle], () => schedule(), { deep: true })
 // 余辉强度变化：立即重绘（暂停态下拖滑块也能实时看到拖影变化）
 watch(
   () => props.persistence,
   () => schedule()
 )
+// 其余外观/数据语义 props：任一变化都重绘（暂停/冻结态下切换同样即时生效，不必等下一帧数据）
+watch(
+  [
+    () => props.colors,
+    () => props.envelope,
+    () => props.mode,
+    () => props.lineWidth,
+    () => props.decimation,
+    () => props.axis,
+    () => props.xAxis,
+    () => props.grid,
+    () => props.axisLabels,
+    () => props.sampleRate
+  ],
+  () => schedule(),
+  { deep: true }
+)
+// auto 主题：系统深浅色切换时重绘波形层（DOM 浮层随响应式自动更新，画布需主动重绘）
+watch(prefersDark, () => {
+  if (props.theme === 'auto') schedule()
+})
 
 /** 冻结 X 视口并钳制到可保留范围 [dropped, total]，保持窗宽 */
 function setFrozenX(min: number, max: number): void {
@@ -391,9 +544,9 @@ function emitSpanChange(immediate = false): void {
 
 function resolveXRange(): { min: number; max: number } {
   const total = totalAbs()
-  // follow/free-run 有效窗宽：封顶到环形缓冲保留容量（RING_KEEP），
+  // follow/free-run 有效窗宽：封顶到环形缓冲保留容量（ringKeep），
   // 避免窗口左缘钳到 dropped 后随淘汰推进产生可见跳变
-  const followSpan = Math.min(view.span, Math.max(MIN_SPAN, total), MAX_FOLLOW_SPAN)
+  const followSpan = Math.min(view.span, Math.max(MIN_SPAN, total), maxFollowSpan)
   // auto 模式：触发失联超时 → 回退自由滚动（free-run），防死屏
   const autoStale =
     triggerCfg.mode === 'auto' &&
@@ -431,8 +584,10 @@ function resolveXRange(): { min: number; max: number } {
 }
 
 // ── 自动 Y 轴平滑（即时扩张 / 慢速收缩）──
-// 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；见 core/yauto.ts
-const yAuto = new YAutoScaler()
+// 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；见 core/yauto.ts。
+// 稳定参数：换档滞回 + 收窄驻留 + 更慢收缩——抑制随机调制信号（QAM 过冲）极值在档位边界
+// 附近的逐帧翻转抖动；扩张仍即时保证不裁切
+const yAuto = new YAutoScaler({ hysteresis: 0.25, holdFrames: 60, shrinkRelease: 0.05 })
 
 /** 可见窗口真实极值（尊重图例显隐通道）；无效返回 null */
 function computeVisibleMM(s: number, e: number): { min: number; max: number } | null {
@@ -449,7 +604,9 @@ function computeVisibleMM(s: number, e: number): { min: number; max: number } | 
     if (mm.minQ < mn) mn = mm.minQ
     if (mm.maxQ > mx) mx = mm.maxQ
   }
-  if (traceVisible.env) {
+  // 包络只有在 envelope 开启且图例未隐藏时才参与自动量程；
+  // 否则 √(I²+Q²) 会悄悄把 Y 量程撑大（最大 √2 倍），而屏幕上根本看不到这条迹线
+  if (props.envelope && traceVisible.env) {
     if (mm.envMin < mn) mn = mm.envMin
     if (mm.envMax > mx) mx = mm.envMax
   }
@@ -463,6 +620,8 @@ function resetYAuto(): void {
 }
 
 function resolveYRange(s: number, e: number): { min: number; max: number } {
+  // 暂停时的 Y 冻结（仅自动模式；手动由 yMin/yMax 决定）：显示层覆盖，不改 yAuto 语义
+  if (!view.follow && view.yAuto && pausedY) return { min: pausedY.min, max: pausedY.max }
   if (!view.yAuto) return { min: view.yMin, max: view.yMax }
   const mm = computeVisibleMM(s, e)
   if (!mm) return { min: -1, max: 1 }
@@ -500,6 +659,9 @@ let lastXrReal: { min: number; max: number } | null = null
 
 // 十字光标状态：绘图区内悬停位置；null=不显示
 let cursor: { px: number; py: number } | null = null
+// 鼠标是否悬停本实例：键盘快捷键只作用于悬停中的图表（多实例不抢键）
+let hovered = false
+const focused = ref(false)
 
 // Shift+拖拽框选状态：像素坐标矩形；null=未框选
 let boxSel: { x0: number; y0: number; x1: number; y1: number } | null = null
@@ -518,7 +680,12 @@ const MARKER_HIT_PX = 6
 // 右键菜单状态
 const menu = reactive({ show: false, x: 0, y: 0, hitIdx: -1, dataX: 0 })
 
-/** 标记绝对索引 → 当前显示域像素 x */
+/**
+ * 标记绝对索引 → 当前显示域像素 x。
+ * 注意：lastView.xRange 是「显示域」（真实窗口两侧外扩了 PAD），
+ * 因此按整幅 plot.w 映射与波形（按真实窗口 + 内缩绘制）是等价变换，
+ * 不要再叠加一次 PAD_X，否则会重复内缩导致标记线偏移。
+ */
 function markerPx(c: number): number {
   if (!lastView) return Number.NaN
   const { plot, xRange } = lastView
@@ -539,6 +706,27 @@ function addMarkerAt(dispX: number): void {
   schedule()
 }
 
+// ── 程序化标记 API（宿主自动化/报告用；不限制跟随态）──
+function addMarker(index: number): boolean {
+  const i = Math.round(index)
+  if (!Number.isFinite(i)) return false
+  markers.push(i)
+  schedule()
+  return true
+}
+function setMarkers(list: number[]): void {
+  markers = list.filter((v) => Number.isFinite(v)).map((v) => Math.round(v))
+  markerDrag = -1
+  schedule()
+}
+function removeMarker(i: number): boolean {
+  if (!Number.isInteger(i) || i < 0 || i >= markers.length) return false
+  markers.splice(i, 1)
+  markerDrag = -1
+  schedule()
+  return true
+}
+
 /** 右键菜单：按点击位置与命中状态构建动作集 */
 function onContextMenu(evt: MouseEvent): void {
   evt.preventDefault()
@@ -551,6 +739,8 @@ function onContextMenu(evt: MouseEvent): void {
   menu.y = Math.min(Math.max(4, py), Math.max(4, rr.height - 150))
   menu.hitIdx = markerHit(px)
   menu.dataX = pxToDataX(px)
+  emit('contextmenu', { x: px, y: py, dataX: menu.dataX })
+  if (props.contextMenu === false) return
   menu.show = true
   schedule()
 }
@@ -571,7 +761,8 @@ function menuAction(act: 'add' | 'remove' | 'clear' | 'toggle'): void {
 
 function draw(): void {
   const canvas = canvasRef.value
-  if (!canvas || !gl || !renderer) return
+  if (!canvas || !renderer || (!gl && !ctx2d) || contextLost) return
+  promotePendingIfReady() // 待渲染触发点右侧数据补齐 → 提升后本帧即可渲染对齐窗
   const xr = resolveXRange()
   // 绝对索引 → 缓冲下标
   const s = Math.max(0, Math.floor(xr.min) - dropped)
@@ -585,10 +776,9 @@ function draw(): void {
   // - 流式跟随：每帧淡出合成（旧迹线逐帧衰减、持续累积）
   // - 暂停且视口未变：不淡出不清理 → 绘图缓冲冻结，余辉停留在暂停瞬间（不随重绘衰减）
   // - 暂停后缩放/平移（视口已变）：旧内容与新视口错位 → 清屏重绘
-  gl.disable(gl.SCISSOR_TEST)
-  const bgRgb = hexToRgba(th.value.bg)
+  gl?.disable(gl.SCISSOR_TEST)
   const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
-  const fading = persist > 0 && fadeRenderer !== null
+  const fading = persist > 0 && (fadeRenderer !== null || ctx2d !== null)
   // 触发状态角标：single=等待触发/已捕获；normal=定格显示触发窗→触发锁定/无触发滚动→等待触发；
   // auto=有触发且未失联→触发锁定/触发失联或无触发→等待触发（free-run）
   const autoStale =
@@ -625,13 +815,20 @@ function draw(): void {
       (triggerCfg.mode === 'auto' && !autoStale))
   if (trigFrozen) {
     // 冻结：不重绘 GL 波形缓冲（保留捕获画面，余辉/拖影不衰减），
-    // 但 overlay 仍每帧重绘——十字光标/标记/电平线/框选继续跟随交互（不随冻结停滞）
-    if (lastView) drawOverlay(lastView.xRange, lastView.yRange, lastView.plot)
+    // 但 overlay 仍每帧重绘——十字光标/标记/电平线/框选继续跟随交互（不随冻结停滞）。
+    // 缓冲持续摄入导致 dropped 推进时，刷新 slice 使悬停采样读数仍指向正确本地下标
+    if (lastView) {
+      const rr = lastXrReal ?? { min: lastView.xRange.min, max: lastView.xRange.max }
+      const fs = Math.max(0, Math.floor(rr.min) - dropped)
+      const fe = Math.min(dataLen, Math.ceil(rr.max) - dropped)
+      lastView.slice = { s: fs, e: Math.max(fs, fe) }
+      drawOverlay(lastView.xRange, lastView.yRange, lastView.plot)
+    }
     return
   }
   // 画布被重建（窗口尺寸变化等）后：先用冻结态快照回填，余辉像素不丢失
-  if (needsRestore && persistSnapshot && blitRenderer) {
-    blitRenderer.draw(persistSnapshot)
+  if (needsRestore && persistSnapshot && (blitRenderer || ctx2d)) {
+    restoreSnapshot()
     needsRestore = false
   }
   // 视口比较用「真实窗」与「上一帧真实窗」（lastView.xRange 是带留白外扩的显示域，不可直接比较）
@@ -643,12 +840,11 @@ function draw(): void {
     yr.min !== lastView.yRange.min ||
     yr.max !== lastView.yRange.max
   lastXrReal = { min: xr.min, max: xr.max }
-  const fade = (a: number): void => fadeRenderer!.draw([bgRgb[0], bgRgb[1], bgRgb[2], a])
+  const fade = (a: number): void => fadeBackground(a)
   if (trigNew) {
     // 触发对齐渲染帧：清屏 + 不透明直写，干净定格（渲染完成后冻结）
     fadeOutFrames = 0
-    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
-    gl.clear(gl.COLOR_BUFFER_BIT)
+    clearBackground()
   } else if (fading && view.follow) {
     fadeOutFrames = 0
     persistSnapshot = null // 跟随态快照无意义，回填需求作废
@@ -664,19 +860,16 @@ function draw(): void {
       fade(FADE_OUT_ALPHA)
       fadeOutFrames--
       if (fadeOutFrames === 0) {
-        gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
-        gl.clear(gl.COLOR_BUFFER_BIT)
+        clearBackground()
       }
     }
   } else {
-    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
-    gl.clear(gl.COLOR_BUFFER_BIT)
+    clearBackground()
   }
   if (len <= 0) {
     // 无数据：强制完全清屏（余辉残影不保留）
     fadeOutFrames = 0
-    gl.clearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1)
-    gl.clear(gl.COLOR_BUFFER_BIT)
+    clearBackground()
     lastView = null
     clearOverlay()
     if (dataStale.value) dataStale.value = false
@@ -711,8 +904,9 @@ function draw(): void {
   // 冻结稳定态：迹线不透明直写（幂等重绘）——半透明混合重复叠加会逐次变亮（Alt 循环下可见）
   // 触发对齐渲染帧亦不透明直写（干净定格触发画面）
   const opaque = trigNew || (fading && !view.follow && !viewChanged && fadeOutFrames === 0)
-  // mode:'dots' 时间域散点；点径随 lineWidth
+  // mode:'dots' 时间域散点；点径随 lineWidth；line 模式下 lineWidth>1 走 ribbon 粗线
   const pt = props.mode === 'dots' ? Math.max(1, Math.round(2 * (props.lineWidth || 1))) : 0
+  const lw = Math.max(1, props.lineWidth || 1)
   // 绘制 I（背景已自绘，不再清屏；限制在绘图区；微透明让网格透出）
   if (traceVisible.i) {
     renderer.setData(iDec)
@@ -722,7 +916,8 @@ function draw(): void {
       false,
       plot,
       opaque,
-      pt
+      pt,
+      lw
     )
   }
   // 绘制 Q（叠加，不再清空）
@@ -734,7 +929,8 @@ function draw(): void {
       false,
       plot,
       opaque,
-      pt
+      pt,
+      lw
     )
   }
   // 绘制幅度包络 √(I²+Q²)（第三条叠加迹线；金字塔 env 聚合，大窗仍 O(块数)）
@@ -752,7 +948,10 @@ function draw(): void {
       withAlpha(th.value.envColor, opaque ? 1 : th.value.traceAlpha * 0.8),
       false,
       plot,
-      opaque
+      opaque,
+      // 与 I/Q 保持一致：dots 模式下包络也画散点（pt=0 会退回折线）
+      pt,
+      lw
     )
   }
   drawOverlay(xrView, yr, plot)
@@ -774,6 +973,10 @@ function draw(): void {
   if (trigNew) lastShownTriggerKey = trigKey
 }
 
+// overlay 尺寸漂移诊断：dev 下首次检测到与 GL backing / CSS 宽度不一致时告警
+let overlaySizeWarned = false
+let overlayScaleWarned = false
+
 // ── 坐标轴覆盖层 ──
 function drawOverlay(
   xv: { min: number; max: number },
@@ -782,20 +985,46 @@ function drawOverlay(
 ): void {
   const ov = overlayRef.value
   if (!ov || !props.axis) return
+  // 自愈：overlay backing 必须与 GL backing 一致——否则轴层以 CSS 分辨率绘制，
+  // 屏幕上看似完整（元素按 CSS 尺寸显示小 buffer），导出 1:1 合成时只覆盖左上角
+  const glC = canvasRef.value
+  if (glC && (ov.width !== glC.width || ov.height !== glC.height)) {
+    if (IS_DEV && !overlaySizeWarned) {
+      overlaySizeWarned = true
+      console.warn('[IqChart] overlay 尺寸与 GL 画布不一致，已自动同步', {
+        overlay: [ov.width, ov.height],
+        gl: [glC.width, glC.height],
+        dpr: window.devicePixelRatio
+      })
+    }
+    ov.width = glC.width
+    ov.height = glC.height
+  }
   const ctx = ov.getContext('2d')
   if (!ctx) return
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, ov.width, ov.height)
-  // 真实比例映射：背板设备像素 ÷ 元素当前 CSS 实测尺寸。
-  // 不信任全局 DPR 缓存——页面缩放/系统非整数缩放/监听时序差下，
-  // overlay 全部绘制仍与鼠标位置严格贴合（修复「越远越偏」的比例错位）
+  // 映射基准 = overlay 自身显示盒（bitmap ÷ CSS 尺寸）。canvas 是 replaced element，
+  // 仅靠 absolute+inset:0 不会被拉伸（按固有尺寸=bitmap 宽显示）；样式区已显式
+  // width/height:100%，使其与 GL 画布拉伸到同一布局盒，故该比例与 GL 的
+  // canvas.width/clientWidth 一致（两层同一换算，光标/标记与鼠标严格对齐）
   const rect = ov.getBoundingClientRect()
-  const sx = ov.width / Math.max(1, rect.width)
-  const sy = ov.height / Math.max(1, rect.height)
+  const refW = ov.clientWidth || rect.width
+  const refH = ov.clientHeight || rect.height
+  if (IS_DEV && !overlayScaleWarned && glC && Math.abs(refW - glC.clientWidth) > 1) {
+    overlayScaleWarned = true
+    console.warn('[IqChart] overlay 与 GL 画布 CSS 宽度不一致', {
+      overlayClientW: refW,
+      glClientW: glC.clientWidth,
+      dpr: window.devicePixelRatio
+    })
+  }
+  const sx = ov.width / Math.max(1, refW)
+  const sy = ov.height / Math.max(1, refH)
   ctx.setTransform(sx, 0, 0, sy, 0, 0)
   const t = th.value
   // X 轴时间单位（sampleRate > 0）：刻度值仍为样本索引域，标签换算为时间
-  const rate = props.sampleRate
+  const rate = effectiveSampleRate.value
   const timeOn = !!rate && rate > 0
   const tStep = timeOn ? (xv.max - xv.min) / (rate as number) / 6 : 0
   const xTicksOverride = buildTimeTicks(xv.min, xv.max)
@@ -831,7 +1060,7 @@ function drawOverlay(
     ctx.textBaseline = 'middle'
     ctx.translate(plot.x + 8, plot.y + 12)
     ctx.rotate(-Math.PI / 2)
-    ctx.fillText('幅度', 0, 0)
+    ctx.fillText(props.labels?.y ?? '幅度', 0, 0)
     ctx.restore()
     // X：单位于绘图区右下角（时间/样本随 sampleRate）
     ctx.save()
@@ -840,7 +1069,11 @@ function drawOverlay(
     ctx.globalAlpha = 0.55
     ctx.textAlign = 'right'
     ctx.textBaseline = 'bottom'
-    ctx.fillText(timeOn ? '时间' : '样本', plot.x + plot.w - 6, plot.y + plot.h - 6)
+    ctx.fillText(
+      props.labels?.x ?? (timeOn ? '时间' : '样本'),
+      plot.x + plot.w - 6,
+      plot.y + plot.h - 6
+    )
     ctx.restore()
   }
 
@@ -853,7 +1086,7 @@ function drawOverlay(
         : plot.y + plot.h
     if (ly >= plot.y - 2 && ly <= plot.y + plot.h + 2) {
       ctx.save()
-      ctx.strokeStyle = t.zeroLine ?? t.text
+      ctx.strokeStyle = t.triggerColor
       ctx.setLineDash([6, 4])
       ctx.lineWidth = 1
       ctx.beginPath()
@@ -870,7 +1103,7 @@ function drawOverlay(
         Math.max(Math.round(ly) - CHIP_H / 2, plot.y + 2),
         plot.y + plot.h - CHIP_H - 2
       )
-      drawChip(ctx, plot.x + plot.w - 64, lvChipY, lvLbl, t.labelChipBg, t.text)
+      drawChip(ctx, plot.x + plot.w - 64, lvChipY, lvLbl, t.labelChipBg, t.triggerColor)
     }
     // 状态文字（每帧更新角标，已在 draw() 顶部统一计算）
     // 触发点标记（三角标，位于触发样本所在屏幕 x；计入 PAD_X 内缩与波形映射一致）
@@ -879,7 +1112,7 @@ function drawOverlay(
       const tx = plot.x + PAD_X + pre * (plot.w - 2 * PAD_X)
       if (tx >= plot.x && tx <= plot.x + plot.w) {
         ctx.save()
-        ctx.fillStyle = t.crosshair
+        ctx.fillStyle = t.triggerColor
         ctx.beginPath()
         ctx.moveTo(Math.round(tx) + 0.5, plot.y + 1)
         ctx.lineTo(Math.round(tx) - 3, plot.y + 8)
@@ -947,8 +1180,6 @@ function drawOverlay(
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     const chipBg2 = t.labelChipBg
-    const waveL = plot.x + PAD_X // 波形区左缘（PAD_X 内缩后）
-    const waveW = plot.w - 2 * PAD_X // 波形区宽度
     const readAt = (c: number): string | null => {
       const local = c - dropped
       if (local < 0 || local >= dataLen) return null
@@ -958,8 +1189,9 @@ function drawOverlay(
     markers.forEach((c, i) => {
       if (!lastView) return
       const pl = lastView.plot
-      const rel = (c - lastView.xRange.min) / (lastView.xRange.max - lastView.xRange.min)
-      const px = waveL + rel * waveW
+      // 与命中检测共用同一映射（显示域 + 整幅 plot.w）。不要在这里再按 PAD_X 内缩一次：
+      // lastView.xRange 本身已经是外扩后的显示域，双重内缩会让标记线偏离波形 ~20px。
+      const px = markerPx(c)
       if (px < pl.x - 0.5 || px > pl.x + pl.w + 0.5) return
       const pxc = Math.round(px) + 0.5
       ctx.save()
@@ -1074,8 +1306,8 @@ function clearOverlay(): void {
   ov.getContext('2d')?.clearRect(0, 0, ov.width, ov.height)
 }
 
-useGlChart(canvasRef, {
-  fpsLimit: props.fpsLimit,
+const glChart = useGlChart(canvasRef, {
+  fpsLimit: () => props.fpsLimit,
   onResize: (w, h) => {
     // 覆盖层与 GL canvas 尺寸同步（device px）
     const ov = overlayRef.value
@@ -1083,11 +1315,23 @@ useGlChart(canvasRef, {
       ov.width = w
       ov.height = h
     }
+    // WebGL2/Canvas2D 均不可用：仅显示显式提示
+    if (!gl && !ctx2d) {
+      drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
+      return
+    }
     // 画布被重建（缓冲已清空）：冻结态存在快照时标记回填，下一帧恢复余辉
     if (persistSnapshot) needsRestore = true
+    // 触发对齐冻结画面：GL 缓冲随画布重建清空 → 重置已渲染键，强制下一帧重渲染触发帧
+    if (triggerCfg.enabled && lastShownTriggerKey !== '') {
+      lastShownTriggerKey = ''
+      needsRestore = false
+    }
   },
-  onDraw: draw
+  onDraw: schedule
 })
+// 供 schedule() 每帧兜底校准（见 glChartResize 声明处）
+glChartResize = glChart.resize
 
 // ── 交互：光标 ↔ 数据坐标换算 ──
 function clientToPlot(evt: MouseEvent): { px: number; py: number } | null {
@@ -1152,7 +1396,7 @@ function buildTimeTicks(
   min: number,
   max: number
 ): { values: number[]; labels: string[] } | undefined {
-  const rate = props.sampleRate
+  const rate = effectiveSampleRate.value
   if (!rate || rate <= 0 || !(max > min)) return undefined
   const times = niceTicks(min / rate, max / rate, 6)
   if (!times.length) return undefined
@@ -1228,6 +1472,7 @@ function applyViewState(s: ViewState): void {
     view.xMin = s.xMin
     view.xMax = s.xMax
   }
+  pausedY = null // 视口快照接管显示（暂停冻结范围不再覆盖）
   resetYAuto()
   schedule()
   emitViewportChange(true)
@@ -1274,7 +1519,20 @@ function zoomViewX(factor: number): void {
 }
 function onKeyDown(evt: KeyboardEvent): void {
   if (evt.ctrlKey || evt.metaKey || evt.altKey) return
+  // 键盘快捷键作用于悬停或聚焦的实例（多图同页不互相抢键）；
+  // 且焦点在输入控件内时完全不响应（避免打字触发撤销/平移/缩放）
+  if (!hovered && !focused.value) return
+  const t = evt.target as HTMLElement | null
+  if (
+    t &&
+    (t.isContentEditable ||
+      t.tagName === 'INPUT' ||
+      t.tagName === 'TEXTAREA' ||
+      t.tagName === 'SELECT')
+  )
+    return
   if (evt.key === 'z' || evt.key === 'Z') {
+    evt.preventDefault()
     if (evt.shiftKey) redoView()
     else undoView()
     return
@@ -1284,10 +1542,12 @@ function onKeyDown(evt: KeyboardEvent): void {
     const f =
       evt.key === '+' || evt.key === '=' ? 1 / 1.2 : evt.key === '-' || evt.key === '_' ? 1.2 : 0
     if (f) {
+      evt.preventDefault()
       const limit = Math.max(totalAbs(), MIN_SPAN)
       view.span = Math.min(Math.max(view.span * f, MIN_SPAN), limit)
       commitViewState()
       schedule()
+      emitSpanChange()
       emitViewportChange(true)
     }
     return
@@ -1300,23 +1560,29 @@ function onKeyDown(evt: KeyboardEvent): void {
   }
   switch (evt.key) {
     case 'ArrowLeft':
+      evt.preventDefault()
       commit(() => panView(-0.1))
       break
     case 'ArrowRight':
+      evt.preventDefault()
       commit(() => panView(0.1))
       break
     case 'ArrowUp':
+      evt.preventDefault()
       commit(() => panViewY(0.1))
       break
     case 'ArrowDown':
+      evt.preventDefault()
       commit(() => panViewY(-0.1))
       break
     case '+':
     case '=':
+      evt.preventDefault()
       commit(() => zoomViewX(1 / 1.2))
       break
     case '-':
     case '_':
+      evt.preventDefault()
       commit(() => zoomViewX(1.2))
       break
   }
@@ -1328,6 +1594,7 @@ function updateCursor(evt: MouseEvent): void {
   if (!canvas || !lastView) {
     if (cursor !== null) {
       cursor = null
+      emit('cursorChange', null)
       schedule()
     }
     return
@@ -1341,12 +1608,32 @@ function updateCursor(evt: MouseEvent): void {
   const changed =
     (next === null) !== (cursor === null) ||
     (next !== null && cursor !== null && (next.px !== cursor.px || next.py !== cursor.py))
+  const wasNull = cursor === null
   cursor = next
-  if (changed) schedule()
+  if (changed) {
+    const info = cursor ? sampleAt(cursor.px) : null
+    if (info && cursor) {
+      emit('cursorChange', {
+        px: cursor.px,
+        py: cursor.py,
+        dataX: info.idx,
+        i: info.i,
+        q: info.q
+      })
+    } else if (!wasNull) {
+      emit('cursorChange', null)
+    }
+    schedule()
+  }
+}
+function onPointerEnter(): void {
+  hovered = true
 }
 function onPointerLeave(): void {
+  hovered = false
   if (cursor !== null) {
     cursor = null
+    emit('cursorChange', null)
     schedule()
   }
 }
@@ -1388,6 +1675,7 @@ function onWheel(evt: WheelEvent): void {
     view.span = Math.min(Math.max(view.span * factor, MIN_SPAN), limit)
     schedule()
     commitViewState()
+    emitSpanChange()
     emitViewportChange()
     return
   }
@@ -1430,10 +1718,45 @@ interface DragCtx {
   yAuto: boolean
 }
 let dragCtx: DragCtx | null = null
+// 触摸双指缩放：两指距离变化映射为 X 窗宽，中心保持起始中点
+const touchPts = new Map<number, { x: number; y: number }>()
+let pinch: { dist: number; span: number; centerAbs: number } | null = null
+function startPinch(): void {
+  if (!lastView || touchPts.size !== 2) return
+  const [a, b] = [...touchPts.values()]
+  if (!a || !b) return
+  const dist = Math.hypot(a.x - b.x, a.y - b.y)
+  if (dist < 4) return
+  const cx = (a.x + b.x) / 2
+  pinch = { dist, span: view.span, centerAbs: pxToDataX(cx) }
+  dragCtx = null
+  levelDrag = false
+  boxSel = null
+}
+function updatePinch(): void {
+  if (!pinch || touchPts.size !== 2 || !lastView) return
+  const [a, b] = [...touchPts.values()]
+  if (!a || !b) return
+  const dist = Math.hypot(a.x - b.x, a.y - b.y)
+  if (dist < 4) return
+  const span = Math.min(
+    Math.max(MIN_SPAN, (pinch.span * pinch.dist) / dist),
+    Math.max(MIN_SPAN, totalAbs())
+  )
+  const c = pinch.centerAbs
+  setFrozenX(c - span / 2, c + span / 2)
+  schedule()
+}
 
 function onPointerDown(evt: PointerEvent): void {
   if (!lastView || evt.button !== 0) return
   menu.show = false // 任意按下先收起右键菜单
+  if (evt.pointerType === 'touch') {
+    ;(evt.currentTarget as HTMLElement).setPointerCapture?.(evt.pointerId)
+    touchPts.set(evt.pointerId, { x: evt.clientX, y: evt.clientY })
+    if (touchPts.size === 2) startPinch()
+    return
+  }
   const p = clientToPlot(evt)
   if (!p) return
   ;(evt.currentTarget as HTMLElement).setPointerCapture?.(evt.pointerId)
@@ -1488,15 +1811,38 @@ function onPointerDown(evt: PointerEvent): void {
   }
 }
 
-/** 框选放大：像素矩形 → 数据域窗口（X 去留白回真实窗口；Y 直接映射）；矩形过小则忽略 */
+/** 框选放大：宽 ≥8px 缩放 X、高 ≥8px 缩放 Y（扁平/细长框只缩放对应轴，两向都过小才忽略） */
 function finishBoxZoom(): void {
   if (!boxSel || !lastView) return
   const { x0, y0, x1, y1 } = boxSel
-  if (Math.abs(x1 - x0) < 8 || Math.abs(y1 - y0) < 8) return
+  const dx = Math.abs(x1 - x0)
+  const dy = Math.abs(y1 - y0)
+  if (dx < 8 && dy < 8) return
   if (triggerCfg.enabled) {
     // 触发模式：框选只调整窗宽与 Y 量程，保持触发对齐
-    const span = Math.max(MIN_SPAN, Math.abs(pxToDataX(x1) - pxToDataX(x0)))
-    view.span = Math.min(span, Math.max(totalAbs(), MIN_SPAN))
+    if (dx >= 8) {
+      const span = Math.max(MIN_SPAN, Math.abs(pxToDataX(x1) - pxToDataX(x0)))
+      view.span = Math.min(span, Math.max(totalAbs(), MIN_SPAN))
+      emitSpanChange()
+    }
+    if (dy >= 8) {
+      const yHi = pyToDataY(Math.min(y0, y1))
+      const yLo = pyToDataY(Math.max(y0, y1))
+      if (yHi - yLo > 1e-9) {
+        view.yAuto = false
+        view.yMin = yLo
+        view.yMax = yHi
+        resetYAuto()
+      }
+    }
+    commitViewState()
+    return
+  }
+  if (dx >= 8) {
+    const rw = unpadX(pxToDataX(Math.min(x0, x1)), pxToDataX(Math.max(x0, x1)), lastView.xFrac)
+    setFrozenX(rw.min, rw.max)
+  }
+  if (dy >= 8) {
     const yHi = pyToDataY(Math.min(y0, y1))
     const yLo = pyToDataY(Math.max(y0, y1))
     if (yHi - yLo > 1e-9) {
@@ -1505,23 +1851,18 @@ function finishBoxZoom(): void {
       view.yMax = yHi
       resetYAuto()
     }
-    commitViewState()
-    return
-  }
-  const rw = unpadX(pxToDataX(Math.min(x0, x1)), pxToDataX(Math.max(x0, x1)), lastView.xFrac)
-  setFrozenX(rw.min, rw.max)
-  const yHi = pyToDataY(Math.min(y0, y1))
-  const yLo = pyToDataY(Math.max(y0, y1))
-  if (yHi - yLo > 1e-9) {
-    view.yAuto = false
-    view.yMin = yLo
-    view.yMax = yHi
-    resetYAuto()
   }
   commitViewState() // 框选缩放入历史（Z 可回退）
 }
 
 function onPointerMove(evt: PointerEvent): void {
+  if (evt.pointerType === 'touch' && touchPts.has(evt.pointerId)) {
+    touchPts.set(evt.pointerId, { x: evt.clientX, y: evt.clientY })
+    if (pinch && touchPts.size === 2) {
+      updatePinch()
+      return
+    }
+  }
   updateCursor(evt)
   if (levelDrag) {
     const p = clientToPlot(evt)
@@ -1576,6 +1917,14 @@ function onPointerMove(evt: PointerEvent): void {
 
 function onPointerUp(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (evt.pointerType === 'touch') {
+    touchPts.delete(evt.pointerId)
+    if (pinch && touchPts.size < 2) {
+      pinch = null
+      emitViewportChange(true)
+    }
+    return
+  }
   if (levelDrag) {
     levelDrag = false
     schedule()
@@ -1604,6 +1953,11 @@ function onPointerUp(evt: PointerEvent): void {
 /** 取消进行中的手势（框选/拖拽/标记/电平拖拽），不产生任何视口变更 */
 function onPointerCancel(evt: PointerEvent): void {
   ;(evt.currentTarget as HTMLElement).releasePointerCapture?.(evt.pointerId)
+  if (evt.pointerType === 'touch') {
+    touchPts.delete(evt.pointerId)
+    if (touchPts.size < 2) pinch = null
+    return
+  }
   if (levelDrag) {
     levelDrag = false
     schedule()
@@ -1627,12 +1981,9 @@ function onDblClick(): void {
     // 快照冻结窗为「上一帧真实窗」：消除数据帧与重绘之间的竞态，
     // 保证暂停后首帧不被误判为视口变化而清掉余辉
     lastXrReal = { min: xr.min, max: xr.max }
-    // 冻结 Y 量程为当前平滑值：暂停后量程不再漂移，画面（含余辉）完全定格
-    if (lastView) {
-      view.yAuto = false
-      view.yMin = lastView.yRange.min
-      view.yMax = lastView.yRange.max
-    }
+    // 冻结 Y 量程为当前平滑值（显示层快照）：暂停后量程不再漂移，画面（含余辉）完全定格；
+    // 不改 view.yAuto 语义——恢复跟随时自动/手动状态原样保留
+    pausedY = lastView ? { min: lastView.yRange.min, max: lastView.yRange.max } : null
     resetYAuto()
     schedule()
     emitViewportChange(true)
@@ -1641,10 +1992,10 @@ function onDblClick(): void {
   }
 }
 
-/** 恢复跟随：保留当前缩放窗宽，清除标记；双击/角标使用 */
+/** 恢复跟随：保留当前缩放窗宽与 Y 轴缩放状态（自动/手动），清除标记；双击/角标使用 */
 function resumeFollow(): void {
   view.follow = true
-  view.yAuto = true
+  pausedY = null // 解除暂停 Y 冻结；yAuto 保持原状态（手动缩放的 Y 量程不被重置）
   markers = []
   markerDrag = -1
   menu.show = false
@@ -1660,6 +2011,7 @@ function zoomReset(notify = true): void {
   view.follow = true
   view.span = Math.max(MIN_SPAN, props.span)
   view.yAuto = true
+  pausedY = null
   markers = []
   markerDrag = -1
   menu.show = false
@@ -1668,6 +2020,74 @@ function zoomReset(notify = true): void {
   schedule()
   emitSpanChange(notify)
   if (notify) emitViewportChange(true)
+}
+
+/** 跟随/暂停（程序化 API）：恢复跟随不清空标记；暂停时定格当前窗口 */
+function applyFollow(v: boolean): void {
+  if (v === view.follow) return
+  if (v) {
+    view.follow = true
+    pausedY = null
+    lastDataAt = performance.now()
+    resetYAuto()
+  } else {
+    const xr = resolveXRange()
+    setFrozenX(xr.min, xr.max)
+    lastXrReal = { min: xr.min, max: xr.max }
+    pausedY = lastView ? { min: lastView.yRange.min, max: lastView.yRange.max } : null
+    resetYAuto()
+  }
+  schedule()
+  emitViewportChange(true)
+}
+
+/** 程序化暂停：setPaused(true) = 停止跟随 */
+function setPaused(v: boolean): void {
+  applyFollow(!v)
+}
+
+/** 程序化设置跟随窗宽（≥16，且不超过缓冲上限） */
+function setSpan(span: number): void {
+  if (!Number.isFinite(span)) return
+  view.span = Math.min(Math.max(MIN_SPAN, Math.round(span)), Math.max(MIN_SPAN, maxFollowSpan))
+  if (view.follow) schedule()
+  emitSpanChange(true)
+  emitViewportChange(true)
+}
+
+/** 程序化设置 Y 轴范围（自动切手动）；传 autoScale=true 恢复自动 */
+function setYRange(min: number, max: number, autoScale = false): void {
+  view.yAuto = autoScale
+  if (!autoScale && Number.isFinite(min) && Number.isFinite(max) && max > min) {
+    view.yMin = min
+    view.yMax = max
+    pausedY = null
+  }
+  resetYAuto()
+  schedule()
+  emitViewportChange(true)
+}
+
+/** 当前可见窗口原始数据（拷贝） */
+function getVisibleData(): IqVisibleData | null {
+  const xr = resolveXRange()
+  const s = Math.max(0, Math.floor(xr.min) - dropped)
+  const e = Math.min(dataLen, Math.ceil(xr.max) - dropped)
+  if (e <= s) return null
+  return { i: iBuf.slice(s, e), q: qBuf.slice(s, e), startIndex: dropped + s }
+}
+
+/** 运行统计（宿主诊断/性能面板） */
+function getStats(): IqStats {
+  return {
+    length: dataLen,
+    dropped,
+    total: totalAbs(),
+    maxPoints,
+    follow: view.follow,
+    span: view.span,
+    sampleRate: effectiveSampleRate.value
+  }
 }
 
 // ── 导出 ──
@@ -1687,11 +2107,15 @@ function compositeCanvas(): HTMLCanvasElement {
   out.height = glC.height
   const ctx = out.getContext('2d')
   if (!ctx) return out
-  ctx.drawImage(glC, 0, 0)
-  ctx.drawImage(ov, 0, 0)
-  const dpr = window.devicePixelRatio || 1
-  const cssW = glC.width / dpr
-  ctx.scale(dpr, dpr)
+  // 按输出尺寸显式缩放：两层 backing 若因 DPR/页面缩放时序不同步，
+  // 仍保证导出图完整覆盖且轴层与波形对齐（overlay CSS 宽度与 GL 画布同一布局盒）
+  ctx.drawImage(glC, 0, 0, out.width, out.height)
+  ctx.drawImage(ov, 0, 0, out.width, out.height)
+  // 图例按 GL 画布的实测比例映射（背板 ÷ CSS 实测尺寸）：与波形同一变换基准，
+  // 不用全局 devicePixelRatio 缓存（页面缩放/DPR 时序变化下会与画布实际比例脱节）
+  const ratio = glC.width / Math.max(1, glC.clientWidth || glC.width)
+  const cssW = glC.clientWidth || glC.width
+  ctx.scale(ratio, ratio)
   ctx.font = '12px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
@@ -1711,7 +2135,7 @@ function compositeCanvas(): HTMLCanvasElement {
     ctx.beginPath()
     ctx.arc(x + 4, y, 4, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = th.value.darkLike ? '#c9d1d9' : '#1f2328'
+    ctx.fillStyle = th.value.text
     ctx.fillText(it.label, x + 12, y + 0.5)
     x += widths[idx]! + gap
   })
@@ -1720,9 +2144,27 @@ function compositeCanvas(): HTMLCanvasElement {
 }
 
 /** 导出当前视图为 PNG（波形 + 坐标轴 + 图例） */
+function pngFilename(): string {
+  return `iq-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+}
 function exportPNG(): void {
-  const filename = `iq-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
-  deliverExport({ kind: 'png', filename, dataUrl: compositeCanvas().toDataURL('image/png') })
+  deliverExport({
+    kind: 'png',
+    filename: pngFilename(),
+    dataUrl: compositeCanvas().toDataURL('image/png')
+  })
+}
+
+/** 异步 PNG 导出：toBlob 不阻塞主线程，宿主 exportHandler 可直接持久化 blob */
+async function exportPNGAsync(): Promise<void> {
+  const filename = pngFilename()
+  const out = compositeCanvas()
+  const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'))
+  if (!blob) {
+    reportError('export', 'PNG 编码失败')
+    return
+  }
+  deliverExport({ kind: 'png', filename, blob })
 }
 
 /** 导出当前可见窗口原始样本为 CSV；超 50 万行按等步长抽稀，sampleRate 存在时附 time_s 列 */
@@ -1733,7 +2175,7 @@ function exportCSV(): void {
   const len = e - s
   if (len <= 0) return
   const stride = Math.max(1, Math.ceil(len / EXPORT_MAX_ROWS))
-  const rate = props.sampleRate
+  const rate = effectiveSampleRate.value
   const parts: string[] = [rate && rate > 0 ? 'index,time_s,i,q' : 'index,i,q']
   for (let k = 0; k < len; k += stride) {
     const abs = dropped + s + k
@@ -1752,12 +2194,20 @@ function deliverExport(p: ExportPayload): void {
   const handler = props.exportHandler
   if (handler) {
     Promise.resolve(handler(p)).catch((e: unknown) =>
-      emit('error', e instanceof Error ? e.message : String(e))
+      reportError('export', e instanceof Error ? e.message : String(e))
     )
   } else {
     const a = document.createElement('a')
-    if (p.kind === 'png' && p.dataUrl) {
-      a.href = p.dataUrl
+    if (p.kind === 'png') {
+      if (p.dataUrl) {
+        a.href = p.dataUrl
+      } else if (p.blob) {
+        a.href = URL.createObjectURL(p.blob)
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+      } else {
+        reportError('export', 'PNG 导出缺少 dataUrl/blob')
+        return
+      }
     } else {
       const blob = new Blob([p.text ?? ''], { type: 'text/csv;charset=utf-8' })
       a.href = URL.createObjectURL(blob)
@@ -1777,6 +2227,7 @@ defineExpose({
   getLength: () => dataLen,
   zoomReset,
   exportPNG,
+  exportPNGAsync,
   exportCSV,
   /** single 触发模式：重新武装，捕获下一次触发 */
   armTrigger: () => {
@@ -1788,7 +2239,23 @@ defineExpose({
     follow: view.follow,
     yAuto: view.yAuto,
     ...doResolveViewInfo()
-  })
+  }),
+  // ── 程序化控制/数据（宿主集成 API）──
+  setFollow: (v: boolean) => applyFollow(v),
+  setPaused,
+  setSpan,
+  setYRange,
+  getStats,
+  getVisibleData,
+  addMarker,
+  setMarkers,
+  removeMarker,
+  resize: () => {
+    glChartResize?.()
+    schedule()
+  },
+  redraw: () => schedule(),
+  dispose
 })
 function doResolveViewInfo(): { xMin: number; xMax: number; yMin: number; yMax: number } {
   const xr = resolveXRange()
@@ -1796,39 +2263,150 @@ function doResolveViewInfo(): { xMin: number; xMax: number; yMin: number; yMax: 
   return { xMin: xr.min, xMax: xr.max, yMin: yr.min, yMax: yr.max }
 }
 
+// 跟随状态回写（v-model:follow）；内部缩放/暂停/复位都会同步给宿主
+watch(
+  () => view.follow,
+  (v) => emit('update:follow', v)
+)
+// 受控 follow prop：宿主传值即生效（未传时组件自管）
+watch(
+  () => props.follow,
+  (v) => {
+    if (typeof v === 'boolean' && v !== view.follow) applyFollow(v)
+  },
+  { immediate: true }
+)
+
 onMounted(async () => {
   await nextTick()
   window.addEventListener('keydown', onKeyDown)
   const canvas = canvasRef.value
   if (!canvas) return
-  // preserveDrawingBuffer：合成后保留绘图缓冲——余辉（persistence）淡出合成的前提；
-  // 关闭时浏览器每帧清空缓冲，淡出四边形无旧帧可混合，余辉完全无效
-  gl = canvas.getContext('webgl2', {
-    antialias: true,
-    preserveDrawingBuffer: true
-  }) as WebGL2RenderingContext | null
-  if (!gl) {
-    emit('error', 'WebGL2 not supported, fallback to Canvas2D (降低性能)')
+  const backend = props.renderer ?? 'auto'
+  // preserveDrawingBuffer：余辉淡出/合成快照需要保留绘图缓冲。
+  // 关闭时浏览器每帧清空缓冲，余辉淡出无效；无余辉需求可传 false 降低拷贝开销。
+  if (backend !== 'canvas2d') {
+    gl = canvas.getContext('webgl2', {
+      antialias: true,
+      preserveDrawingBuffer: props.preserveDrawingBuffer !== false
+    }) as WebGL2RenderingContext | null
+  }
+  // auto：WebGL2 不可用则回退 Canvas2D；webgl2：强制，不回退；canvas2d：直接 2D
+  if (!gl && backend !== 'webgl2') {
+    ctx2d = canvas.getContext('2d')
+  }
+  if (!gl && !ctx2d) {
+    reportError('webgl', WEBGL2_UNSUPPORTED_MSG)
+    drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
     return
   }
-  renderer = createLineRenderer(canvas, gl)
-  rendererQ = createLineRenderer(canvas, gl)
-  rendererEnv = createLineRenderer(canvas, gl)
-  fadeRenderer = createFadeRenderer(gl)
-  blitRenderer = createBlitRenderer(gl)
+  if (gl) {
+    canvas.addEventListener('webglcontextlost', onContextLost)
+    canvas.addEventListener('webglcontextrestored', onContextRestored)
+  }
+  setupRenderers()
   // 初始数据
   if (props.data !== undefined) setData(props.data)
   draw()
+  emit('ready')
+  // 离屏暂停：不可见时不再触发重绘（数据仍入缓冲），重新可见时补一帧
+  if (typeof IntersectionObserver !== 'undefined' && rootRef.value) {
+    io = new IntersectionObserver(
+      (entries) => {
+        const next = entries[entries.length - 1]?.isIntersecting ?? true
+        if (next === visible) return
+        visible = next
+        if (visible) schedule()
+      },
+      { threshold: 0 }
+    )
+    io.observe(rootRef.value)
+  }
 })
 
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeyDown)
+/** 浏览器不支持 WebGL2 且 Canvas2D 也不可用时的显式错误提示 */
+function drawUnsupported(msg: string): void {
+  const ov = overlayRef.value
+  if (!ov) return
+  const ctx = ov.getContext('2d')
+  if (!ctx) return
+  const rect = ov.getBoundingClientRect()
+  const sx = ov.width / Math.max(1, rect.width)
+  const sy = ov.height / Math.max(1, rect.height)
+  ctx.setTransform(sx, 0, 0, sy, 0, 0)
+  ctx.clearRect(0, 0, rect.width, rect.height)
+  ctx.font = '13px system-ui, -apple-system, sans-serif'
+  ctx.fillStyle = th.value.text
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(msg, rect.width / 2, rect.height / 2)
+}
+
+/** 创建/重建全部渲染器（GL 或 Canvas2D；挂载时与 GL 上下文恢复后复用） */
+function setupRenderers(): void {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  if (gl) {
+    renderer = createLineRenderer(canvas, gl)
+    rendererQ = createLineRenderer(canvas, gl)
+    rendererEnv = createLineRenderer(canvas, gl)
+    fadeRenderer = createFadeRenderer(gl)
+    blitRenderer = createBlitRenderer(gl)
+  } else if (ctx2d) {
+    renderer = createCanvasLineRenderer(canvas)
+    rendererQ = createCanvasLineRenderer(canvas)
+    rendererEnv = createCanvasLineRenderer(canvas)
+    fadeRenderer = null
+    blitRenderer = null
+  }
+  // 上下文恢复/后端重建：强制重渲染冻结的触发帧（旧 GL 缓冲已失效）
+  lastShownTriggerKey = ''
+  needsRestore = false
+}
+
+/** 上下文丢失：preventDefault 允许浏览器自动恢复；丢失期间 draw() 直接跳过 */
+function onContextLost(evt: Event): void {
+  evt.preventDefault()
+  contextLost = true
+  emit('contextLost')
+}
+
+/** 上下文恢复：重建 renderer（旧 program/buffer 均已失效），下一帧重传数据 */
+function onContextRestored(): void {
+  contextLost = false
+  setupRenderers()
+  emit('contextRestored')
+  schedule()
+}
+
+let cleanupDone = false
+/** 释放监听/渲染器/rAF（宿主手动销毁时也可调用；重复调用幂等） */
+function dispose(): void {
+  if (cleanupDone) return
+  cleanupDone = true
+  disposed = true
+  io?.disconnect()
+  io = null
+  touchPts.clear()
+  pinch = null
+  if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeyDown)
+  const canvas = canvasRef.value
+  canvas?.removeEventListener('webglcontextlost', onContextLost)
+  canvas?.removeEventListener('webglcontextrestored', onContextRestored)
   renderer?.dispose()
   rendererQ?.dispose()
   rendererEnv?.dispose()
   fadeRenderer?.dispose()
   blitRenderer?.dispose()
-  if (raf) cancelAnimationFrame(raf)
+  renderer = null
+  rendererQ = null
+  rendererEnv = null
+  fadeRenderer = null
+  blitRenderer = null
+  if (raf) {
+    cancelAnimationFrame(raf)
+    raf = 0
+  }
   if (viewportNotifyTimer) {
     clearTimeout(viewportNotifyTimer)
     viewportNotifyTimer = null
@@ -1837,7 +2415,8 @@ onUnmounted(() => {
     clearTimeout(spanNotifyTimer)
     spanNotifyTimer = null
   }
-})
+}
+onUnmounted(dispose)
 
 watch(
   () => props.data,
@@ -1846,14 +2425,22 @@ watch(
   }
 )
 
-function setData(raw: unknown): void {
+function setData(raw: unknown, meta?: IqFrameMeta): void {
   clear(false)
-  appendData(raw)
+  appendData(raw, meta)
 }
-function appendData(raw: unknown): void {
+function appendData(raw: unknown, meta?: IqFrameMeta): void {
+  if (disposed) return
+  if (meta && typeof meta.sampleRate === 'number' && meta.sampleRate > 0)
+    frameSampleRate.value = meta.sampleRate
   const n = normalize(raw)
   if (!n) {
-    emit('error', 'adapter 返回 null，无法解析数据')
+    // adapter 抛异常时 normalize 已经 emit 过具体错误，这里不再补一条泛化错误
+    if (adapterErrored) {
+      adapterErrored = false
+      return
+    }
+    reportError('adapter', 'adapter 返回 null，无法解析数据')
     return
   }
   pushNormalized(n)
@@ -1881,33 +2468,48 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     ref="rootRef"
     class="sig-iq"
     :class="th.darkLike ? 'sig-dark' : 'sig-light'"
+    tabindex="0"
+    role="application"
+    :aria-label="props.labels?.aria ?? 'IQ 时域图'"
     :style="{
-      width: props.width ? props.width + 'px' : '100%',
-      height: props.height ? props.height + 'px' : '260px',
+      width: cssSize(props.width, '100%'),
+      height: cssSize(props.height, '260px'),
       background: th.bg,
       borderColor: th.border,
-      '--sig-bg': th.bg
+      '--sig-bg': th.bg,
+      '--sig-text': th.text,
+      '--sig-border': th.border,
+      '--sig-trigger': th.triggerColor
     }"
+    @focus="focused = true"
+    @blur="focused = false"
     @wheel="onWheel"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
+    @pointerenter="onPointerEnter"
     @pointerleave="onPointerLeave"
     @contextmenu.prevent="onContextMenu"
     @dblclick="onDblClick"
   >
     <canvas ref="canvasRef" class="sig-canvas" />
     <canvas ref="overlayRef" class="sig-overlay" />
+    <!-- 宿主自定义叠加层（标注/告警框等）；组件默认样式为绝对定位铺满，内容自行定位 -->
+    <div class="sig-host-overlay"><slot name="overlay" /></div>
     <div
       v-if="!view.follow"
       class="sig-follow-badge"
-      title="恢复跟随最新数据（保留当前缩放窗宽）"
+      title="恢复跟随最新数据（保留当前缩放窗宽）。暂停期间数据持续接收（不丢样本），缓冲满后视图随环形淘汰滑动"
       @click="resumeFollow()"
+      @pointerdown.stop
+      @dblclick.stop
     >
-      已暂停跟随 · 双击恢复
+      {{ props.labels?.paused ?? '已暂停跟随 · 双击恢复' }}
     </div>
-    <div v-if="dataStale" class="sig-stale-badge" title="超过 3 秒未收到新数据">数据流中断</div>
+    <div v-if="dataStale" class="sig-stale-badge" title="超过 3 秒未收到新数据">
+      {{ props.labels?.stale ?? '数据流中断' }}
+    </div>
     <div
       v-if="trigUi.enabled"
       class="sig-trigger-badge"
@@ -2005,6 +2607,10 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   user-select: none;
   touch-action: none;
 }
+.sig-iq:focus-visible {
+  outline: 1px solid var(--sig-border);
+  outline-offset: -1px;
+}
 .sig-dark {
   --sig-bg: #0f1115;
   --sig-border: #2a2e39;
@@ -2023,7 +2629,17 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
 .sig-overlay {
   position: absolute;
   inset: 0;
+  /* canvas 为 replaced element：absolute+inset:0 不会拉伸它（会按 bitmap 固有尺寸显示，
+     buffer 后段空白、文字被按 bitmap 像素显示）；显式 100% 才能与 GL 画布同盒 */
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+}
+.sig-host-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
 }
 .sig-follow-badge {
   position: absolute;
@@ -2055,7 +2671,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
   right: 10px;
   top: 34px;
   font-size: 11px;
-  color: #18a058;
+  color: var(--sig-trigger);
   background: color-mix(in srgb, var(--sig-bg) 80%, transparent);
   padding: 2px 8px;
   border-radius: 10px;

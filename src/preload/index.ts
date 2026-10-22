@@ -564,6 +564,9 @@ const api = {
         cfg
       ),
     trigger: () => invoke<{ ok: boolean }>('signalAnalysis:trigger'),
+    /** 订阅登记：渲染进程有图表在接收帧时才让主进程做 60fps 生成/FFT */
+    subscribe: () => invoke<{ ok: boolean }>('signalAnalysis:subscribe'),
+    unsubscribe: () => invoke<{ ok: boolean }>('signalAnalysis:unsubscribe'),
     onFrame: (cb: (frame: unknown) => void) => on('signal:analysis', cb),
     onStatus: (cb: (s: { connected: boolean; error?: string; url?: string }) => void) =>
       on('signal:analysis:status', cb)

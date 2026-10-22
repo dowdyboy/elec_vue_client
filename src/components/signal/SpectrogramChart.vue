@@ -6,6 +6,7 @@
  */
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { spectrumAdapters } from './core/adapters'
+import { cssSize } from './core/css'
 import type { SpectrogramProps } from './core/types'
 import { useGlChart } from './composables/useGlChart'
 
@@ -186,8 +187,8 @@ defineExpose({ appendData, setData, clear, getRows: () => rowCount })
     class="sig-specgram"
     :class="isDark ? 'sig-dark' : 'sig-light'"
     :style="{
-      width: props.width ? props.width + 'px' : '100%',
-      height: props.height ? props.height + 'px' : '300px'
+      width: cssSize(props.width, '100%'),
+      height: cssSize(props.height, '300px')
     }"
   >
     <canvas ref="canvasRef" class="sig-canvas" />

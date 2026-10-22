@@ -20,6 +20,11 @@ interface FullPreset {
   traceAlpha: number
   axisWidth: number
   crosshair: string
+  triggerColor: string
+  /** 单迹线图表（频谱/星座等）主迹线颜色 */
+  traceColor: string
+  /** 多迹线调色板（按迹线序号取色，越界回绕；首条仍优先 style.traceColor） */
+  tracePalette: string[]
 }
 
 /** 解析后的完整主题（字段全部可用，无 undefined） */
@@ -37,6 +42,12 @@ export interface ResolvedTheme {
   traceAlpha: number
   axisWidth: number
   crosshair: string
+  /** 触发覆盖层强调色（电平虚线/触发三角/Lv 文字/右上触发角标文字） */
+  triggerColor: string
+  /** 单迹线图表（频谱/星座等）主迹线颜色 */
+  traceColor: string
+  /** 多迹线调色板（按迹线序号取色，越界回绕；首条仍优先 style.traceColor） */
+  tracePalette: string[]
   /** 容器内浮层（角标/图例）按明暗归类取文字色 */
   darkLike: boolean
 }
@@ -54,7 +65,10 @@ const DARK: FullPreset = {
   traceAlpha: 0.85,
   axisWidth: 56,
   crosshair: '#8b949e',
-  envColor: '#ffa726'
+  envColor: '#ffa726',
+  triggerColor: '#18a058',
+  traceColor: '#4fc3f7',
+  tracePalette: ['#4fc3f7', '#ffb74d', '#7ee2a8', '#f48fb1']
 }
 
 const LIGHT: FullPreset = {
@@ -70,7 +84,10 @@ const LIGHT: FullPreset = {
   traceAlpha: 0.85,
   axisWidth: 56,
   crosshair: '#57606a',
-  envColor: '#f57c00'
+  envColor: '#f57c00',
+  triggerColor: '#18a058',
+  traceColor: '#1976d2',
+  tracePalette: ['#1976d2', '#f57c00', '#388e3c', '#d81b60']
 }
 
 /** 频谱仪经典面板：纯黑底、暗绿栅格、亮黄/青双迹 */
@@ -88,7 +105,10 @@ const SPECTRUM: FullPreset = {
   traceAlpha: 0.9,
   axisWidth: 56,
   crosshair: '#7ee2a8',
-  envColor: '#ffb74d'
+  envColor: '#ffb74d',
+  triggerColor: '#7ee2a8',
+  traceColor: '#ffd60a',
+  tracePalette: ['#ffd60a', '#ff9f1c', '#22d3ee', '#7ee2a8']
 }
 
 const COLOR_KEYS = [
@@ -102,7 +122,9 @@ const COLOR_KEYS = [
   'traceI',
   'traceQ',
   'envColor',
-  'crosshair'
+  'crosshair',
+  'triggerColor',
+  'traceColor'
 ] as const
 
 export function resolveTheme(
@@ -131,6 +153,7 @@ export function resolveTheme(
     }
     if (st.traceAlpha !== undefined) out.traceAlpha = st.traceAlpha
     if (st.axisWidth !== undefined) out.axisWidth = Math.max(40, st.axisWidth)
+    if (st.tracePalette && st.tracePalette.length > 0) out.tracePalette = st.tracePalette
   }
   return out
 }

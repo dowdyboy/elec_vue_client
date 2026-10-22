@@ -12,9 +12,7 @@ import {
   NColorPicker,
   useMessage
 } from 'naive-ui'
-import IqChart from '@components/signal/IqChart.vue'
-import { iqAdapters } from '@components/signal/core/adapters'
-import type { ExportPayload, Theme } from '@components/signal/core/types'
+import { IqChart, iqAdapters, type ExportPayload, type Theme } from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
 
 const message = useMessage()
@@ -22,6 +20,19 @@ const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const adapterKey = ref<'passthrough' | 'jsonInterleaved'>('passthrough')
 const themeKey = ref<Theme>('spectrum')
 const sampleRate = ref(4096)
+/** 用户手动改过采样率后不再被帧元数据覆盖；点「自动」恢复跟随 */
+const rateTouched = ref(false)
+let lastFrameRate = 0
+function onRateInput(v: number | null): void {
+  if (typeof v !== 'number' || !(v > 0)) return
+  rateTouched.value = true
+  sampleRate.value = v
+}
+function onSyncRate(): void {
+  rateTouched.value = false
+  if (lastFrameRate > 0) sampleRate.value = lastFrameRate
+  message.success(`采样率已同步服务端帧元数据：${lastFrameRate || sampleRate.value} Hz`)
+}
 const spanSamples = ref(4096)
 const envelopeOn = ref(false)
 const persistenceVal = ref(0)
@@ -43,6 +54,7 @@ const styleCrosshair = ref<string | null>(null)
 const styleGrid = ref<string | null>(null)
 const styleBorder = ref<string | null>(null)
 const styleText = ref<string | null>(null)
+const styleTrigger = ref<string | null>(null)
 
 const styleOverrides = computed(() => {
   const s: Record<string, string> = {}
@@ -51,6 +63,7 @@ const styleOverrides = computed(() => {
   if (styleGrid.value) s.grid = styleGrid.value
   if (styleBorder.value) s.border = styleBorder.value
   if (styleText.value) s.text = styleText.value
+  if (styleTrigger.value) s.triggerColor = styleTrigger.value
   return s
 })
 const triggerEnabled = ref(false)
@@ -102,6 +115,7 @@ function onResetStyle(): void {
   styleGrid.value = null
   styleBorder.value = null
   styleText.value = null
+  styleTrigger.value = null
   colorsI.value = null
   colorsQ.value = null
   message.success('已清除自定义颜色，恢复主题预置')
@@ -154,7 +168,12 @@ function getAdapter(): (raw: unknown) => unknown {
 
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
-sig.onIq((iq) => {
+sig.onIq((iq, frame) => {
+  // 采样率优先取服务端帧元数据（与配置页保持一致）；用户手动改过则锁定，点「自动」恢复
+  if (typeof frame.sampleRate === 'number' && frame.sampleRate > 0) {
+    lastFrameRate = frame.sampleRate
+    if (!rateTouched.value) sampleRate.value = frame.sampleRate
+  }
   // 演示 adapter：若选 jsonInterleaved，则先转 {i,q} 再喂入，验证前端自转
   if (adapterKey.value === 'jsonInterleaved') {
     // Float32Array 版去交织：避免每帧 number[] 分配带来的 GC 压力
@@ -236,13 +255,17 @@ watch(adapterKey, (v) => {
         />
         <span>采样率</span>
         <NInputNumber
-          v-model:value="sampleRate"
+          :value="sampleRate"
           size="small"
           :min="1"
           :step="4096"
           :show-button="false"
           style="width: 96px"
+          @update:value="onRateInput"
         />
+        <NButton size="tiny" :type="rateTouched ? 'default' : 'primary'" @click="onSyncRate"
+          >自动</NButton
+        >
         <span>窗宽</span>
         <NInputNumber
           v-model:value="spanSamples"
@@ -295,8 +318,8 @@ watch(adapterKey, (v) => {
         }}）自转后进入组件。外观由「主题」预置驱动，亦可用 <code>style</code> 属性做字段级覆盖。
       </div>
       <div style="margin-top: 4px; font-size: 12px; color: #888">
-        采样率 (Hz) 仅用于「样本 ↔ 时间」换算（时间 = 索引 ÷ 采样率），不影响数据内容； Mock 默认
-        4096，即满窗 4096 样本恰好为 1 秒。真实使用时应与采集硬件的实际采样率一致。
+        采样率 (Hz) 仅用于「样本 ↔ 时间」换算（时间 = 索引 ÷ 采样率），不影响数据内容；
+        默认随服务端帧元数据自动同步，手动修改后锁定，点「自动」恢复跟随。真实使用时应与采集硬件的实际采样率一致。
       </div>
     </NCard>
     <NCard title="🧰 属性与方法（全部对外接口）" style="margin-bottom: 16px" size="small">
@@ -380,6 +403,11 @@ watch(adapterKey, (v) => {
           ><span class="cp-i">光</span
           ><span class="cp-p"
             ><NColorPicker v-model:value="styleCrosshair" size="small" :show-alpha="false" /></span
+        ></span>
+        <span class="cp" title="触发覆盖层（电平线/三角/Lv/角标）"
+          ><span class="cp-i">触</span
+          ><span class="cp-p"
+            ><NColorPicker v-model:value="styleTrigger" size="small" :show-alpha="false" /></span
         ></span>
         <NButton size="tiny" @click="onResetStyle">重置颜色</NButton>
       </div>
@@ -491,7 +519,7 @@ watch(adapterKey, (v) => {
           :envelope="envelopeOn"
           :persistence="persistenceVal"
           :trigger="triggerConfig"
-          :style="styleOverrides"
+          :chart-style="styleOverrides"
           :export-handler="handleExport"
           :height="420"
           @exported="onExported"

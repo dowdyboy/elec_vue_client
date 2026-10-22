@@ -70,6 +70,27 @@ out vec4 outColor;
 void main(){ outColor = vec4(uColor.rgb * uColor.a, uColor.a); }
 `
 
+// 粗折线（ribbon）：lineWidth>1 时把折线展开为 TRIANGLE_STRIP——
+// 每样本 2 个顶点（side=±1），y 按半线宽在 NDC 内垂直偏移。
+// WebGL 的 gl.lineWidth 在多数平台被钳制为 1，故用几何展开实现线宽
+const VS_LINE_RIBBON = `#version 300 es
+in vec2 aVS;
+uniform float uCount;
+uniform vec2 uViewport;
+uniform vec2 uYRange;
+uniform vec2 uPlotSize;
+uniform float uHalfWidth;
+void main(){
+  float idx = float(gl_VertexID / 2);
+  float xRange = uViewport.y - uViewport.x;
+  float x = xRange < 0.0001 ? idx / max(1.0, uCount-1.0) : (idx - uViewport.x) / xRange;
+  float yRange = uYRange.y - uYRange.x;
+  float y = yRange < 0.0001 ? (aVS.x+1.0)*0.5 : (aVS.x - uYRange.x) / yRange;
+  y += aVS.y * (uHalfWidth / max(1.0, uPlotSize.y));
+  gl_Position = vec4(x*2.0-1.0, y*2.0-1.0, 0.0, 1.0);
+}
+`
+
 export interface LineRenderer {
   setData(data: Float32Array): void
   draw(
@@ -84,10 +105,16 @@ export interface LineRenderer {
      */
     noBlend?: boolean,
     /** >0 时以 POINTS 散点绘制（mode:'dots' 时间域散点），否则折线 */
-    pointSize?: number
+    pointSize?: number,
+    /**
+     * 折线宽度（CSS px，仅 mode:'line' 且 >1 时生效）：WebGL `gl.lineWidth`
+     * 在多数平台被钳制为 1，故以 TRIANGLE_STRIP ribbon 几何展开实现
+     */
+    lineWidth?: number
   ): void
   dispose(): void
-  gl: WebGL2RenderingContext
+  /** WebGL2 上下文；Canvas2D 降级后端为 null */
+  gl: WebGL2RenderingContext | null
 }
 
 export function hexToRgba(color: string): [number, number, number, number] {
@@ -142,19 +169,33 @@ export function createLineRenderer(
   const uColorLoc = _gl.getUniformLocation(prog, 'uColor')
   const uPointSizeLoc = _gl.getUniformLocation(prog, 'uPointSize')
   const buf = _gl.createBuffer()
+  // 粗折线 program/buffer（lineWidth>1：TRIANGLE_STRIP ribbon）
+  const ribbonProg = createProgram(_gl, VS_LINE_RIBBON, FS_LINE)
+  const aVSLoc = _gl.getAttribLocation(ribbonProg, 'aVS')
+  const rCountLoc = _gl.getUniformLocation(ribbonProg, 'uCount')
+  const rViewportLoc = _gl.getUniformLocation(ribbonProg, 'uViewport')
+  const rYRangeLoc = _gl.getUniformLocation(ribbonProg, 'uYRange')
+  const rPlotSizeLoc = _gl.getUniformLocation(ribbonProg, 'uPlotSize')
+  const rHalfWidthLoc = _gl.getUniformLocation(ribbonProg, 'uHalfWidth')
+  const rColorLoc = _gl.getUniformLocation(ribbonProg, 'uColor')
+  const ribbonBuf = _gl.createBuffer()
   let count = 0
+  let dataRef: Float32Array | null = null
+  let ribbonScratch = new Float32Array(0)
   return {
     gl: _gl,
     setData(data: Float32Array) {
       count = data.length
+      dataRef = data
       _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
       _gl.bufferData(_gl.ARRAY_BUFFER, data, _gl.DYNAMIC_DRAW)
     },
-    draw(viewport, color, clear = true, plotRect?, noBlend = false, pointSize = 0) {
+    draw(viewport, color, clear = true, plotRect?, noBlend = false, pointSize = 0, lineWidth = 1) {
       if (count === 0) return
       // 实测比例：背板设备像素 ÷ 元素 CSS 实测尺寸——不信任全局 DPR 缓存，
       // 页面缩放/系统非整数缩放场景下波形与 overlay 网格保持严格对齐（同 overlay 真实比例修复）
       const cssW = canvas.clientWidth || canvas.width
+      const cssH = canvas.clientHeight || canvas.height
       const ratio = canvas.width / Math.max(1, cssW)
       let vx = 0,
         vy = 0,
@@ -178,15 +219,7 @@ export function createLineRenderer(
         _gl.clearColor(0, 0, 0, 0)
         _gl.clear(_gl.COLOR_BUFFER_BIT)
       }
-      _gl.useProgram(prog)
-      _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
-      _gl.enableVertexAttribArray(aValueLoc)
-      _gl.vertexAttribPointer(aValueLoc, 1, _gl.FLOAT, false, 0, 0)
-      _gl.uniform1f(uCountLoc, count)
-      _gl.uniform2f(uViewportLoc, viewport.xMin, viewport.xMax)
-      _gl.uniform2f(uYRangeLoc, viewport.yMin, viewport.yMax)
       const [r, g, b, a] = hexToRgba(color)
-      _gl.uniform4f(uColorLoc, r, g, b, a)
       if (noBlend) {
         // 冻结稳定态幂等重绘：不透明直写
         _gl.disable(_gl.BLEND)
@@ -197,9 +230,49 @@ export function createLineRenderer(
       }
       if (pointSize > 0) {
         // mode:'dots'：时间域散点（复用索引映射），点径随 lineWidth
+        _gl.useProgram(prog)
+        _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
+        _gl.enableVertexAttribArray(aValueLoc)
+        _gl.vertexAttribPointer(aValueLoc, 1, _gl.FLOAT, false, 0, 0)
+        _gl.uniform1f(uCountLoc, count)
+        _gl.uniform2f(uViewportLoc, viewport.xMin, viewport.xMax)
+        _gl.uniform2f(uYRangeLoc, viewport.yMin, viewport.yMax)
+        _gl.uniform4f(uColorLoc, r, g, b, a)
         _gl.uniform1f(uPointSizeLoc, pointSize)
         _gl.drawArrays(_gl.POINTS, 0, count)
+      } else if (lineWidth > 1 && dataRef) {
+        // 粗折线：每样本展开 2 顶点 [value,-1, value,+1]，TRIANGLE_STRIP 连成 ribbon
+        const need = count * 4
+        if (ribbonScratch.length < need) ribbonScratch = new Float32Array(need * 2)
+        for (let i = 0; i < count; i++) {
+          const v = dataRef[i] ?? 0
+          const o = i * 4
+          ribbonScratch[o] = v
+          ribbonScratch[o + 1] = -1
+          ribbonScratch[o + 2] = v
+          ribbonScratch[o + 3] = 1
+        }
+        _gl.useProgram(ribbonProg)
+        _gl.bindBuffer(_gl.ARRAY_BUFFER, ribbonBuf)
+        _gl.bufferData(_gl.ARRAY_BUFFER, ribbonScratch.subarray(0, need), _gl.DYNAMIC_DRAW)
+        _gl.enableVertexAttribArray(aVSLoc)
+        _gl.vertexAttribPointer(aVSLoc, 2, _gl.FLOAT, false, 0, 0)
+        _gl.uniform1f(rCountLoc, count)
+        _gl.uniform2f(rViewportLoc, viewport.xMin, viewport.xMax)
+        _gl.uniform2f(rYRangeLoc, viewport.yMin, viewport.yMax)
+        _gl.uniform2f(rPlotSizeLoc, plotRect ? plotRect.w : cssW, plotRect ? plotRect.h : cssH)
+        _gl.uniform1f(rHalfWidthLoc, lineWidth / 2)
+        _gl.uniform4f(rColorLoc, r, g, b, a)
+        _gl.drawArrays(_gl.TRIANGLE_STRIP, 0, count * 2)
       } else {
+        _gl.useProgram(prog)
+        _gl.bindBuffer(_gl.ARRAY_BUFFER, buf)
+        _gl.enableVertexAttribArray(aValueLoc)
+        _gl.vertexAttribPointer(aValueLoc, 1, _gl.FLOAT, false, 0, 0)
+        _gl.uniform1f(uCountLoc, count)
+        _gl.uniform2f(uViewportLoc, viewport.xMin, viewport.xMax)
+        _gl.uniform2f(uYRangeLoc, viewport.yMin, viewport.yMax)
+        _gl.uniform4f(uColorLoc, r, g, b, a)
         _gl.uniform1f(uPointSizeLoc, 0)
         _gl.drawArrays(_gl.LINE_STRIP, 0, count)
       }
@@ -207,6 +280,8 @@ export function createLineRenderer(
     dispose() {
       _gl.deleteBuffer(buf)
       _gl.deleteProgram(prog)
+      _gl.deleteBuffer(ribbonBuf)
+      _gl.deleteProgram(ribbonProg)
     }
   }
 }

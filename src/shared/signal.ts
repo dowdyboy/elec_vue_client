@@ -33,11 +33,17 @@ export interface AnalysisFrame {
   type: AnalysisFrameType
   seq: number
   /**
-   * spectrum / spectrogram：服务端算好的 dB 幅度 Float32Array（长度 = fftSize/2）
+   * spectrum / spectrogram：服务端算好的幅度 Float32Array（长度 = fftSize/2）
+   *   - spectrum：按 cfg.dbScale 输出 dB 或线性幅度
+   *   - spectrogram：恒为 dB 行（时频图着色口径固定 -120~0 dB）
    * iq：交织原始 IQ Float32Array [I0,Q0,I1,Q1...]（时域图直接绘制）
    */
   data: Float32Array
   fftSize?: number
+  /** 采样率 Hz（频谱/IQ/时频均可携带；远程后端可省略，缺省回退组件 props） */
+  sampleRate?: number
+  /** 数据是否 dB 刻度（频谱按配置；时频恒为 true；远程后端可省略，缺省回退组件 props） */
+  dbScale?: boolean
   modType?: ModType
 }
 
@@ -54,7 +60,8 @@ export const FRAME_TYPE_BY_CODE: AnalysisFrameType[] = ['spectrum', 'spectrogram
 
 export function defaultAnalysisConfig(): SignalAnalysisConfig {
   return {
-    freq: 50,
+    // 载波默认高于符号率（当前默认 256 Bd），使 BPSK/QPSK 等调制主瓣完整居中、不被 DC 截断
+    freq: 512,
     snr: 20,
     amplitude: 1,
     modType: 'sine',

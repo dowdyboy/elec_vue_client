@@ -72,3 +72,56 @@ describe('YAutoScaler', () => {
     expect(r.max).toBeGreaterThan(r.min)
   })
 })
+
+describe('YAutoScaler 稳定性参数（换档滞回 + 收窄驻留）', () => {
+  const OPT = { hysteresis: 0.25, holdFrames: 60, shrinkRelease: 0.05 }
+
+  it('档位边界噪声：目标档位不逐帧翻转（修复 QAM 抖动）', () => {
+    const s = new YAutoScaler(OPT)
+    let prev: { min: number; max: number } | null = null
+    let changes = 0
+    for (let i = 0; i < 300; i++) {
+      // 交替在 [-1,1] 与 [-1.5,1.5] 两个档位边界附近（旧实现会持续翻转）
+      const r = i % 2 === 0 ? s.resolve(-0.8, 0.8) : s.resolve(-1.0, 1.0)
+      if (prev && (Math.abs(r.min - prev.min) > 1e-9 || Math.abs(r.max - prev.max) > 1e-9))
+        changes++
+      prev = r
+    }
+    expect(changes).toBeLessThanOrEqual(1) // 仅允许首次扩张一次
+  })
+
+  it('幅度阶跃：当帧立即扩张（不裁切）', () => {
+    const s = new YAutoScaler(OPT)
+    s.resolve(-0.5, 0.5)
+    const r = s.resolve(-3, 3)
+    expect(r.min).toBeLessThanOrEqual(-3)
+    expect(r.max).toBeGreaterThanOrEqual(3)
+  })
+
+  it('持续变小：先驻留保持，超过 holdFrames 后平滑收窄', () => {
+    const s = new YAutoScaler(OPT)
+    s.resolve(-3, 3) // 目标 [-4,4]
+    for (let i = 0; i < 30; i++) s.resolve(-0.5, 0.5)
+    expect(s.resolve(-0.5, 0.5).max).toBeGreaterThan(3.9) // 驻留期不收缩
+    let r = { min: 0, max: 0 }
+    for (let i = 0; i < 200; i++) r = s.resolve(-0.5, 0.5)
+    expect(r.max).toBeLessThan(2.5) // 驻留后平滑收窄
+  })
+
+  it('默认参数保持原语义：每次调用均跟随候选目标', () => {
+    const s = new YAutoScaler()
+    const a = s.resolve(-1.0, 1.0) // [-1.5,1.5]
+    expect(a.max).toBeGreaterThanOrEqual(1.5)
+    const b = s.resolve(-0.8, 0.8) // [-1,1]：默认无驻留，立即收窄目标
+    expect(b.max).toBeLessThan(a.max)
+  })
+
+  it('reset 清空目标与驻留计数', () => {
+    const s = new YAutoScaler(OPT)
+    s.resolve(-3, 3)
+    for (let i = 0; i < 30; i++) s.resolve(-0.5, 0.5) // 累计驻留
+    s.reset()
+    const r = s.resolve(-0.5, 0.5)
+    expect(r.max).toBeLessThan(1.1) // 重置后直接吸附小目标
+  })
+})
