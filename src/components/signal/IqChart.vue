@@ -33,6 +33,7 @@ import { MinMaxPyramid, PYRAMID_BLOCK, type RangeStats } from './core/pyramid'
 import { TriggerEngine, triggerRightNeed, type TriggerConfig } from './core/trigger'
 import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
+import { translate, type ChartMessageKey } from './core/i18n'
 import { cssSize } from './core/css'
 import type {
   ExportPayload,
@@ -82,6 +83,11 @@ const emit = defineEmits<{
   (e: 'cursorChange', p: IqCursorInfo | null): void
   (e: 'errorDetail', p: { code: 'adapter' | 'webgl' | 'data' | 'export'; message: string }): void
 }>()
+
+/** 组件文案：messages > locale 内置；labels 旧字段在调用处优先覆盖 */
+function tr(key: ChartMessageKey, vars?: Record<string, string | number>): string {
+  return translate(props.locale, props.messages, key, vars)
+}
 
 /** 兼容旧 error(string)，同时提供带 code 的 errorDetail */
 function reportError(code: 'adapter' | 'webgl' | 'data' | 'export', message: string): void {
@@ -201,7 +207,6 @@ const PAD_X = 24 // 波形左右内缩留白：避免满幅波形的左/右边�
 const MIN_SPAN = 16 // 最小可见样本数
 const DEFAULT_SPAN = 4096 // follow 模式默认窗宽（须明显大于单帧点数）
 const ZOOM_FACTOR = 1.2 // 每次滚轮缩放系数
-const WEBGL2_UNSUPPORTED_MSG = '当前环境不支持 WebGL2/Canvas2D，IQ 图无法渲染'
 
 // ── 数据缓冲（线性增长 + 环形丢老，保留最近 maxPoints）──
 // 挂载时生效；宿主可调小以降低内存（2M 双缓冲 + 金字塔约 25~40MB）
@@ -313,7 +318,10 @@ function syncTriggerCfg(): void {
   trigUi.level = triggerCfg.level
   trigUi.mode = triggerCfg.mode
   trigUi.edge = triggerCfg.edge
-  trigUi.status = triggerCfg.mode === 'single' && !triggerEng.state.armed ? '已捕获' : '等待触发'
+  trigUi.status =
+    triggerCfg.mode === 'single' && !triggerEng.state.armed
+      ? tr('iq.statusCaptured')
+      : tr('iq.statusWaiting')
   // 触发参数变化（开关/通道/边沿/电平/模式/屏位/失联超时）：旧捕获点与阈值不再匹配，
   // 重置触发状态等待新触发——否则残留 lastTriggerAbs/lastFeedHit 会让显示窗锚在旧捕获、
   // 而阈值线已画到新电平，波形看起来「突破不了阈值线」
@@ -788,17 +796,17 @@ function draw(): void {
   trigUi.status =
     triggerCfg.mode === 'single'
       ? triggerEng.state.armed
-        ? '等待触发'
-        : '已捕获'
+        ? tr('iq.statusWaiting')
+        : tr('iq.statusCaptured')
       : triggerCfg.mode === 'normal'
         ? triggerEng.state.lastTriggerAbs >= 0
-          ? '触发锁定'
-          : '等待触发'
+          ? tr('iq.statusLocked')
+          : tr('iq.statusWaiting')
         : triggerCfg.mode === 'auto'
           ? !autoStale && triggerEng.state.lastTriggerAbs >= 0
-            ? '触发锁定'
-            : '等待触发'
-          : '等待触发'
+            ? tr('iq.statusLocked')
+            : tr('iq.statusWaiting')
+          : tr('iq.statusWaiting')
   // 触发对齐冻结：normal/single/auto(触发未失联) 触发后定格显示触发窗，仅当「触发点或窗宽变化」才重绘一帧。
   // （缓冲持续流入淘汰也不影响已冻结画面；右侧数据未到位时 triggerViewWindow 返回 null，
   //   不冻结不渲染，等待数据到达后渲染对齐帧——避免窗口被钳制导致触发点偏离屏位）
@@ -1060,7 +1068,7 @@ function drawOverlay(
     ctx.textBaseline = 'middle'
     ctx.translate(plot.x + 8, plot.y + 12)
     ctx.rotate(-Math.PI / 2)
-    ctx.fillText(props.labels?.y ?? '幅度', 0, 0)
+    ctx.fillText(props.labels?.y ?? tr('iq.axisY'), 0, 0)
     ctx.restore()
     // X：单位于绘图区右下角（时间/样本随 sampleRate）
     ctx.save()
@@ -1070,7 +1078,7 @@ function drawOverlay(
     ctx.textAlign = 'right'
     ctx.textBaseline = 'bottom'
     ctx.fillText(
-      props.labels?.x ?? (timeOn ? '时间' : '样本'),
+      props.labels?.x ?? tr(timeOn ? 'iq.axisXTime' : 'iq.axisXSamples'),
       plot.x + plot.w - 6,
       plot.y + plot.h - 6
     )
@@ -1149,15 +1157,15 @@ function drawOverlay(
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
       const fmt3 = (v: number): string => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(yDecimals())}`
-      const lines = [`窗口 ${st.count} 样本`]
+      const lines = [tr('iq.windowSamples', { n: st.count })]
       if (traceVisible.i) {
         lines.push(
-          `I  Vpp ${(st.maxI - st.minI).toFixed(yDecimals())}  均值 ${fmt3(st.meanI)}  RMS ${st.rmsI.toFixed(yDecimals())}`
+          `I  Vpp ${(st.maxI - st.minI).toFixed(yDecimals())}  ${tr('iq.mean')} ${fmt3(st.meanI)}  RMS ${st.rmsI.toFixed(yDecimals())}`
         )
       }
       if (traceVisible.q) {
         lines.push(
-          `Q  Vpp ${(st.maxQ - st.minQ).toFixed(yDecimals())}  均值 ${fmt3(st.meanQ)}  RMS ${st.rmsQ.toFixed(yDecimals())}`
+          `Q  Vpp ${(st.maxQ - st.minQ).toFixed(yDecimals())}  ${tr('iq.mean')} ${fmt3(st.meanQ)}  RMS ${st.rmsQ.toFixed(yDecimals())}`
         )
       }
       let wMax = 0
@@ -1218,7 +1226,7 @@ function drawOverlay(
     if (markers.length === 2) {
       const sorted = [...markers].sort((x, y) => x - y)
       const dSamples = Math.abs(sorted[1]! - sorted[0]!)
-      markerLines.push(`Δ ${dSamples} 样本`)
+      markerLines.push(tr('iq.deltaSamples', { n: dSamples }))
       if (timeOn && dSamples > 0) {
         const dt = dSamples / (rate as number)
         markerLines.push(`Δt ${fmtTime(dt, tStep)}`)
@@ -1317,7 +1325,7 @@ const glChart = useGlChart(canvasRef, {
     }
     // WebGL2/Canvas2D 均不可用：仅显示显式提示
     if (!gl && !ctx2d) {
-      drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
+      drawUnsupported(tr('iq.webglUnsupported'))
       return
     }
     // 画布被重建（缓冲已清空）：冻结态存在快照时标记回填，下一帧恢复余辉
@@ -2161,7 +2169,7 @@ async function exportPNGAsync(): Promise<void> {
   const out = compositeCanvas()
   const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'))
   if (!blob) {
-    reportError('export', 'PNG 编码失败')
+    reportError('export', tr('common.pngEncodeFailed'))
     return
   }
   deliverExport({ kind: 'png', filename, blob })
@@ -2205,7 +2213,7 @@ function deliverExport(p: ExportPayload): void {
         a.href = URL.createObjectURL(p.blob)
         setTimeout(() => URL.revokeObjectURL(a.href), 1000)
       } else {
-        reportError('export', 'PNG 导出缺少 dataUrl/blob')
+        reportError('export', tr('common.pngMissing'))
         return
       }
     } else {
@@ -2296,8 +2304,8 @@ onMounted(async () => {
     ctx2d = canvas.getContext('2d')
   }
   if (!gl && !ctx2d) {
-    reportError('webgl', WEBGL2_UNSUPPORTED_MSG)
-    drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
+    reportError('webgl', tr('iq.webglUnsupported'))
+    drawUnsupported(tr('iq.webglUnsupported'))
     return
   }
   if (gl) {
@@ -2440,7 +2448,7 @@ function appendData(raw: unknown, meta?: IqFrameMeta): void {
       adapterErrored = false
       return
     }
-    reportError('adapter', 'adapter 返回 null，无法解析数据')
+    reportError('adapter', tr('common.adapterNull'))
     return
   }
   pushNormalized(n)
@@ -2470,7 +2478,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     :class="th.darkLike ? 'sig-dark' : 'sig-light'"
     tabindex="0"
     role="application"
-    :aria-label="props.labels?.aria ?? 'IQ 时域图'"
+    :aria-label="props.labels?.aria ?? tr('iq.aria')"
     :style="{
       width: cssSize(props.width, '100%'),
       height: cssSize(props.height, '260px'),
@@ -2500,25 +2508,21 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
     <div
       v-if="!view.follow"
       class="sig-follow-badge"
-      title="恢复跟随最新数据（保留当前缩放窗宽）。暂停期间数据持续接收（不丢样本），缓冲满后视图随环形淘汰滑动"
+      :title="tr('iq.pausedTitle')"
       @click="resumeFollow()"
       @pointerdown.stop
       @dblclick.stop
     >
-      {{ props.labels?.paused ?? '已暂停跟随 · 双击恢复' }}
+      {{ props.labels?.paused ?? tr('iq.paused') }}
     </div>
-    <div v-if="dataStale" class="sig-stale-badge" title="超过 3 秒未收到新数据">
-      {{ props.labels?.stale ?? '数据流中断' }}
+    <div v-if="dataStale" class="sig-stale-badge" :title="tr('common.staleTitle')">
+      {{ props.labels?.stale ?? tr('common.stale') }}
     </div>
-    <div
-      v-if="trigUi.enabled"
-      class="sig-trigger-badge"
-      title="触发对齐显示：虚线为电平（可拖拽），下方三角为触发点"
-    >
+    <div v-if="trigUi.enabled" class="sig-trigger-badge" :title="tr('iq.triggerTitle')">
       ⚡ {{ trigUi.mode }} · {{ trigUi.edge }} · Lv {{ trigUi.level.toFixed(yDecimals()) }} ·
       {{ trigUi.status }}
     </div>
-    <div class="sig-legend" title="点击切换迹线显隐">
+    <div class="sig-legend" :title="tr('iq.legendTitle')">
       <span
         class="sig-trace"
         :class="{ off: !traceVisible.i }"
@@ -2563,7 +2567,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
         @pointerdown.stop
         @dblclick.stop
       >
-        在此处标记
+        {{ tr('iq.menuAdd') }}
       </div>
       <div
         v-if="menu.hitIdx >= 0"
@@ -2572,7 +2576,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
         @pointerdown.stop
         @dblclick.stop
       >
-        清除该标记
+        {{ tr('iq.menuRemove') }}
       </div>
       <div
         v-if="markers.length > 0"
@@ -2581,7 +2585,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
         @pointerdown.stop
         @dblclick.stop
       >
-        清除全部标记
+        {{ tr('iq.menuClear') }}
       </div>
       <div class="sig-menu-sep" />
       <div
@@ -2590,7 +2594,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
         @pointerdown.stop
         @dblclick.stop
       >
-        {{ view.follow ? '暂停刷新' : '恢复刷新（清除标记）' }}
+        {{ view.follow ? tr('iq.menuPause') : tr('iq.menuResume') }}
       </div>
     </div>
   </div>

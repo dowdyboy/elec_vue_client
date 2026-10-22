@@ -57,6 +57,7 @@ import {
   type PlotRect
 } from './core/axis'
 import { resolveTheme } from './core/theme'
+import { translate, type ChartMessageKey } from './core/i18n'
 import { cssSize } from './core/css'
 import type {
   ExportPayload,
@@ -136,6 +137,11 @@ function reportError(code: 'adapter' | 'webgl' | 'data' | 'export', message: str
   emit('errorDetail', { code, message })
 }
 
+/** 组件文案：messages > locale 内置；labels 旧字段在调用处优先覆盖 */
+function tr(key: ChartMessageKey, vars?: Record<string, string | number>): string {
+  return translate(props.locale, props.messages, key, vars)
+}
+
 /** 不依赖 Vite 的 DEV 判断（非 Vite 宿主也能安全运行） */
 const IS_DEV = (() => {
   try {
@@ -155,8 +161,6 @@ let gl: WebGL2RenderingContext | null = null
 // Canvas2D 降级后端（WebGL2 不可用/显式 renderer:'canvas2d'）
 let ctx2d: CanvasRenderingContext2D | null = null
 let contextLost = false
-
-const WEBGL2_UNSUPPORTED_MSG = '当前环境不支持 WebGL2/Canvas2D，频谱图无法渲染'
 
 /** 背景清屏：GL 用 clear，Canvas2D 用 fillRect（设备像素空间） */
 function clearBackground(): void {
@@ -451,12 +455,12 @@ const traceLegend = computed(() =>
           ? `${t.label}(${props.averageCount})`
           : t.label
         : t.mode === 'average'
-          ? `${props.labels?.legend?.average ?? '平均'}(${props.averageCount})`
+          ? `${props.labels?.legend?.average ?? tr('spectrum.legendAverage')}(${props.averageCount})`
           : t.mode === 'maxHold'
-            ? (props.labels?.legend?.maxHold ?? '最大保持')
+            ? (props.labels?.legend?.maxHold ?? tr('spectrum.legendMaxHold'))
             : t.mode === 'minHold'
-              ? (props.labels?.legend?.minHold ?? '最小保持')
-              : (props.labels?.legend?.clear ?? '实时')
+              ? (props.labels?.legend?.minHold ?? tr('spectrum.legendMinHold'))
+              : (props.labels?.legend?.clear ?? tr('spectrum.legendClear'))
   }))
 )
 function toggleTrace(i: number, ev?: MouseEvent): void {
@@ -521,7 +525,7 @@ function appendData(raw: unknown, meta?: Partial<SpectrumMeta>): void {
       adapterErrored = false
       return
     }
-    reportError('adapter', 'adapter 返回 null，无法解析数据')
+    reportError('adapter', tr('common.adapterNull'))
     return
   }
   if (n.length === 0) return
@@ -1271,7 +1275,14 @@ function drawOverlay(
     ctx.rotate(-Math.PI / 2)
     ctx.textAlign = 'right' // 旋转后 right 方向 = 屏幕向下
     ctx.textBaseline = 'middle'
-    ctx.fillText(props.labels?.y ?? (curDbScale ? `幅度 (${unitLabel(props.unit)})` : '幅度'), 0, 0)
+    ctx.fillText(
+      props.labels?.y ??
+        (curDbScale
+          ? tr('spectrum.axisYDb', { unit: unitLabel(props.unit) })
+          : tr('spectrum.axisY')),
+      0,
+      0
+    )
     ctx.restore()
     ctx.save()
     ctx.font = '11px system-ui, -apple-system, sans-serif'
@@ -1280,7 +1291,7 @@ function drawOverlay(
     ctx.textAlign = 'right'
     ctx.textBaseline = 'bottom'
     ctx.fillText(
-      props.labels?.x ?? (bHz ? '频率' : 'bin'),
+      props.labels?.x ?? (bHz ? tr('spectrum.axisX') : 'bin'),
       plot.x + plot.w - 6,
       plot.y + plot.h - 6
     )
@@ -1305,10 +1316,10 @@ function drawOverlay(
     ctx.textBaseline = 'top'
     const infoTop = plot.y + 4 + (legendShown.value ? 22 : 0) + (pausedUi.value ? 24 : 0)
     const refInfo = view.yAuto
-      ? 'Auto'
+      ? tr('common.auto')
       : curDbScale
         ? `Ref ${toUnit(manualRef).toFixed(1)}${unitSuffix()} · ${manualDiv} dB/div`
-        : `Ref ${toUnit(manualRef).toFixed(2)}（线性）`
+        : `Ref ${toUnit(manualRef).toFixed(2)}${tr('common.linear')}`
     ctx.fillText(refInfo, plot.x + 20, infoTop)
     // 右上：Center/Span（下移避开峰值表面板）
     if (bHz && lastXrReal) {
@@ -1328,7 +1339,7 @@ function drawOverlay(
     if (bHz) infoParts.push(`RBW ${fmtFreq(bHz)}`)
     if (props.vbw && props.vbw > 0) {
       const vbwActive = bHz !== undefined && props.vbw < bHz
-      infoParts.push(`VBW ${fmtFreq(props.vbw)}${vbwActive ? '' : ' (off)'}`)
+      infoParts.push(`VBW ${fmtFreq(props.vbw)}${vbwActive ? '' : ` (${tr('common.off')})`}`)
     }
     if (infoParts.length) ctx.fillText(infoParts.join(' · '), plot.x + 6, plot.y + plot.h - 4)
     ctx.restore()
@@ -1461,7 +1472,7 @@ function drawOverlay(
       measChip(
         measNdb.lo,
         measNdb.hi,
-        `${measNdb.nDb}dB BW ${fmtFreq(measNdb.widthHz)} · 峰值 ${measLevelText(offsetDisplayDb(measNdb.peakValue))}`,
+        `${measNdb.nDb}dB BW ${fmtFreq(measNdb.widthHz)} · ${tr('common.peak')} ${measLevelText(offsetDisplayDb(measNdb.peakValue))}`,
         42
       )
     }
@@ -1574,7 +1585,9 @@ function drawOverlay(
       // 左上信息栏下方（避开顶部中央的"数据流中断"角标与居中的测量芯片栈）
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      const txt = res.pass ? 'LIMIT PASS' : `LIMIT FAIL ×${res.violations}`
+      const txt = res.pass
+        ? tr('spectrum.limitPass')
+        : tr('spectrum.limitFail', { n: res.violations })
       const bg = res.pass ? 'rgba(24,160,88,0.85)' : 'rgba(208,48,80,0.9)'
       const limTop = plot.y + 4 + (legendShown.value ? 22 : 0) + (pausedUi.value ? 24 : 0) + 18
       drawChip(ctx, plot.x + 20, limTop, txt, bg, '#ffffff', 'left', {
@@ -2806,7 +2819,7 @@ async function exportPNGAsync(): Promise<void> {
   const out = compositeCanvas()
   const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'))
   if (!blob) {
-    reportError('export', 'PNG 编码失败')
+    reportError('export', tr('common.pngEncodeFailed'))
     return
   }
   deliverExport({ kind: 'png', filename, blob })
@@ -2855,7 +2868,7 @@ function deliverExport(p: ExportPayload): void {
         a.href = URL.createObjectURL(p.blob)
         setTimeout(() => URL.revokeObjectURL(a.href), 1000)
       } else {
-        reportError('export', 'PNG 导出缺少 dataUrl/blob')
+        reportError('export', tr('common.pngMissing'))
         return
       }
     } else {
@@ -2971,7 +2984,7 @@ const glChart = useGlChart(canvasRef, {
       ov.height = h
     }
     if (!gl && !ctx2d) {
-      drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
+      drawUnsupported(tr('spectrum.webglUnsupported'))
       return
     }
     if (persistSnapshot) needsRestore = true
@@ -2997,8 +3010,8 @@ onMounted(async () => {
     ctx2d = canvas.getContext('2d')
   }
   if (!gl && !ctx2d) {
-    reportError('webgl', WEBGL2_UNSUPPORTED_MSG)
-    drawUnsupported(WEBGL2_UNSUPPORTED_MSG)
+    reportError('webgl', tr('spectrum.webglUnsupported'))
+    drawUnsupported(tr('spectrum.webglUnsupported'))
     return
   }
   if (gl) {
@@ -3126,7 +3139,7 @@ defineExpose({
     :class="th.darkLike ? 'sig-dark' : 'sig-light'"
     tabindex="0"
     role="application"
-    :aria-label="props.labels?.aria ?? '频谱图'"
+    :aria-label="props.labels?.aria ?? tr('spectrum.aria')"
     :style="{
       width: cssSize(props.width, '100%'),
       height: cssSize(props.height, '260px'),
@@ -3158,11 +3171,7 @@ defineExpose({
         :key="i"
         class="sig-legend-item"
         :class="{ 'is-off': !t.enabled, 'is-active': t.active }"
-        :title="
-          t.active
-            ? '当前活动迹线（标记/测量作用对象）；点击隐藏，Alt+点击切换活动'
-            : '点击隐藏（后台继续累计）；Alt+点击设为活动迹线'
-        "
+        :title="t.active ? tr('spectrum.legendActiveTitle') : tr('spectrum.legendInactiveTitle')"
         @click="toggleTrace(i, $event)"
         @pointerdown.stop
         @dblclick.stop
@@ -3175,20 +3184,20 @@ defineExpose({
       v-if="pausedUi"
       class="sig-frozen-badge"
       :style="{ top: legendShown ? '30px' : '8px' }"
-      title="点击恢复实时更新（重新接收并合并新帧）"
+      :title="tr('spectrum.pausedTitle')"
       @click="setPaused(false)"
       @pointerdown.stop
       @dblclick.stop
     >
-      {{ props.labels?.paused ?? '已冻结 · 点击恢复' }}
+      {{ props.labels?.paused ?? tr('spectrum.paused') }}
     </div>
     <div
       v-if="dataStale"
       class="sig-stale-badge"
       :style="{ top: legendShown ? '32px' : '8px' }"
-      title="超过 3 秒未收到新数据"
+      :title="tr('common.staleTitle')"
     >
-      {{ props.labels?.stale ?? '数据流中断' }}
+      {{ props.labels?.stale ?? tr('common.stale') }}
     </div>
     <div
       v-if="menu.show"
@@ -3197,7 +3206,7 @@ defineExpose({
       @contextmenu.prevent
     >
       <div class="sig-menu-item" @click.stop="menuAction('add')" @pointerdown.stop @dblclick.stop>
-        在此处标记
+        {{ tr('spectrum.menuAdd') }}
       </div>
       <div
         v-if="menu.hitIdx >= 0"
@@ -3206,14 +3215,14 @@ defineExpose({
         @pointerdown.stop
         @dblclick.stop
       >
-        清除该标记
+        {{ tr('spectrum.menuRemove') }}
       </div>
       <div class="sig-menu-item" @click.stop="menuAction('clear')" @pointerdown.stop @dblclick.stop>
-        清除全部标记
+        {{ tr('spectrum.menuClear') }}
       </div>
       <div class="sig-menu-sep" />
       <div class="sig-menu-item" @click.stop="menuAction('peak')" @pointerdown.stop @dblclick.stop>
-        峰值搜索
+        {{ tr('spectrum.menuPeak') }}
       </div>
       <div
         v-if="markers.length > 0"
@@ -3222,7 +3231,7 @@ defineExpose({
         @pointerdown.stop
         @dblclick.stop
       >
-        最近标记 → 中心
+        {{ tr('spectrum.menuToCenter') }}
       </div>
       <div
         v-if="markers.length > 0"
@@ -3231,7 +3240,7 @@ defineExpose({
         @pointerdown.stop
         @dblclick.stop
       >
-        最近标记 → 参考电平
+        {{ tr('spectrum.menuToRef') }}
       </div>
       <div
         v-if="markers.length >= 2"
@@ -3240,7 +3249,7 @@ defineExpose({
         @pointerdown.stop
         @dblclick.stop
       >
-        区间功率 / 密度（M1–M2）
+        {{ tr('spectrum.menuBand') }}
       </div>
       <div
         v-if="markers.length > 0"
@@ -3249,13 +3258,13 @@ defineExpose({
         @pointerdown.stop
         @dblclick.stop
       >
-        噪声标记（最近）
+        {{ tr('spectrum.menuNoise') }}
       </div>
       <div class="sig-menu-item" @click.stop="menuAction('acpr')" @pointerdown.stop @dblclick.stop>
-        ACPR 邻道功率
+        {{ tr('spectrum.menuAcpr') }}
       </div>
       <div class="sig-menu-item" @click.stop="menuAction('reset')" @pointerdown.stop @dblclick.stop>
-        全带宽复位
+        {{ tr('spectrum.menuReset') }}
       </div>
     </div>
   </div>

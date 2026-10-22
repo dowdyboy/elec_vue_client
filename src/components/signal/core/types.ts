@@ -18,6 +18,8 @@ export interface Viewport {
   autoScale?: boolean
 }
 
+import type { ChartLocale, ChartMessages } from './i18n'
+
 export type Theme = 'light' | 'dark' | 'auto' | 'spectrum'
 
 /**
@@ -93,6 +95,10 @@ export interface ChartBaseProps {
   preserveDrawingBuffer?: boolean
   /** 渲染后端：auto=优先 WebGL2、不可用回退 Canvas2D；webgl2=强制；canvas2d=强制 2D（默认 auto） */
   renderer?: 'auto' | 'webgl2' | 'canvas2d'
+  /** 界面语言：默认 zh-CN；'en-US' 切换内置英文 */
+  locale?: ChartLocale
+  /** 按 key 覆盖任意文案（优先级高于 locale；labels 的最高优先级保持不变） */
+  messages?: ChartMessages
 }
 
 // ── IQ ──

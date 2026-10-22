@@ -9,6 +9,7 @@ const initialRenderer = new URLSearchParams(location.search).get('renderer')
 const renderer = ref<'auto' | 'webgl2' | 'canvas2d'>(
   initialRenderer === 'webgl2' || initialRenderer === 'canvas2d' ? initialRenderer : 'auto'
 )
+const locale = ref<'zh-CN' | 'en-US'>('zh-CN')
 const theme = ref<Theme>('dark')
 const paused = ref(false)
 const traces = ref([
@@ -89,6 +90,13 @@ onUnmounted(() => {
             <option value="auto">auto</option>
           </select>
         </label>
+        <label>
+          locale
+          <select v-model="locale">
+            <option value="zh-CN">中文</option>
+            <option value="en-US">English</option>
+          </select>
+        </label>
         <label class="check">
           <input v-model="paused" type="checkbox" />
           spectrum paused
@@ -104,6 +112,7 @@ onUnmounted(() => {
         :key="'iq-' + renderer"
         :renderer="renderer"
         :theme="theme"
+        :locale="locale"
         :height="360"
         :labels="{ x: 'Time', y: 'Amplitude', aria: 'IQ time domain' }"
       />
@@ -118,6 +127,7 @@ onUnmounted(() => {
         v-model:traces="traces"
         :renderer="renderer"
         :theme="theme"
+        :locale="locale"
         :height="360"
         :labels="{ x: 'Frequency', y: 'Level (dBFS)', aria: 'Spectrum' }"
         :legend="true"

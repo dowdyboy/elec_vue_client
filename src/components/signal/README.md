@@ -148,7 +148,8 @@ spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: 
 
 - `theme`：`light | dark | auto | spectrum`；`auto` 会跟随系统深浅色变化
 - `chartStyle`：颜色/线宽/轴宽/多迹线调色板（`tracePalette`）等字段覆盖
-- `labels`：轴标题/角标/图例文案/aria 标签（默认中文，可传英文）
+- `labels`：轴标题/角标/图例/aria 文案（最高优先级，兼容旧用法）
+- `locale`：`zh-CN`（默认）| `en-US`；`messages`：按 key 覆盖任意内置文案
 - `width/height`：数字或 CSS 字符串
 - `renderer`：`auto`（默认，WebGL2→Canvas2D）/ `webgl2` / `canvas2d`；**挂载时生效**
 - `preserveDrawingBuffer`：默认 `true`；无余辉需求可设 `false` 降低拷贝开销
@@ -193,6 +194,25 @@ spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: 
 - 覆盖插槽：`<template #overlay>…</template>` 可叠加自定义标注/告警框（默认 `pointer-events:none`）。
 - 图表根节点可聚焦（`tabindex=0`），聚焦后键盘快捷键生效；触摸屏支持双指 X 缩放。
 
+### 多语言
+
+```vue
+<SpectrumChart locale="en-US" />
+<!-- 或按 key 覆盖 -->
+<SpectrumChart
+  locale="zh-CN"
+  :messages="{
+    'spectrum.menuPeak': '找峰',
+    'common.stale': '无数据',
+    'spectrum.legendClear': '当前'
+  }"
+/>
+```
+
+- 内置 `zh-CN` / `en-US`（`core/i18n.ts`），覆盖轴标题、菜单、角标、图例、触发状态、统计、限制线判定等。
+- 优先级：`labels`（旧字段） > `messages` > `locale` 内置。
+- 可用 `translate()`/`zhCN`/`enUS`/`ChartMessages` 自行扩展；数值单位（Hz/dB/ms）保持 SI/仪器通用写法。
+
 ## 7. 性能与限制
 
 - IQ 默认 2M 环缓冲，约 25~40MB/实例；多实例/低内存请显式设置 `maxPoints`。
@@ -203,19 +223,29 @@ spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: 
 - 频谱仍为**单边谱 0~Fs/2**；真实基带 IQ（中心 0）的负频不在当前契约内。
 - 噪声底未做 ENBW/PSD 绝对校准；峰值已按窗相干增益校准，Mock 默认口径为 dBFS。
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
-- 文案覆盖目前覆盖轴/角标/图例；右键菜单、测量芯片等仍为中文。
-- 无浏览器级单测；核心数学有 131 个单测。下面提供 Electron 截图冒烟，可人工/CI 检查 Canvas2D 与 WebGL2 两条路径。
+- 无浏览器级单测；核心数学/文案有 136 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（见下节）。
 
-## 8. Playground 与截图冒烟
+## 8. Playground、像素级视觉回归与截图冒烟
 
 不依赖 Electron 的最小 Vite 宿主在 `playground/`：
 
 ```bash
 npm run playground          # 开发服务器
-npm run build:playground    # 生产构建
+npm run build:playground    # 生产构建（index + visual 两个入口）
 ```
 
-截图冒烟（Canvas2D/WebGL2 各一张，自动检查非空）：
+**像素级视觉回归**（固定种子、固定 1100×360×2、dark、en-US、DPR=1；分别回归 canvas2d/webgl2）：
+
+```powershell
+npm run test:visual          # 构建 + canvas2d/webgl2 双后端像素对比
+npm run test:visual:update   # 构建 + 更新两套基线
+```
+
+- 基线：`playground/visual/baseline-canvas2d.png`、`baseline-webgl2.png`；失败时输出 `playground/dist/visual-*.png`。
+- 判定：通道差 > `VISUAL_PIXEL_DELTA`（默认 16）计差异像素，占比 > `VISUAL_MAX_DIFF_RATIO`（默认 0.4%）失败。
+- 基线绑定本机 Electron/GPU/字体；CI 需在相同镜像生成。DPR 通过 `--force-device-scale-factor=1` 固定；每个后端独立 Electron 进程运行。
+
+**截图冒烟**（可交互 Playground，自动检查非空）：
 
 ```powershell
 npm run build:playground
@@ -227,8 +257,8 @@ $env:SHOT_OUT='playground/dist/canvas2d.png'
 npx electron scripts/screenshot-playground.cjs
 ```
 
-> 把 `renderer` 换成 `webgl2` 可验证 WebGL2 路径；截图脚本会检查颜色数，白屏/黑屏直接失败。
+> `?nowebgl=1` 模拟无 WebGL2，验证 `renderer='auto'` 的 Canvas2D 回退；截图脚本会检查颜色数，白屏/黑屏直接失败。
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.1.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.2.0'`（公共 API 变更时按语义化版本维护）。

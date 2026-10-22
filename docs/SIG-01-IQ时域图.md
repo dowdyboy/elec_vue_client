@@ -21,7 +21,7 @@ ws.onmessage = (e) => iqRef.value.appendData(e.data) // RawInput 任意
 
 **Props**：`theme:'light'|'dark'|'auto'|'spectrum'` `mode:'line'|'dots'` `lineWidth`（`mode:'dots'` 为点径；`mode:'line'` 且 >1 时以 ribbon 几何展开绘制粗折线） `colors`（可选，未传取主题预置）
 `decimation`（`'minmax'`/`false`；`'lttb'` 类型保留但当前按 `'minmax'` 处理） `fpsLimit`（统一节流：数据推送/交互/尺寸变化触发的所有重绘） `viewport` `axis/xAxis/grid` `sampleRate`（Hz，启用时间轴） `span`（follow 窗宽样本数，默认 4096）
-`chartStyle`（外观覆盖） `labels`（轴标题/角标/aria 文案） `width/height`（数字或 `'100%'` 等 CSS 字符串） `follow`（受控跟随） `maxPoints`（环形缓冲上限，挂载时生效） `renderer`（`auto`/`webgl2`/`canvas2d`，挂载时生效） `preserveDrawingBuffer`（默认 true） `contextMenu`（默认 true） `exportHandler`（导出交付回调）
+`chartStyle`（外观覆盖） `labels`（轴标题/角标/aria 文案） `locale`（`zh-CN`/`en-US`） `messages`（按 key 覆盖文案） `width/height`（数字或 `'100%'` 等 CSS 字符串） `follow`（受控跟随） `maxPoints`（环形缓冲上限，挂载时生效） `renderer`（`auto`/`webgl2`/`canvas2d`，挂载时生效） `preserveDrawingBuffer`（默认 true） `contextMenu`（默认 true） `exportHandler`（导出交付回调）
 
 **外观**：`theme:'light'|'dark'|'auto'|'spectrum'` + `chartStyle` 字段级覆盖（优先级 `chartStyle > colors > 预置`）；
 `auto` 通过 `matchMedia` 订阅系统深浅色，系统切换时画布同步重绘。
@@ -32,20 +32,20 @@ DOM 浮层（图例/暂停角标/数据流中断角标/右键菜单）文字与�
 ```ts
 // chartStyle 可覆盖字段（全部可选）：core/theme.ts
 interface ChartStyle {
-  bg?: string            // 组件/画布背景
-  plotBg?: string        // 绘图区底色（须半透明：轴层绘制于波形层之上）
-  grid?: string          // 网格
-  border?: string        // 边框/轴线
-  text?: string          // 刻度文字
-  zeroLine?: string      // y=0 零基准线
-  labelChipBg?: string   // Y 刻度芯片底
-  traceI?: string        // I 迹线
-  traceQ?: string        // Q 迹线
-  envColor?: string      // 幅度包络迹线颜色
-  traceAlpha?: number    // 波形不透明度（dark/light 默认 0.85，spectrum 0.9）
-  axisWidth?: number     // 左侧刻度带宽 CSS px（≥40，默认 56）
-  crosshair?: string     // 十字光标/测量标记线颜色
-  triggerColor?: string  // 触发覆盖层强调色（电平虚线/触发三角/Lv 文字/右上触发角标文字）
+  bg?: string // 组件/画布背景
+  plotBg?: string // 绘图区底色（须半透明：轴层绘制于波形层之上）
+  grid?: string // 网格
+  border?: string // 边框/轴线
+  text?: string // 刻度文字
+  zeroLine?: string // y=0 零基准线
+  labelChipBg?: string // Y 刻度芯片底
+  traceI?: string // I 迹线
+  traceQ?: string // Q 迹线
+  envColor?: string // 幅度包络迹线颜色
+  traceAlpha?: number // 波形不透明度（dark/light 默认 0.85，spectrum 0.9）
+  axisWidth?: number // 左侧刻度带宽 CSS px（≥40，默认 56）
+  crosshair?: string // 十字光标/测量标记线颜色
+  triggerColor?: string // 触发覆盖层强调色（电平虚线/触发三角/Lv 文字/右上触发角标文字）
 }
 ```
 
@@ -56,6 +56,7 @@ interface ChartStyle {
 触发点三角仍按固定 24px 计算，绘图区宽 <300px 时与波形内缩量不一致
 
 **显示点数机制（三层，各自决定）**：
+
 - ① 数据到达速率：**服务端**决定——Mock 默认 `pointsPerFrame=2048` × 60fps ≈ 12 万样本/秒，只影响流动快慢
 - ② 视口展示样本数：**组件**决定——follow 模式窗口宽 = `span` prop（默认 4096，≥16，**支持 `v-model:span` 双向**：
   跟随态外部改值即时重绘生效；内部滚轮/框选/拖拽/键盘缩放与复位（含触发模式的滚轮/框选/`+`/`-`）均经 `update:span` 节流 150ms 回写；
@@ -93,6 +94,7 @@ interface ChartStyle {
 （基于金字塔 sum/sumsq 聚合，大窗 O(块数)，按窗口切片缓存）；仅显示可见通道；跟随态自动隐藏
 
 **测量标记**：数量不限，锚定绝对样本索引（缩放/平移保持数据位置）
+
 - 添加：暂停状态下 Alt+点击空白，或右键菜单「在此处标记」（触发模式下跟随态也可 Alt+点击；右键菜单项在跟随态仍禁用）
 - 清除：Alt+点击标记（按下无拖动判定）/ 右键「清除该标记」/「清除全部标记」
 - 微调：Alt+按住标记拖拽（位移超 4px 判定为拖拽）
@@ -114,6 +116,7 @@ interface ChartStyle {
 `axisLabels` prop 控制显隐（默认开启）
 
 **触发显示**：`trigger` prop 启用后进入触发对齐模式（默认保持跟随；暂停或经 `setViewport` 冻结视口时数据仍持续摄入，触发检测不中断）：
+
 - `enabled` 开/关；`source:'i'|'q'` 触发通道；`edge:'rising'|'falling'` 边沿；`level` 电平；`mode:'auto'|'normal'|'single'`；`preTrigger` 触发点屏幕位置比例（默认 0.25）；`autoTimeout` auto 失联回退超时 ms（默认 500）
 - 检测：每个新数据段只取段内**第一个**跨电平边沿（O(段长)，金字塔不动）；显示窗 = `[trigger − pre×span, trigger + (1−pre)×span]`
 - 待渲染触发点（pending）：auto/normal 命中后先进入 `pendingAbs`，触发点右侧补齐 `(1−preTrigger)×span` 样本后才提升为 `lastTriggerAbs` 渲染/冻结——期间新边沿不覆盖 pending，因此周期信号（每帧都有边沿）也能稳定对齐；右侧长期无法补齐（信号消失/停止推流）时 auto 按失联超时回退自由滚动
@@ -151,6 +154,7 @@ interface ChartStyle {
 注：暂停期间内存与淘汰行为与跟随态一致；如需长时间定格回看，请在冻结窗被淘汰吞没前操作
 
 **宿主 API / 事件**（公开入口 `@/components/signal`；完整见 `README.md`）：
+
 - 数据：`appendData(raw, meta?)`（`meta.sampleRate` 优先于 `sampleRate` prop）、`setData(raw, meta?)`、`clear()`
 - 控制：`setViewport`、`setFollow(v)` / `setPaused(v)`（`follow` prop + `v-model:follow`）、`setSpan(n)`、`setYRange(min,max,auto?)`、`zoomReset`、`armTrigger`
 - 数据/诊断：`getView()`、`getStats()`、`getVisibleData()`（可见窗 I/Q 拷贝）、`getLength()`
@@ -162,12 +166,13 @@ interface ChartStyle {
 - 可移植性：`renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D（余辉用 Canvas 覆盖模拟）；`renderer='webgl2'` 强制且失败时 emit `error/errorDetail` + 占位提示
 - 批量/触控/无障碍：离屏暂停重绘；根节点 `tabindex=0`、`role=application`、`aria-label`（可由 `labels.aria` 覆盖）；触摸双指 X 缩放
 
-**单元测试**：`npm test`（vitest，当前 131 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
+**单元测试**：`npm test`（vitest，当前 136 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
 `yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/换档滞回与收窄驻留/reset，12）、
 `pyramid`（整树重建随机区间/增量追加/bucketChannel 与旧实现逐值一致/扩容重建/queryStats/包络 env 通道/compactShift 环形淘汰增量，9）、
 `trigger`（findEdge 边沿检测/triggerWindow 钳制/triggerRightNeed·pending 提升门控/auto·normal pending 与 promote·single 状态机与 reset，18）、
 `spectrum`（迹线累计/自动量程/峰值/缩放窗口/ACPR/平均与保持/稳健极值，56）、
-`adapters`（对齐/类型守卫/int16·float64/字节序/平面/工厂/频谱 uint8，11）、`shared/signalDsp`（升余弦成型/生成器连续性/成型谱形/SNR 口径，6）、
+`adapters`（对齐/类型守卫/int16·float64/字节序/平面/工厂/频谱 uint8，11）、`i18n`（中英/覆盖/插值，5）、
+`shared/signalDsp`（升余弦成型/生成器连续性/成型谱形/SNR 口径，6）、
 `shared/signalFrames`（窗增益补偿/跨帧 FIFO/时频固定 dB 行，7）、`shared/remoteScriptParity`（独立脚本与共享实现的帧计算/生成器逐样本一致，3）
 
 **帧元数据**：IQ 帧携带 `sampleRate`（[shared/signal.ts](../src/shared/signal.ts)），演示页默认随帧自动同步采样率，手动修改后锁定、点「自动」恢复；

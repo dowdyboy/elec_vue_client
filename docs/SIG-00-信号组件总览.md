@@ -74,23 +74,27 @@ interface ChartBaseProps {
   data?: RawInput | Normalized // 受控；高频用 appendData
   preserveDrawingBuffer?: boolean // 默认 true（余辉/导出需要）；无余辉可设 false
   renderer?: 'auto' | 'webgl2' | 'canvas2d' // 默认 auto：WebGL2 不可用回退 Canvas2D
+  locale?: 'zh-CN' | 'en-US' // 默认 zh-CN；内置英文
+  messages?: Partial<Record<ChartMessageKey, string>> // 按 key 覆盖文案
 }
 ```
 
 IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生 class/style 留给宿主布局）、
-`labels`（轴标题/角标/图例/aria 文案）、`contextMenu`（内置右键菜单开关）、`#overlay` 插槽（宿主标注）。
+`labels`（轴标题/角标/图例/aria 文案，最高优先级）、`locale`/`messages`（内置中英文 + 任意 key 覆盖）、
+`contextMenu`（内置右键菜单开关）、`#overlay` 插槽（宿主标注）。
 事件补齐：`ready`、`cursorChange`、`errorDetail({code,message})`、`contextLost/contextRestored`、`contextmenu`；
 方法补齐：`exportPNGAsync`、`dispose`、`resize`/`redraw`、`getStats`/`getVisibleData`。
 离屏时 IntersectionObserver 暂停重绘；根节点可聚焦（键盘）并支持触摸双指 X 缩放。
+像素级视觉回归见 `playground/visual.html` + `scripts/visual-regression.cjs`（canvas2d/webgl2 双基线）。
 
 ## 四、四组件一览
 
-| 组件                 | 输入（经 adapter）                       | 内部计算                      | 渲染                                         |
-| -------------------- | ---------------------------------------- | ----------------------------- | -------------------------------------------- |
-| `IqChart`            | `{i,q}` 或交织 `Float32Array`            | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层（实测比例映射，页面缩放下波形与网格对齐） |
-| `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（dB/线性，含 `sampleRate/fftSize/dbScale` 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移 | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线） |
-| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`        | 行累计瀑布（最新行在顶部，历史向下滚动；行长变化自动重置） | Canvas2D `ImageData` 行刷 |
-| `ConstellationChart` | `{i,q}`                                  | 环形缓冲 500k 点，对称方形视口 | WebGL Points（pointSize 可调）               |
+| 组件                 | 输入（经 adapter）                                                                   | 内部计算                                                                                                                                                                                                           | 渲染                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                        | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层（实测比例映射，页面缩放下波形与网格对齐）                                                                                                                                                    |
+| `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（dB/线性，含 `sampleRate/fftSize/dbScale` 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线） |
+| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`                                                    | 行累计瀑布（最新行在顶部，历史向下滚动；行长变化自动重置）                                                                                                                                                         | Canvas2D `ImageData` 行刷                                                                                                                                                                                                                                            |
+| `ConstellationChart` | `{i,q}`                                                                              | 环形缓冲 500k 点，对称方形视口                                                                                                                                                                                     | WebGL Points（pointSize 可调）                                                                                                                                                                                                                                       |
 
 ## 五、性能要点
 
