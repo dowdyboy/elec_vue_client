@@ -48,17 +48,18 @@
 
 ## 信号分析组件
 
-IQ 时域/频谱组件已按“可被其他上位机集成”的目标库化：
+IQ 时域/频谱/时频组件已按“可被其他上位机集成”的目标库化：
 
-- WebGL2 + Canvas2D 自动降级、`renderer` 可强制/关闭
+- WebGL2 + Canvas2D 自动降级、`renderer` 可强制后端
 - int16/float64/平面/字节序适配器，程序化 API（follow/paused、标记、区间测量、峰值、统计/可见数据）
+- 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例
 - 像素级视觉回归（Canvas2D/WebGL2 双基线）
 
-文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
+文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 时频图/星座图为演示级骨架，尚未完成库化。
+> 星座图为演示级骨架，尚未完成库化。
 
 ## 快速开始
 

@@ -1,7 +1,7 @@
-# 信号组件（IQ / 频谱）集成指南
+# 信号组件（IQ / 频谱 / 时频）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
-> `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`
+> `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
 > （拷贝本目录时可按需一并拷贝这些文档）。
 
 ## 1. 环境要求
@@ -24,11 +24,11 @@ node scripts/copy-signal.mjs ../my-host-app
 宿主中：
 
 ```ts
-import { IqChart, SpectrumChart, iqAdapters } from '@/components/signal'
+import { IqChart, SpectrumChart, SpectrogramChart, iqAdapters } from '@/components/signal'
 ```
 
-> 公共入口会引入 4 个组件；只打包 IQ/频谱时可直接深路径导入
-> `@/components/signal/IqChart.vue` / `SpectrumChart.vue`，由打包器做 tree-shaking。
+> 公共入口会引入 4 个组件；只打包 IQ/频谱/时频时可直接深路径导入
+> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue`，由打包器做 tree-shaking。
 
 ### 方式 B：全局注册
 
@@ -49,7 +49,7 @@ npm run build:signal
 宿主（Vue 作为 peerDependency）：
 
 ```ts
-import { IqChart, SpectrumChart } from 'elec-signal-charts'
+import { IqChart, SpectrumChart, SpectrogramChart } from 'elec-signal-charts'
 import 'elec-signal-charts/style.css'
 ```
 
@@ -113,6 +113,31 @@ ws.onmessage = (e) => iq.value?.appendData(e.data, { sampleRate })
 ```ts
 spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: true })
 ```
+
+### 时频瀑布
+
+```vue
+<SpectrogramChart
+  ref="specgram"
+  color-map="viridis"
+  :time-span="256"
+  :sample-rate="4_000_000"
+  :fft-size="1024"
+  :time-step-sec="0.000256"
+  height="100%"
+/>
+```
+
+```ts
+specgram.value?.appendData(rowDb, {
+  sampleRate: 4_000_000,
+  fftSize: 1024,
+  timeStepSec: 0.000256
+})
+```
+
+> 行长度 = `fftSize/2`；固定 dB 口径 -120~0。WebGL2 R8 纹理 + LUT，无 WebGL2 时 Canvas2D 降级；
+> 支持频率缩放/平移、冻结、自动/手动电平、色标、游标、PNG/CSV；详见 [SIG-03](../../../docs/SIG-03-时频图.md)。
 
 ## 4. 数据格式与适配器
 
@@ -192,7 +217,7 @@ spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: 
 - 原生 `class`/`style` 可以正常用于布局；外观色请走 `chart-style`。
 - 内置 `spectrum` 主题为黑底黄迹频谱仪风格；`tracePalette` 可覆盖多迹线调色板。
 - 覆盖插槽：`<template #overlay>…</template>` 可叠加自定义标注/告警框（默认 `pointer-events:none`）。
-- 图表根节点可聚焦（`tabindex=0`），聚焦后键盘快捷键生效；触摸屏支持双指 X 缩放。
+- 图表根节点可聚焦（`tabindex=0`），聚焦后键盘快捷键生效；触摸屏支持双指 X 缩放（IQ/频谱/时频）。
 
 ### 多语言
 
@@ -220,10 +245,12 @@ spec.value?.appendData(buffer, { sampleRate: 1_000_000, fftSize: 4096, dbScale: 
 - **Canvas2D 回退**：无上下文数量限制，适合工业面板/远程桌面；建议保持 `decimation:'minmax'`（默认），`decimation:false` + 大窗会明显变慢。
 - 高频 ingestion 在主线程按样本循环；>50 万点/帧建议先在宿主侧抽稀，或使用 `playground/src/iqWorker.ts` 的 Worker 解析模式。
 - 不可见（离屏）时暂停重绘；数据仍入缓冲，滚回可见时补一帧。
-- 频谱仍为**单边谱 0~Fs/2**；真实基带 IQ（中心 0）的负频不在当前契约内。
+- 频谱/时频仍为**单边谱 0~Fs/2**；真实基带 IQ（中心 0）的负频不在当前契约内。
 - 噪声底未做 ENBW/PSD 绝对校准；峰值已按窗相干增益校准，Mock 默认口径为 dBFS。
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
-- 无浏览器级单测；核心数学/文案有 136 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（见下节）。
+- 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
+- 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
+- 无浏览器级单测；核心数学/文案有 144 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（含时频图，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -234,7 +261,7 @@ npm run playground          # 开发服务器
 npm run build:playground    # 生产构建（index + visual 两个入口）
 ```
 
-**像素级视觉回归**（固定种子、固定 1100×360×2、dark、en-US、DPR=1；分别回归 canvas2d/webgl2）：
+**像素级视觉回归**（固定种子、固定 1100×360×2 + 1100×300、dark、en-US、DPR=1；分别回归 canvas2d/webgl2）：
 
 ```powershell
 npm run test:visual          # 构建 + canvas2d/webgl2 双后端像素对比
@@ -261,4 +288,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.2.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.3.0'`（公共 API 变更时按语义化版本维护）。

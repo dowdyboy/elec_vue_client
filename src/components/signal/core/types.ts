@@ -8,7 +8,7 @@ export type RawInput = unknown
 
 /** 内联定义（拷贝即用：不依赖 src/shared） */
 export type WindowType = 'rect' | 'hann' | 'hamming' | 'blackman'
-export type ColorMap = 'viridis' | 'jet' | 'grayscale' | 'hot'
+export type ColorMap = 'viridis' | 'turbo' | 'jet' | 'grayscale' | 'hot'
 
 export interface Viewport {
   xMin?: number
@@ -71,7 +71,7 @@ export interface ChartLabels {
   paused?: string
   /** 数据流中断角标（默认「数据流中断」） */
   stale?: string
-  /** 画布无障碍标签（默认「IQ 时域图」/「频谱图」） */
+  /** 画布无障碍标签（默认「IQ 时域图」/「频谱图」/「时频图」） */
   aria?: string
   /** 迹线图例文案（频谱多迹线） */
   legend?: {
@@ -433,11 +433,117 @@ export interface SpectrumMeta {
 // 组件只吃服务端算好的「dB 行」Float32Array（长度 = fftSize/2），自行累计成瀑布
 export type SpectrogramInput = Float32Array
 export type SpectrogramAdapter = (raw: RawInput) => SpectrogramInput | null
+
+/** 时频行元数据（帧元数据优先；缺省回退 props） */
+export interface SpectrogramMeta {
+  sampleRate?: number
+  fftSize?: number
+  /** 时频行恒为 dB；保留字段用于兼容 */
+  dbScale?: boolean
+  /** 行时间戳（ms）；用于时间轴/游标读数，缺省用工整的行步长 */
+  timestamp?: number
+  /** 服务端行序号（可选） */
+  seq?: number
+  /** 行间时间步长秒（重叠 hop/sampleRate；缺省由 fftSize/sampleRate 推导） */
+  timeStepSec?: number
+}
+
+export interface SpectrogramLevelRange {
+  min: number
+  max: number
+}
+
 export interface SpectrogramProps extends ChartBaseProps {
   colorMap?: ColorMap
-  timeSpan?: number // 显示时间跨度（行数），默认 128
+  /** 外观覆盖（主题色/字体芯片等） */
+  chartStyle?: ChartStyle
+  /** 可覆盖文案（轴/色标/aria 等） */
+  labels?: ChartLabels
+  /** 显示行数（时间窗），默认 256 */
+  timeSpan?: number
+  /** 环形缓冲容量（默认 = max(timeSpan, 256)） */
+  maxRows?: number
+  /** 采样率 Hz（帧元数据优先） */
+  sampleRate?: number
+  /** FFT 大小（帧元数据优先；缺省由行宽 ×2 推导） */
+  fftSize?: number
+  /** 频率显示偏移 Hz（仅显示层） */
+  freqOffsetHz?: number
+  /** 行间时间步长秒（帧元数据优先；缺省由 fftSize/sampleRate 推导） */
+  timeStepSec?: number
+  /** 手动电平下限 dB（默认 -120；autoLevel 时忽略） */
+  dbMin?: number
+  /** 手动电平上限 dB（默认 0；autoLevel 时忽略） */
+  dbMax?: number
+  /** 自动电平范围（默认 false，固定 -120~0 dBFS） */
+  autoLevel?: boolean
+  /** 色阶 gamma（0.2~3，默认 1；>1 提亮低电平） */
+  gamma?: number
+  /** 数据/纹理缩放插值：nearest（默认，保留 bin/行边界）或 linear */
+  interpolation?: 'nearest' | 'linear'
+  /** 冻结最新画面（数据仍入环形缓冲；支持 v-model:paused） */
+  paused?: boolean
+  /** 右侧色标（默认 true） */
+  showColorbar?: boolean
+  /** 左上参数栏（默认 true） */
+  showInfo?: boolean
+  /** 十字光标读数（默认 true） */
+  showCursor?: boolean
+  /** 内置右键菜单（默认 true；false 时仍 emit contextmenu） */
+  contextMenu?: boolean
+  /** 电平显示单位（仅显示层，默认 dBFS） */
+  unit?: string
+  /** 幅度校准偏移 dB（仅显示层） */
+  ampOffsetDb?: number
+  /** 坐标轴（默认 true） */
+  axis?: boolean
+  /** X 轴刻度（频率） */
+  xAxis?: boolean
+  /** 网格 */
+  grid?: boolean
+  /** 轴/色标标题 */
+  axisLabels?: boolean
+  /** PNG/CSV 交由宿主交付 */
+  exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: SpectrogramAdapter
   data?: RawInput | SpectrogramInput
+}
+
+/** 时频游标读数（cursorChange 事件；移出绘图区为 null） */
+export interface SpectrogramCursorInfo {
+  /** 行龄：0=最新行 */
+  rowAge: number
+  bin: number
+  /** 频率（有 sampleRate/fftSize 时） */
+  freqHz?: number
+  /** 相对最新行的时间（秒，负值；有 timeStep 时） */
+  timeSec?: number
+  /** dB 原始值（未加 ampOffsetDb） */
+  levelDb: number
+}
+
+/** 时频运行统计 */
+export interface SpectrogramStats {
+  rows: number
+  capacity: number
+  cols: number
+  fftSize?: number
+  sampleRate?: number
+  timeStepSec?: number
+  dbMin: number
+  dbMax: number
+  paused: boolean
+}
+
+/** 时频可见数据（getVisibleData()，newest→oldest 拷贝） */
+export interface SpectrogramVisibleData {
+  rows: Float32Array[]
+  cols: number
+  newestSeq: number
+  fftSize?: number
+  sampleRate?: number
+  timeStepSec?: number
+  freqOffsetHz: number
 }
 
 // ── 星座 ──

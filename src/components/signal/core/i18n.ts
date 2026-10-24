@@ -67,7 +67,24 @@ export const zhCN = {
   'spectrum.menuNoise': '噪声标记（最近）',
   'spectrum.menuAcpr': 'ACPR 邻道功率',
   'spectrum.menuReset': '全带宽复位',
-  'spectrum.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，频谱图无法渲染'
+  'spectrum.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，频谱图无法渲染',
+
+  'spectrogram.aria': '时频图',
+  'spectrogram.paused': '已冻结 · 双击恢复',
+  'spectrogram.pausedTitle': '恢复跟随最新行（数据仍在累积）',
+  'spectrogram.axisX': '频率',
+  'spectrogram.axisY': '时间',
+  'spectrogram.levelAxis': '电平 ({unit})',
+  'spectrogram.noData': '等待数据…',
+  'spectrogram.info': '{rows} 行 · {cols} bin',
+  'spectrogram.menuPause': '冻结画面',
+  'spectrogram.menuResume': '恢复跟随',
+  'spectrogram.menuClear': '清空瀑布',
+  'spectrogram.menuReset': '复位频率视图',
+  'spectrogram.menuExportPng': '导出 PNG',
+  'spectrogram.menuExportCsv': '导出 CSV',
+  'spectrogram.exportEmpty': '没有可导出的行',
+  'spectrogram.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，时频图无法渲染'
 } as const
 
 export type ChartMessageKey = keyof typeof zhCN
@@ -133,7 +150,24 @@ export const enUS: Record<ChartMessageKey, string> = {
   'spectrum.menuNoise': 'Noise marker (nearest)',
   'spectrum.menuAcpr': 'ACPR adjacent channel',
   'spectrum.menuReset': 'Reset full span',
-  'spectrum.webglUnsupported': 'WebGL2/Canvas2D unavailable; spectrum chart cannot render'
+  'spectrum.webglUnsupported': 'WebGL2/Canvas2D unavailable; spectrum chart cannot render',
+
+  'spectrogram.aria': 'Spectrogram',
+  'spectrogram.paused': 'Frozen · double-click to resume',
+  'spectrogram.pausedTitle': 'Resume following the newest row (data still accumulating)',
+  'spectrogram.axisX': 'Frequency',
+  'spectrogram.axisY': 'Time',
+  'spectrogram.levelAxis': 'Level ({unit})',
+  'spectrogram.noData': 'Waiting for data…',
+  'spectrogram.info': '{rows} rows · {cols} bins',
+  'spectrogram.menuPause': 'Freeze',
+  'spectrogram.menuResume': 'Resume',
+  'spectrogram.menuClear': 'Clear waterfall',
+  'spectrogram.menuReset': 'Reset frequency view',
+  'spectrogram.menuExportPng': 'Export PNG',
+  'spectrogram.menuExportCsv': 'Export CSV',
+  'spectrogram.exportEmpty': 'No rows to export',
+  'spectrogram.webglUnsupported': 'WebGL2/Canvas2D unavailable; spectrogram cannot render'
 }
 
 /** 解析文案：messages > locale 内置 > key 本身；支持 {name} 插值 */

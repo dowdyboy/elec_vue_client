@@ -66,6 +66,7 @@ export function registerRemoteMockServer(): () => void {
         fftSize: cfg.fftSize,
         sampleRate: cfg.sampleRate,
         dbScale: true,
+        timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType
       })

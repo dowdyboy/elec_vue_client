@@ -1,27 +1,55 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { NCard, NSelect, NButton, NEmpty, useMessage } from 'naive-ui'
-import SpectrogramChart from '@components/signal/SpectrogramChart.vue'
+import { NCard, NSelect, NButton, NCheckbox, NEmpty, NSwitch, useMessage } from 'naive-ui'
+import { SpectrogramChart } from '@components/signal'
+import type { ColorMap } from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
 import { isDark } from '@renderer/stores/theme'
 
 const message = useMessage()
 const chartRef = ref<InstanceType<typeof SpectrogramChart> | null>(null)
-// 展示配置（组件端）
-const colorMap = ref<'viridis' | 'jet' | 'grayscale' | 'hot'>('viridis')
+const colorMap = ref<ColorMap>('viridis')
+const timeSpan = ref(256)
+const paused = ref(false)
+const autoLevel = ref(false)
+const showColorbar = ref(true)
 const hasData = ref(false)
+const lastMeta = ref({ rows: 0, cols: 0, fftSize: 0, sampleRate: 0, timeStepSec: 0 })
 
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
-sig.onSpectrogram((row) => {
-  chartRef.value?.appendData(row)
+sig.onSpectrogram((row, frame) => {
+  chartRef.value?.appendData(row, {
+    sampleRate: frame.sampleRate,
+    fftSize: frame.fftSize,
+    timeStepSec: frame.timeStepSec,
+    seq: frame.seq
+  })
   hasData.value = true
+  const st = chartRef.value?.getStats()
+  if (st)
+    lastMeta.value = {
+      rows: st.rows,
+      cols: st.cols,
+      fftSize: st.fftSize ?? 0,
+      sampleRate: st.sampleRate ?? 0,
+      timeStepSec: st.timeStepSec ?? 0
+    }
 })
 
 function onClear(): void {
   chartRef.value?.clear()
   hasData.value = false
   message.success('已清空')
+}
+function onReset(): void {
+  chartRef.value?.resetView()
+}
+function onExportPng(): void {
+  chartRef.value?.exportPNG()
+}
+function onExportCsv(): void {
+  chartRef.value?.exportCSV()
 }
 </script>
 
@@ -34,12 +62,32 @@ function onClear(): void {
           v-model:value="colorMap"
           :options="[
             { label: 'viridis', value: 'viridis' },
+            { label: 'turbo', value: 'turbo' },
             { label: 'jet', value: 'jet' },
             { label: 'grayscale', value: 'grayscale' },
             { label: 'hot', value: 'hot' }
           ]"
           style="width: 120px"
         />
+        <span>时间窗</span>
+        <NSelect
+          v-model:value="timeSpan"
+          :options="[
+            { label: '128 行', value: 128 },
+            { label: '256 行', value: 256 },
+            { label: '512 行', value: 512 }
+          ]"
+          style="width: 100px"
+        />
+        <NCheckbox v-model:checked="autoLevel">自动电平</NCheckbox>
+        <NCheckbox v-model:checked="showColorbar">色标</NCheckbox>
+        <span style="display: inline-flex; align-items: center; gap: 6px">
+          冻结
+          <NSwitch v-model:value="paused" size="small" />
+        </span>
+        <NButton size="small" @click="onReset">复位频率</NButton>
+        <NButton size="small" @click="onExportPng">PNG</NButton>
+        <NButton size="small" @click="onExportCsv">CSV</NButton>
         <NButton size="small" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
           >等待数据（请至“Mock 配置”页启动）…</span
@@ -49,7 +97,10 @@ function onClear(): void {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        重叠 / FFT 等处理在服务端配置（请至“Mock 配置”页），组件只累计并上色展示。主题跟随全局。
+        {{ lastMeta.rows }} 行 / {{ lastMeta.cols }} bin · FFT {{ lastMeta.fftSize || '-' }} · Fs
+        {{ lastMeta.sampleRate || '-' }} · Δt
+        {{ lastMeta.timeStepSec ? lastMeta.timeStepSec.toExponential(3) + ' s' : '-' }}
+        · 重叠 / FFT 处理在服务端配置（请至“Mock 配置”页）
       </div>
     </NCard>
     <NCard content-style="padding: 0">
@@ -58,8 +109,12 @@ function onClear(): void {
           ref="chartRef"
           :theme="isDark ? 'dark' : 'light'"
           :color-map="colorMap"
-          :time-span="128"
+          :time-span="timeSpan"
+          :paused="paused"
+          :auto-level="autoLevel"
+          :show-colorbar="showColorbar"
           :height="420"
+          @update:paused="(v: boolean) => (paused = v)"
         />
         <NEmpty
           v-if="!hasData"

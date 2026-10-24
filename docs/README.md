@@ -65,15 +65,15 @@
 
 ## 信号分析组件（SIG-00~04）
 
-> IQ/频谱已完成库化（公共入口、int16 适配器、Canvas2D 降级、i18n、dist-signal 包、像素回归）；
-> 时频/星座为演示级骨架。
+> IQ/频谱/时频已完成库化（公共入口、int16 适配器、Canvas2D 降级、i18n、dist-signal 包、像素回归）；
+> 星座为演示级骨架。
 
 | #   | 文档                                     | 对应源码                                       | 状态       |
 | --- | ---------------------------------------- | ---------------------------------------------- | ---------- |
 | 00  | [信号组件总览](./SIG-00-信号组件总览.md) | `src/components/signal/`                       | 总览       |
 | 01  | [IQ 时域图](./SIG-01-IQ时域图.md)        | `src/components/signal/IqChart.vue`            | 已完成库化 |
 | 02  | [频谱仪](./SIG-02-频谱图.md)             | `src/components/signal/SpectrumChart.vue`      | 已完成库化 |
-| 03  | [时频图（瀑布）](./SIG-03-时频图.md)     | `src/components/signal/SpectrogramChart.vue`   | 演示级骨架 |
+| 03  | [时频图（瀑布）](./SIG-03-时频图.md)     | `src/components/signal/SpectrogramChart.vue`   | 已完成库化 |
 | 04  | [星座图](./SIG-04-星座图.md)             | `src/components/signal/ConstellationChart.vue` | 演示级骨架 |
 
 - 集成指南（尺寸/适配器/props/事件/方法/性能/限制）：[`src/components/signal/README.md`](../src/components/signal/README.md)

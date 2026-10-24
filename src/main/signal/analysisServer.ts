@@ -152,6 +152,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
           dbScale: true,
+          timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
           modType: cfg.modType
         })
       }
@@ -320,6 +321,12 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
             : typeof p.dbScale === 'number'
               ? p.dbScale !== 0
               : undefined
+        const timeStepSec =
+          typeof p.timeStepSec === 'number'
+            ? p.timeStepSec
+            : typeof p.time_step_sec === 'number'
+              ? (p.time_step_sec as number)
+              : undefined
         const payload = extractRemotePayload(p)
         let data: Float32Array
         if (
@@ -387,6 +394,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           fftSize,
           sampleRate,
           dbScale,
+          timeStepSec,
           modType
         })
       } catch (e) {
@@ -512,6 +520,7 @@ export function registerSignalAnalysisServer(): () => void {
         fftSize: f.fftSize,
         sampleRate: f.sampleRate,
         dbScale: f.dbScale,
+        timeStepSec: f.timeStepSec,
         modType: f.modType,
         buffer: buf
       })

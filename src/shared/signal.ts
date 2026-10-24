@@ -5,7 +5,7 @@
  */
 
 export type WindowType = 'rect' | 'hann' | 'hamming' | 'blackman'
-export type ColorMap = 'viridis' | 'jet' | 'grayscale' | 'hot'
+export type ColorMap = 'viridis' | 'turbo' | 'jet' | 'grayscale' | 'hot'
 export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
 
 /** 处理配置（全部在服务端；UI 配置页只改这里，组件不持有） */
@@ -44,6 +44,8 @@ export interface AnalysisFrame {
   sampleRate?: number
   /** 数据是否 dB 刻度（频谱按配置；时频恒为 true；远程后端可省略，缺省回退组件 props） */
   dbScale?: boolean
+  /** 时频行间时间步长秒（重叠 hop / sampleRate；仅 spectrogram） */
+  timeStepSec?: number
   modType?: ModType
 }
 

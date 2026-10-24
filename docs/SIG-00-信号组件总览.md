@@ -1,6 +1,6 @@
 # SIG-00 - 信号组件总览（可复用高性能）
 
-> 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**IQ/频谱已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建）；**时频/星座为演示级骨架**。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
+> 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**IQ/频谱/时频已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建）；**星座为演示级骨架**。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
 > 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）统一使用 `shared/signalDsp.ts` 的有状态生成器与 `shared/signalFrames.ts` 的帧构造：
 > sine 复载波；BPSK/QPSK/16QAM 符号集归一化到 E|a|²=1，经**升余弦成型**（β=0.35）后上变频（默认载波 512 Hz > 符号率 256 Bd，主瓣完整居中）——频谱为典型带限谱形，而非矩形脉冲的 sinc²。
@@ -22,10 +22,12 @@ node scripts/copy-signal.mjs ../other-app
 import {
   IqChart,
   SpectrumChart,
+  SpectrogramChart,
   iqAdapters,
   spectrumAdapters,
   type IqProps,
-  type SpectrumProps
+  type SpectrumProps,
+  type SpectrogramProps
 } from '@/components/signal'
 // 或全局注册：import SignalCharts from '@/components/signal'; app.use(SignalCharts)
 ```
@@ -33,6 +35,13 @@ import {
 ```vue
 <IqChart :adapter="iqAdapters.int16Interleaved" height="100%" theme="dark" />
 <SpectrumChart :adapter="spectrumAdapters.uint8" height="100%" theme="dark" />
+<SpectrogramChart
+  :time-span="256"
+  :sample-rate="4_000_000"
+  :fft-size="1024"
+  height="100%"
+  theme="dark"
+/>
 ```
 
 宿主集成说明（尺寸/适配器/props/事件/方法/性能/限制）见 `src/components/signal/README.md`；
@@ -98,13 +107,13 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 | -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                        | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层；Canvas2D 降级为普通折线/散点                                                                                                                                                                                          |
 | `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（dB/线性，含 `sampleRate/fftSize/dbScale` 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；Canvas2D 降级为折线/散点；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线） |
-| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`                                                    | 行累计瀑布（最新行在顶部，历史向下滚动；行长变化自动重置）                                                                                                                                                         | Canvas2D `ImageData` 行刷（演示级骨架）                                                                                                                                                                                                                                                        |
+| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`                                                    | 行累计瀑布（最新行在顶部，历史向下滚动；行长变化自动重置）                                                                                                                                                         | WebGL2 R8 纹理 + LUT 着色（Canvas2D LUT 降级）；轴/色标/游标/频率缩放/冻结/导出                                                                                                                                                                                                                |
 | `ConstellationChart` | `{i,q}`                                                                              | 环形缓冲 500k 点，对称方形视口                                                                                                                                                                                     | WebGL Points（pointSize 可调；演示级骨架）                                                                                                                                                                                                                                                     |
 
 ## 五、性能要点
 
 - 全链路 `Float32Array` 二进制；宿主若从 Worker/IPC 取数，可先 `postMessage(buf, [buf])` 零拷贝转移再喂 `appendData`
-- 组件零外部依赖：类型内联于 `core/types.ts`，仅依赖 Vue 3 + 浏览器 WebGL2/Canvas2D；IQ/频谱 `renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D，只有强制 `renderer='webgl2'` 且创建失败时才 emit error + 占位；时频/星座为演示级骨架。
+- 组件零外部依赖：类型内联于 `core/types.ts`，仅依赖 Vue 3 + 浏览器 WebGL2/Canvas2D；IQ/频谱/时频 `renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D，只有强制 `renderer='webgl2'` 且创建失败时才 emit error + 占位；星座为演示级骨架。
 - 瀑布 `ImageData` 行刷 + 离屏 canvas 复用（最新行在顶部，历史向下滚动）
 - `viewport` 抽稀到 `~2×px` 点，1M 点/帧 → 2k 点绘制
 

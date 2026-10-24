@@ -10,7 +10,7 @@
  *   node scripts/visual-run-all.mjs --update
  *
  * 说明：
- * - 页面 playground/visual.html 使用固定种子数据、固定尺寸（1100×360 ×2）、dark 主题、en-US 文案；
+ * - 页面 playground/visual.html 使用固定种子数据、固定尺寸（1100×360×2 + 1100×300）、dark 主题、en-US 文案；
  *   force-device-scale-factor=1，避免 DPR 差异。
  * - 分别回归 canvas2d 与 webgl2 两套基线；每像素通道差 > VISUAL_PIXEL_DELTA（默认 16）
  *   记为差异像素，差异占比 > VISUAL_MAX_DIFF_RATIO（默认 0.4%）判失败。
@@ -88,7 +88,7 @@ function compare(mode, actual) {
 async function runMode(mode) {
   const win = new BrowserWindow({
     width: 1200,
-    height: 800,
+    height: 1160,
     useContentSize: true,
     show: false,
     webPreferences: { backgroundThrottling: false }

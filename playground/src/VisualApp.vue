@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { IqChart, SpectrumChart } from '@signal'
+import { IqChart, SpectrumChart, SpectrogramChart } from '@signal'
 
 type Renderer = 'auto' | 'webgl2' | 'canvas2d'
 const q = new URLSearchParams(location.search).get('renderer')
@@ -8,6 +8,7 @@ const renderer: Renderer = q === 'webgl2' ? 'webgl2' : q === 'auto' ? 'auto' : '
 
 const iq = ref<InstanceType<typeof IqChart> | null>(null)
 const spec = ref<InstanceType<typeof SpectrumChart> | null>(null)
+const specgram = ref<InstanceType<typeof SpectrogramChart> | null>(null)
 
 /** 固定种子 PRNG（mulberry32）：坐标/字体/数据完全确定，截图才可像素回归 */
 function mulberry32(seed: number): () => number {
@@ -41,6 +42,25 @@ onMounted(() => {
     specData[k] = -98 + tone1 + tone2 + rand() * 1.5
   }
   spec.value?.appendData(specData, { sampleRate: 4_000_000, fftSize: 1024, dbScale: true })
+
+  // 时频：128 行 × 512 bin 的确定性瀑布（两条缓慢漂移的谱峰）
+  const bins2 = 512
+  for (let r = 0; r < 128; r++) {
+    const row = new Float32Array(bins2)
+    const c1 = 0.2 + 0.04 * Math.sin(r * 0.06)
+    const c2 = 0.66 + 0.02 * Math.cos(r * 0.08)
+    for (let k = 0; k < bins2; k++) {
+      const f = k / bins2
+      const p1 = Math.exp(-((f - c1) ** 2) / 0.00045) * 88
+      const p2 = Math.exp(-((f - c2) ** 2) / 0.0009) * 62
+      row[k] = -105 + p1 + p2 + rand() * 1.2
+    }
+    specgram.value?.appendData(row, {
+      sampleRate: 4_000_000,
+      fftSize: 1024,
+      timeStepSec: 1024 / 4_000_000
+    })
+  }
 
   // 两帧 rAF 后置位，表示首帧已完成调度（harness 再留一点稳定时间）
   requestAnimationFrame(() => {
@@ -76,6 +96,20 @@ onMounted(() => {
         :traces="[{ mode: 'clear' }, { mode: 'maxHold' }]"
       />
     </div>
+    <div class="chart-row chart-row-specgram">
+      <SpectrogramChart
+        ref="specgram"
+        :renderer="renderer"
+        theme="dark"
+        locale="en-US"
+        :width="1100"
+        :height="300"
+        :time-span="128"
+        :sample-rate="4_000_000"
+        :fft-size="1024"
+        :fps-limit="30"
+      />
+    </div>
   </div>
 </template>
 
@@ -89,5 +123,8 @@ onMounted(() => {
 .chart-row {
   width: 1100px;
   height: 360px;
+}
+.chart-row-specgram {
+  height: 300px;
 }
 </style>
