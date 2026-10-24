@@ -185,6 +185,9 @@ export function createGenerator(cfg, opts = {}) {
   const S = Math.max(1, cfg.samplesPerSymbol | 0)
   const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
   const amp = cfg.amplitude || 1
+  // IQ image / 负频分量：相对载波电平 dB，-120 视为关闭；0 dB 等价于解析单音变实单音
+  const imageGain = cfg.imageDb > -119.9 ? Math.pow(10, cfg.imageDb / 20) : 0
+  const imageAmp = amp * imageGain
   const isSine = cfg.modType === 'sine'
   const taps = isSine ? null : rcTaps(S, 0.35, 6)
   const half = taps ? (taps.length - 1) / 2 : 0
@@ -194,7 +197,9 @@ export function createGenerator(cfg, opts = {}) {
     for (let i = 0; i < taps.length; i++) energy += taps[i] * taps[i]
     pulsePower = energy / S
   }
-  const noiseSigma = Math.sqrt((amp * amp * pulsePower) / (2 * Math.pow(10, cfg.snr / 10)))
+  const noiseSigma = Math.sqrt(
+    (amp * amp * pulsePower * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
+  )
   const SQRT1_2 = Math.SQRT1_2
 
   let phase = 0
@@ -242,8 +247,10 @@ export function createGenerator(cfg, opts = {}) {
       const out = new Float32Array(n * 2)
       if (isSine) {
         for (let k = 0; k < n; k++) {
-          out[2 * k] = amp * Math.cos(phase) + gauss() * noiseSigma
-          out[2 * k + 1] = amp * Math.sin(phase) + gauss() * noiseSigma
+          const c = Math.cos(phase)
+          const s = Math.sin(phase)
+          out[2 * k] = (amp + imageAmp) * c + gauss() * noiseSigma
+          out[2 * k + 1] = (amp - imageAmp) * s + gauss() * noiseSigma
           phase += step
           if (phase > Math.PI * 2) phase -= Math.PI * 2
         }
@@ -266,8 +273,10 @@ export function createGenerator(cfg, opts = {}) {
         }
         const ci = Math.cos(phase)
         const si = Math.sin(phase)
-        out[2 * k] = amp * (bi * ci - bq * si) + gauss() * noiseSigma
-        out[2 * k + 1] = amp * (bi * si + bq * ci) + gauss() * noiseSigma
+        const posI = bi * ci - bq * si
+        const posQ = bi * si + bq * ci
+        out[2 * k] = amp * posI + imageAmp * posI + gauss() * noiseSigma
+        out[2 * k + 1] = amp * posQ - imageAmp * posQ + gauss() * noiseSigma
         phase += step
         if (phase > Math.PI * 2) phase -= Math.PI * 2
         if (k % 256 === 0) trimSymbols(mMin)
@@ -368,7 +377,8 @@ export function defaultCfg() {
     window: 'hann',
     dbScale: true,
     overlap: 0.5,
-    spectrumMode: 'real'
+    spectrumMode: 'real',
+    imageDb: -120
   }
 }
 
@@ -405,6 +415,8 @@ export function sanitizePatch(patch) {
   if (overlap !== null && overlap >= 0 && overlap <= 0.9) out.overlap = overlap
   if (patch.spectrumMode === 'real' || patch.spectrumMode === 'complex')
     out.spectrumMode = patch.spectrumMode
+  const imageDb = num('imageDb')
+  if (imageDb !== null && imageDb >= -120 && imageDb <= 0) out.imageDb = imageDb
   return out
 }
 

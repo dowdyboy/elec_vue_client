@@ -16,4 +16,11 @@ describe('信号配置：频谱模式', () => {
     expect(bad.ok).toBe(false)
     expect(bad.error).toContain('spectrumMode')
   })
+
+  it('imageDb 默认 -120（关闭），只接受 -120~0', () => {
+    expect(defaultAnalysisConfig().imageDb).toBe(-120)
+    expect(sanitizeConfigPatch({ imageDb: -20 }).value).toEqual({ imageDb: -20 })
+    expect(sanitizeConfigPatch({ imageDb: 0 }).value).toEqual({ imageDb: 0 })
+    expect(sanitizeConfigPatch({ imageDb: -121 }).ok).toBe(false)
+  })
 })

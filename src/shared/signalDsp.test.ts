@@ -90,6 +90,30 @@ describe('magnitudeSpectrum（实/复谱）', () => {
     expect(half.length).toBe(n / 2)
     expect(peakBin(half)).toBe(7)
   })
+
+  it('Mock 镜像分量：负频峰约等于设定 imageDb', () => {
+    const cfg: SignalAnalysisConfig = {
+      ...defaultAnalysisConfig(),
+      modType: 'sine',
+      freq: 512,
+      sampleRate: 4096,
+      fftSize: 1024,
+      snr: 100,
+      imageDb: -20
+    }
+    const gen = createSignalGenerator(cfg, { rng: lcg(9) })
+    const iq = gen.next(1024)
+    const re = new Float32Array(1024)
+    const im = new Float32Array(1024)
+    for (let k = 0; k < 1024; k++) {
+      re[k] = iq[2 * k]!
+      im[k] = iq[2 * k + 1]!
+    }
+    const full = magnitudeSpectrum(re, im, { full: true, fftShift: true })
+    const pos = full[512 + 128]!
+    const neg = full[512 - 128]!
+    expect(20 * Math.log10(pos / neg)).toBeCloseTo(20, 0)
+  })
 })
 
 describe('createSignalGenerator（有状态、跨帧连续）', () => {

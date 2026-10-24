@@ -31,6 +31,8 @@ export interface SignalAnalysisConfig {
   dbScale: boolean
   overlap: number // 0~0.9，仅影响时频图行重叠
   spectrumMode: SpectrumMode // real=单边实信号；complex=完整复谱（带符号频率）
+  /** IQ 镜像/负频分量相对载波电平 dB（-120=关闭；用于验证复谱负频与 IQ image） */
+  imageDb: number
 }
 
 export type AnalysisFrameType = 'spectrum' | 'spectrogram' | 'iq'
@@ -92,7 +94,8 @@ export function defaultAnalysisConfig(): SignalAnalysisConfig {
     window: 'hann',
     dbScale: true,
     overlap: 0.5,
-    spectrumMode: 'real'
+    spectrumMode: 'real',
+    imageDb: -120
   }
 }
 
@@ -187,6 +190,11 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
     if (src.spectrumMode === 'real' || src.spectrumMode === 'complex')
       out.spectrumMode = src.spectrumMode
     else errors.push('spectrumMode 须为 real 或 complex')
+  }
+  if ('imageDb' in src) {
+    const v = num('imageDb')
+    if (v === null || v < -120 || v > 0) errors.push('imageDb 须为 -120~0 的数')
+    else out.imageDb = v
   }
 
   if (errors.length > 0) return { ok: false, error: errors.join('; ') }

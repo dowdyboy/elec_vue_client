@@ -53,6 +53,7 @@ describe('独立脚本 Mock 与共享实现保持一致', () => {
         ...defaultAnalysisConfig(),
         modType,
         snr: 20,
+        imageDb: -20,
         pointsPerFrame: 512
       }
       const shared = createSignalGenerator(cfg, { rng: lcg(7) })

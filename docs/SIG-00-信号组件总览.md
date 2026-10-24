@@ -1,4 +1,4 @@
-﻿# SIG-00 - 信号组件总览（可复用高性能）
+# SIG-00 - 信号组件总览（可复用高性能）
 
 > 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**IQ/频谱/时频已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建）；**星座为演示级骨架**。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
@@ -7,6 +7,7 @@
 > 噪声每路方差统一为「信号功率 / (2·10^(snr/10))」，**同一 SNR 设置下各调制方式实测一致**（旧实现调制信号乘 0.3，BPSK 会比 sine 高约 10 dB）。
 > 频谱行按**窗相干增益补偿**（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时由 `SpectrumAnalyzer` 跨帧凑满窗再算，不再零填充（旧实现会低 20~75 dB）。
 > 独立脚本是纯 JS 同步副本（供终端直接运行），`src/shared/remoteScriptParity.test.ts` 会对比行计算，防止三套 Mock 再次漂移。
+> 复谱演示：Mock 配置新增 `imageDb`（-120~0 dB），在 `-freq` 叠加共轭镜像；`-120` 关闭，`0 dB` 约等于把解析复单音变成实单音。默认 `-120`，不改变原有单边/解析信号行为。
 
 ## 一、快速拷贝
 
@@ -132,7 +133,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 150 例（含 real/complex 频谱/瀑布）
+npm run typecheck && npm run lint && npm test   # 当前 152 例（含 real/complex 频谱/瀑布）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

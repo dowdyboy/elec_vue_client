@@ -65,6 +65,8 @@ const windowType = ref<SignalAnalysisConfig['window']>('hann')
 const dbScale = ref(true)
 const overlap = ref(0.5)
 const spectrumMode = ref<SignalAnalysisConfig['spectrumMode']>('real')
+const imageOn = ref(false)
+const imageDb = ref(-20)
 
 const running = ref(false)
 const mode = ref('none')
@@ -97,7 +99,8 @@ function saveLocal(): void {
       window: windowType.value,
       dbScale: dbScale.value,
       overlap: overlap.value,
-      spectrumMode: spectrumMode.value
+      spectrumMode: spectrumMode.value,
+      imageDb: imageOn.value ? imageDb.value : -120
     }
     localStorage.setItem(LS_KEY, JSON.stringify(payload))
   } catch {
@@ -139,6 +142,10 @@ function loadLocal(): void {
     if (typeof p.overlap === 'number') overlap.value = p.overlap
     if (p.spectrumMode === 'real' || p.spectrumMode === 'complex')
       spectrumMode.value = p.spectrumMode
+    if (typeof p.imageDb === 'number') {
+      imageOn.value = p.imageDb > -119
+      if (imageOn.value) imageDb.value = p.imageDb
+    }
   } catch {
     void 0
   }
@@ -190,6 +197,10 @@ async function refreshStatus(syncForm = true): Promise<void> {
         if (typeof c.dbScale === 'boolean') dbScale.value = c.dbScale
         if (typeof c.overlap === 'number') overlap.value = c.overlap
         if (c.spectrumMode) spectrumMode.value = c.spectrumMode
+        if (typeof c.imageDb === 'number') {
+          imageOn.value = c.imageDb > -119
+          if (imageOn.value) imageDb.value = c.imageDb
+        }
       }
     }
   } catch {
@@ -216,7 +227,8 @@ function currentConfigPatch(): Partial<SignalAnalysisConfig> {
     window: windowType.value,
     dbScale: dbScale.value,
     overlap: overlap.value,
-    spectrumMode: spectrumMode.value
+    spectrumMode: spectrumMode.value,
+    imageDb: imageOn.value ? imageDb.value : -120
   }
 }
 
@@ -556,6 +568,20 @@ onMounted(async () => {
               />
             </NFormItem>
           </NGi>
+          <NGi :span="2">
+            <NFormItem label="负频/镜像分量">
+              <NSwitch v-model:value="imageOn" />
+              <NSelect
+                v-if="imageOn"
+                v-model:value="imageDb"
+                :options="[-80, -60, -40, -20, -10, 0].map((v) => ({ label: `${v} dB`, value: v }))"
+                style="width: 118px; margin-left: 8px"
+              />
+              <span style="margin-left: 12px; color: #888; font-size: 12px">
+                在 -freq 处叠加共轭镜像（复谱模式看负频）；0 dB ≈ 实单音，关闭 = 纯解析复信号
+              </span>
+            </NFormItem>
+          </NGi>
           <NGi>
             <NFormItem label="dB 缩放">
               <NSwitch v-model:value="dbScale" />
@@ -631,6 +657,9 @@ onMounted(async () => {
         <NDescriptionsItem label="重叠">{{ effConfig?.overlap ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="频谱模式">{{
           effConfig?.spectrumMode === 'complex' ? '复谱（带符号）' : '实信号单边'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="负频/镜像">{{
+          (effConfig?.imageDb ?? -120) > -119 ? `${effConfig?.imageDb} dB` : '关闭'
         }}</NDescriptionsItem>
         <NDescriptionsItem label="dB 缩放">{{
           effConfig?.dbScale ? '是' : '否'

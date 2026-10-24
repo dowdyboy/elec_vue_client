@@ -1,4 +1,4 @@
-﻿# SIG-03 - 时频图（瀑布）
+# SIG-03 - 时频图（瀑布）
 
 > `src/components/signal/SpectrogramChart.vue` —— 生产级可复用组件
 >
@@ -57,6 +57,7 @@ ws.onmessage = (e) => {
 
 服务端计算重叠行时：`timeStepSec = fftSize * (1 - overlap) / sampleRate`。
 频率轴统一为 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示，CSV/API 返回物理频率。
+Mock 的 `imageDb`（-120~0 dB）会在 `-freq` 叠加共轭镜像，用于验证复谱/瀑布负频；默认 -120 关闭。
 
 ## 二、Props
 
@@ -164,5 +165,5 @@ dispose()
 
 - 核心：`core/spectrogram.test.ts` 8 例（色阶端点/LUT、电平/gamma/NaN、环形缓冲换行/容量/冻结拷贝）。
 - DSP：real 单边 ×2、complex 全 bin/fftShift、正负频率方向（`signalFrames.test.ts` / `signalDsp.test.ts`）。
-- 总单测：**150**（`npm test`）。
+- 总单测：**152**（`npm test`）。
 - 视觉：`npm run test:visual` 的 canvas2d/webgl2 双基线包含 real 与 complex 时频图。

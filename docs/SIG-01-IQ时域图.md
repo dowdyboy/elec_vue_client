@@ -171,15 +171,15 @@ interface ChartStyle {
 - 可移植性：`renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D（余辉用 Canvas 覆盖模拟）；`renderer='webgl2'` 强制且失败时 emit `error/errorDetail` + 占位提示
 - 批量/触控/无障碍：离屏暂停重绘；根节点 `tabindex=0`、`role=application`、`aria-label`（可由 `labels.aria` 覆盖）；触摸双指 X 缩放
 
-**单元测试**：`npm test`（vitest，当前 150 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
+**单元测试**：`npm test`（vitest，当前 152 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
 `yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/换档滞回与收窄驻留/reset，12）、
 `pyramid`（整树重建随机区间/增量追加/bucketChannel 与旧实现逐值一致/扩容重建/queryStats/包络 env 通道/compactShift 环形淘汰增量，9）、
 `trigger`（findEdge 边沿检测/triggerWindow 钳制/triggerRightNeed·pending 提升门控/auto·normal pending 与 promote·single 状态机与 reset，18）、
 `spectrum`（迹线累计/自动量程/峰值/缩放窗口/ACPR/平均与保持/稳健极值，56）、
 `adapters`（对齐/类型守卫/int16·float64/字节序/平面/工厂/频谱 uint8，11）、`i18n`（中英/覆盖/插值，5）、
 `spectrogram`（色阶/LUT/电平/环形缓冲/冻结拷贝，8）、
-`shared/signal`（默认 real / spectrumMode 校验，2）、
-`shared/signalDsp`（升余弦成型/生成器连续性/成型谱形/SNR 口径/magnitudeSpectrum full+fftShift，8）、
+`shared/signal`（默认 real / spectrumMode / imageDb 校验，3）、
+`shared/signalDsp`（升余弦成型/生成器连续性/成型谱形/SNR 口径/magnitudeSpectrum full+fftShift/镜像分量，9）、
 `shared/signalFrames`（窗增益补偿/跨帧 FIFO/时频固定 dB 行/real 单边与 complex 全谱，9）、`shared/remoteScriptParity`（独立脚本与共享实现的帧计算/生成器逐样本一致，3）
 
 **帧元数据**：IQ 帧携带 `sampleRate`（[shared/signal.ts](../src/shared/signal.ts)），演示页默认随帧自动同步采样率，手动修改后锁定、点「自动」恢复；

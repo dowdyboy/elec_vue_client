@@ -170,6 +170,9 @@ export function createSignalGenerator(
   const S = Math.max(1, cfg.samplesPerSymbol | 0)
   const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
   const amp = cfg.amplitude || 1
+  // IQ image / 负频分量：相对载波电平 dB，-120 视为关闭；0 dB 等价于把解析单音变成实单音
+  const imageGain = cfg.imageDb > -119.9 ? Math.pow(10, cfg.imageDb / 20) : 0
+  const imageAmp = amp * imageGain
   const isSine = cfg.modType === 'sine'
   const taps = isSine ? null : rcTaps(S, 0.35, 6)
   const half = taps ? (taps.length - 1) / 2 : 0
@@ -181,9 +184,11 @@ export function createSignalGenerator(
     for (let i = 0; i < taps.length; i++) energy += taps[i]! * taps[i]!
     pulsePower = energy / S
   }
-  // 噪声口径统一：每路噪声方差 σ² = 信号平均功率 / (2·10^(snr/10))，
-  // 使 E|n|²=2σ² 与信号功率之比恰好为 snr（不再按调制方式乘 0.3 之类的魔法数）。
-  const noiseSigma = Math.sqrt((amp * amp * pulsePower) / (2 * Math.pow(10, cfg.snr / 10)))
+  // 噪声口径统一：每路噪声方差 σ² = 信号总功率 / (2·10^(snr/10))，
+  // 使 E|n|²=2σ² 与信号功率之比恰好为 snr；镜像分量计入总功率。
+  const noiseSigma = Math.sqrt(
+    (amp * amp * pulsePower * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
+  )
   const SQRT1_2 = Math.SQRT1_2
 
   let phase = 0
@@ -233,8 +238,11 @@ export function createSignalGenerator(
       const out = new Float32Array(n * 2)
       if (isSine) {
         for (let k = 0; k < n; k++) {
-          out[2 * k] = amp * Math.cos(phase) + gauss() * noiseSigma
-          out[2 * k + 1] = amp * Math.sin(phase) + gauss() * noiseSigma
+          const c = Math.cos(phase)
+          const s = Math.sin(phase)
+          // 正频解析载波 + 共轭镜像（负频）
+          out[2 * k] = (amp + imageAmp) * c + gauss() * noiseSigma
+          out[2 * k + 1] = (amp - imageAmp) * s + gauss() * noiseSigma
           phase += step
           if (phase > Math.PI * 2) phase -= Math.PI * 2
         }
@@ -257,8 +265,11 @@ export function createSignalGenerator(
         }
         const ci = Math.cos(phase)
         const si = Math.sin(phase)
-        out[2 * k] = amp * (bi * ci - bq * si) + gauss() * noiseSigma
-        out[2 * k + 1] = amp * (bi * si + bq * ci) + gauss() * noiseSigma
+        const posI = bi * ci - bq * si
+        const posQ = bi * si + bq * ci
+        // 共轭镜像：I 同相相加，Q 反相（等效负频边带）
+        out[2 * k] = amp * posI + imageAmp * posI + gauss() * noiseSigma
+        out[2 * k + 1] = amp * posQ - imageAmp * posQ + gauss() * noiseSigma
         phase += step
         if (phase > Math.PI * 2) phase -= Math.PI * 2
         if (k % 256 === 0) trimSymbols(mMin)
