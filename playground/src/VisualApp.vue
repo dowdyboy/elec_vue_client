@@ -8,7 +8,9 @@ const renderer: Renderer = q === 'webgl2' ? 'webgl2' : q === 'auto' ? 'auto' : '
 
 const iq = ref<InstanceType<typeof IqChart> | null>(null)
 const spec = ref<InstanceType<typeof SpectrumChart> | null>(null)
+const specComplex = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const specgram = ref<InstanceType<typeof SpectrogramChart> | null>(null)
+const specgramComplex = ref<InstanceType<typeof SpectrogramChart> | null>(null)
 
 /** 固定种子 PRNG（mulberry32）：坐标/字体/数据完全确定，截图才可像素回归 */
 function mulberry32(seed: number): () => number {
@@ -42,6 +44,44 @@ onMounted(() => {
     specData[k] = -98 + tone1 + tone2 + rand() * 1.5
   }
   spec.value?.appendData(specData, { sampleRate: 4_000_000, fftSize: 1024, dbScale: true })
+
+  // 复谱：完整 1024 bin、-Fs/2~+Fs/2；正负频率各一个峰，验证带符号轴
+  const complexBins = 1024
+  const complexRow = new Float32Array(complexBins)
+  const binHz = 4_000_000 / complexBins
+  for (let k = 0; k < complexBins; k++) {
+    const hz = (k - complexBins / 2) * binHz
+    const negTone = Math.exp(-((hz + 700_000) ** 2) / (2 * 45_000 ** 2)) * 80
+    const posTone = Math.exp(-((hz - 400_000) ** 2) / (2 * 90_000 ** 2)) * 55
+    complexRow[k] = -112 + negTone + posTone + rand() * 1.2
+  }
+  const complexMeta = {
+    sampleRate: 4_000_000,
+    fftSize: complexBins,
+    spectrumMode: 'complex' as const,
+    freqStartHz: -2_000_000,
+    binHz,
+    fftShift: true,
+    dbScale: true
+  }
+  specComplex.value?.appendData(complexRow, complexMeta)
+
+  // 复谱时频：64 行 × 1024 bin，正负频率各一条漂移谱峰
+  for (let r = 0; r < 64; r++) {
+    const row = new Float32Array(complexBins)
+    const negCenter = -700_000 + 120_000 * Math.sin(r * 0.09)
+    const posCenter = 400_000 - 80_000 * Math.cos(r * 0.07)
+    for (let k = 0; k < complexBins; k++) {
+      const hz = (k - complexBins / 2) * binHz
+      const p1 = Math.exp(-((hz - negCenter) ** 2) / (2 * 35_000 ** 2)) * 78
+      const p2 = Math.exp(-((hz - posCenter) ** 2) / (2 * 60_000 ** 2)) * 52
+      row[k] = -110 + p1 + p2 + rand() * 1.1
+    }
+    specgramComplex.value?.appendData(row, {
+      ...complexMeta,
+      timeStepSec: complexBins / 4_000_000
+    })
+  }
 
   // 时频：128 行 × 512 bin 的确定性瀑布（两条缓慢漂移的谱峰）
   const bins2 = 512
@@ -96,6 +136,23 @@ onMounted(() => {
         :traces="[{ mode: 'clear' }, { mode: 'maxHold' }]"
       />
     </div>
+    <div class="chart-row chart-row-complex-spectrum">
+      <SpectrumChart
+        ref="specComplex"
+        :renderer="renderer"
+        theme="dark"
+        locale="en-US"
+        :width="1100"
+        :height="280"
+        :fps-limit="30"
+        spectrum-mode="complex"
+        :sample-rate="4_000_000"
+        :fft-size="1024"
+        :freq-start-hz="-2000000"
+        :bin-hz="3906.25"
+        :fft-shift="true"
+      />
+    </div>
     <div class="chart-row chart-row-specgram">
       <SpectrogramChart
         ref="specgram"
@@ -107,6 +164,24 @@ onMounted(() => {
         :time-span="128"
         :sample-rate="4_000_000"
         :fft-size="1024"
+        :fps-limit="30"
+      />
+    </div>
+    <div class="chart-row chart-row-complex-specgram">
+      <SpectrogramChart
+        ref="specgramComplex"
+        :renderer="renderer"
+        theme="dark"
+        locale="en-US"
+        :width="1100"
+        :height="240"
+        :time-span="64"
+        spectrum-mode="complex"
+        :sample-rate="4_000_000"
+        :fft-size="1024"
+        :freq-start-hz="-2000000"
+        :bin-hz="3906.25"
+        :fft-shift="true"
         :fps-limit="30"
       />
     </div>
@@ -126,5 +201,11 @@ onMounted(() => {
 }
 .chart-row-specgram {
   height: 300px;
+}
+.chart-row-complex-spectrum {
+  height: 280px;
+}
+.chart-row-complex-specgram {
+  height: 240px;
 }
 </style>

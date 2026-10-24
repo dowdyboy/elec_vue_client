@@ -64,6 +64,7 @@ const fftSize = ref(1024)
 const windowType = ref<SignalAnalysisConfig['window']>('hann')
 const dbScale = ref(true)
 const overlap = ref(0.5)
+const spectrumMode = ref<SignalAnalysisConfig['spectrumMode']>('real')
 
 const running = ref(false)
 const mode = ref('none')
@@ -95,7 +96,8 @@ function saveLocal(): void {
       fftSize: fftSize.value,
       window: windowType.value,
       dbScale: dbScale.value,
-      overlap: overlap.value
+      overlap: overlap.value,
+      spectrumMode: spectrumMode.value
     }
     localStorage.setItem(LS_KEY, JSON.stringify(payload))
   } catch {
@@ -135,6 +137,8 @@ function loadLocal(): void {
     if (p.window) windowType.value = p.window as SignalAnalysisConfig['window']
     if (typeof p.dbScale === 'boolean') dbScale.value = p.dbScale
     if (typeof p.overlap === 'number') overlap.value = p.overlap
+    if (p.spectrumMode === 'real' || p.spectrumMode === 'complex')
+      spectrumMode.value = p.spectrumMode
   } catch {
     void 0
   }
@@ -185,6 +189,7 @@ async function refreshStatus(syncForm = true): Promise<void> {
         if (c.window) windowType.value = c.window
         if (typeof c.dbScale === 'boolean') dbScale.value = c.dbScale
         if (typeof c.overlap === 'number') overlap.value = c.overlap
+        if (c.spectrumMode) spectrumMode.value = c.spectrumMode
       }
     }
   } catch {
@@ -210,7 +215,8 @@ function currentConfigPatch(): Partial<SignalAnalysisConfig> {
     fftSize: fftSize.value,
     window: windowType.value,
     dbScale: dbScale.value,
-    overlap: overlap.value
+    overlap: overlap.value,
+    spectrumMode: spectrumMode.value
   }
 }
 
@@ -539,6 +545,18 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi>
+            <NFormItem label="频谱模式">
+              <NSelect
+                v-model:value="spectrumMode"
+                :options="[
+                  { label: '单边实信号 0~Fs/2', value: 'real' },
+                  { label: '复谱 -Fs/2~+Fs/2', value: 'complex' }
+                ]"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi>
             <NFormItem label="dB 缩放">
               <NSwitch v-model:value="dbScale" />
             </NFormItem>
@@ -611,6 +629,9 @@ onMounted(async () => {
         <NDescriptionsItem label="FFT 大小">{{ effConfig?.fftSize ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="窗函数">{{ effConfig?.window ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="重叠">{{ effConfig?.overlap ?? '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="频谱模式">{{
+          effConfig?.spectrumMode === 'complex' ? '复谱（带符号）' : '实信号单边'
+        }}</NDescriptionsItem>
         <NDescriptionsItem label="dB 缩放">{{
           effConfig?.dbScale ? '是' : '否'
         }}</NDescriptionsItem>

@@ -54,6 +54,10 @@ export function registerRemoteMockServer(): () => void {
         fftSize: cfg.fftSize,
         sampleRate: cfg.sampleRate,
         dbScale: cfg.dbScale,
+        spectrumMode: cfg.spectrumMode,
+        freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+        binHz: cfg.sampleRate / cfg.fftSize,
+        fftShift: cfg.spectrumMode === 'complex',
         buffer: Buffer.from(specRow.buffer, specRow.byteOffset, specRow.byteLength),
         modType: cfg.modType
       })
@@ -66,6 +70,10 @@ export function registerRemoteMockServer(): () => void {
         fftSize: cfg.fftSize,
         sampleRate: cfg.sampleRate,
         dbScale: true,
+        spectrumMode: cfg.spectrumMode,
+        freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+        binHz: cfg.sampleRate / cfg.fftSize,
+        fftShift: cfg.spectrumMode === 'complex',
         timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType

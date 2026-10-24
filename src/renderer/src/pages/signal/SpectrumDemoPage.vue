@@ -129,6 +129,7 @@ const viewInfo = ref<SpectrumViewInfo | null>(null)
 const spanBins = ref(0) // 0=全带宽
 
 const binHz = computed(() => meta.value.binHz)
+const freqBaseHz = computed(() => meta.value.freqStartHz ?? 0)
 const sampleRateTxt = computed(() => (meta.value.sampleRate ? `${meta.value.sampleRate} Hz` : '—'))
 const fftTxt = computed(() => (meta.value.fftSize ? String(meta.value.fftSize) : '—'))
 const rbwTxt = computed(() => (binHz.value ? fmtHz(binHz.value) : '—'))
@@ -156,13 +157,13 @@ function currentSpanBins(): number {
 function applyViewCenter(hz: number): void {
   if (!binHz.value) return
   const span = currentSpanBins()
-  const c = hz / binHz.value
+  const c = (hz - freqBaseHz.value) / binHz.value
   chartRef.value?.setViewport({ xMin: c - span / 2, xMax: c + span / 2 })
 }
 function applyViewEdge(edge: 'start' | 'stop', hz: number): void {
   if (!binHz.value) return
   const span = currentSpanBins()
-  const b = hz / binHz.value
+  const b = (hz - freqBaseHz.value) / binHz.value
   if (edge === 'start') chartRef.value?.setViewport({ xMin: b, xMax: b + span })
   else chartRef.value?.setViewport({ xMin: b - span, xMax: b })
 }
@@ -231,7 +232,11 @@ sig.onSpectrum((data, frame) => {
   chartRef.value?.appendData(data, {
     sampleRate: frame.sampleRate,
     fftSize: frame.fftSize,
-    dbScale: frame.dbScale
+    dbScale: frame.dbScale,
+    spectrumMode: frame.spectrumMode,
+    freqStartHz: frame.freqStartHz,
+    binHz: frame.binHz,
+    fftShift: frame.fftShift
   })
   hasData.value = true
 })
@@ -1034,6 +1039,9 @@ onMounted(() => {
         <NTag size="small" :bordered="false">采样率 {{ sampleRateTxt }}</NTag>
         <NTag size="small" :bordered="false">FFT {{ fftTxt }}</NTag>
         <NTag size="small" :bordered="false">RBW≈ {{ rbwTxt }}</NTag>
+        <NTag size="small" :bordered="false">
+          {{ meta.spectrumMode === 'complex' ? '复谱 -Fs/2~+Fs/2' : '单边 0~Fs/2' }}
+        </NTag>
         <NTag size="small" :bordered="false">Span {{ spanTxt }}</NTag>
         <NTag size="small" :bordered="false">Center {{ centerTxt }}</NTag>
         <NTag size="small" :bordered="false">迹线 {{ traceModeTxt }}</NTag>

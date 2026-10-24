@@ -53,7 +53,7 @@ export function getWindowInfo(type, n) {
   return { win: winData, gain: winGain }
 }
 
-export function magnitudeSpectrum(input, imIn) {
+export function magnitudeSpectrum(input, imIn, opts = {}) {
   const n = input.length
   if ((n & (n - 1)) !== 0) throw new Error('FFT size must be power of two')
   const re = new Float32Array(n)
@@ -97,6 +97,15 @@ export function magnitudeSpectrum(input, imIn) {
       }
     }
   }
+  if (opts.full) {
+    const out = new Float32Array(n)
+    const shift = opts.fftShift ? n / 2 : 0
+    for (let i = 0; i < n; i++) {
+      const k = (i + shift) % n
+      out[i] = Math.hypot(re[k], imm[k]) / n
+    }
+    return out
+  }
   const out = new Float32Array(n / 2)
   for (let i = 0; i < n / 2; i++) out[i] = Math.hypot(re[i], imm[i]) / n
   return out
@@ -111,24 +120,31 @@ export function toDB(mag, floor = -120) {
   return out
 }
 
-/** 由交织复数切片算一行幅度谱（窗相干增益已补偿） */
+/** 由交织复数切片算一行幅度谱（窗相干增益已补偿；模式决定单边/双边） */
 export function computeRow(slice, cfg, opts = {}) {
   const n = cfg.fftSize
+  const complex = (cfg.spectrumMode ?? 'real') === 'complex'
   const re = new Float32Array(n)
   const im = new Float32Array(n)
   const count = Math.min(n, Math.floor(slice.length / 2))
   for (let k = 0; k < count; k++) {
     re[k] = slice[2 * k] ?? 0
-    im[k] = slice[2 * k + 1] ?? 0
+    if (complex) im[k] = slice[2 * k + 1] ?? 0
   }
   const { win, gain } = getWindowInfo(cfg.window, n)
   for (let i = 0; i < n; i++) {
     re[i] *= win[i]
-    im[i] *= win[i]
+    if (complex) im[i] *= win[i]
   }
-  const mag = magnitudeSpectrum(re, im)
+  const mag = complex
+    ? magnitudeSpectrum(re, im, { full: true, fftShift: true })
+    : magnitudeSpectrum(re)
   const inv = gain > 1e-12 ? 1 / gain : 1
-  for (let i = 0; i < mag.length; i++) mag[i] *= inv
+  if (complex) {
+    for (let i = 0; i < mag.length; i++) mag[i] *= inv
+  } else {
+    for (let i = 0; i < mag.length; i++) mag[i] *= inv * (i === 0 ? 1 : 2)
+  }
   return opts.forceDb || cfg.dbScale ? toDB(mag) : mag
 }
 
@@ -351,7 +367,8 @@ export function defaultCfg() {
     fftSize: 1024,
     window: 'hann',
     dbScale: true,
-    overlap: 0.5
+    overlap: 0.5,
+    spectrumMode: 'real'
   }
 }
 
@@ -386,6 +403,8 @@ export function sanitizePatch(patch) {
   if (typeof patch.dbScale === 'boolean') out.dbScale = patch.dbScale
   const overlap = num('overlap')
   if (overlap !== null && overlap >= 0 && overlap <= 0.9) out.overlap = overlap
+  if (patch.spectrumMode === 'real' || patch.spectrumMode === 'complex')
+    out.spectrumMode = patch.spectrumMode
   return out
 }
 
@@ -426,6 +445,10 @@ export function startServer(opts = {}) {
         fftSize: cfg.fftSize,
         sampleRate: cfg.sampleRate,
         dbScale: cfg.dbScale,
+        spectrumMode: cfg.spectrumMode,
+        freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+        binHz: cfg.sampleRate / cfg.fftSize,
+        fftShift: cfg.spectrumMode === 'complex',
         buffer: Buffer.from(specRow.buffer, specRow.byteOffset, specRow.byteLength),
         modType: cfg.modType
       })
@@ -438,6 +461,10 @@ export function startServer(opts = {}) {
         fftSize: cfg.fftSize,
         sampleRate: cfg.sampleRate,
         dbScale: true,
+        spectrumMode: cfg.spectrumMode,
+        freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+        binHz: cfg.sampleRate / cfg.fftSize,
+        fftShift: cfg.spectrumMode === 'complex',
         timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType

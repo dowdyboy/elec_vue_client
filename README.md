@@ -52,6 +52,7 @@ IQ 时域/频谱/时频组件已按“可被其他上位机集成”的目标库
 
 - WebGL2 + Canvas2D 自动降级、`renderer` 可强制后端
 - int16/float64/平面/字节序适配器，程序化 API（follow/paused、标记、区间测量、峰值、统计/可见数据）
+- **real 单边 0~~Fs/2 与 complex 带符号复谱 -Fs/2~~+Fs/2** 双模式（`spectrumMode`/`freqStartHz`/`binHz`/`fftShift`）
 - 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例

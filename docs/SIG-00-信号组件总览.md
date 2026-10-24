@@ -1,4 +1,4 @@
-# SIG-00 - 信号组件总览（可复用高性能）
+﻿# SIG-00 - 信号组件总览（可复用高性能）
 
 > 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**IQ/频谱/时频已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建）；**星座为演示级骨架**。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
@@ -47,8 +47,20 @@ import {
 宿主集成说明（尺寸/适配器/props/事件/方法/性能/限制）见 `src/components/signal/README.md`；
 版本号 `SIGNAL_CHARTS_VERSION`。
 
-流式（高频）：`iqRef.value.appendData(rawFromBackend, { sampleRate })` / `specRef.value.appendData(raw, { sampleRate, fftSize, dbScale })`
+流式（高频）：`iqRef.value.appendData(rawFromBackend, { sampleRate })` / `specRef.value.appendData(raw, { sampleRate, fftSize, dbScale, spectrumMode, freqStartHz, binHz, fftShift })`
 （rAF 合帧：同一帧内多次推送合并为一次重绘；`fpsLimit` 统一约束数据推送/交互/尺寸变化触发的重绘——组件内统一走 rAF 调度并按 fpsLimit 节流）
+
+### 实信号 / 复信号双模式
+
+| 模式           | 数据长度    | 频率轴                      | 典型场景                                   |
+| -------------- | ----------- | --------------------------- | ------------------------------------------ |
+| `real`（默认） | `fftSize/2` | `0 ~ Fs/2`，非 DC ×2        | 振动、声学、电压/电流、示波器、EMC         |
+| `complex`      | `fftSize`   | `-Fs/2 ~ +Fs/2`（fftShift） | 射频/SDR、通信、雷达/多普勒、超声正交、PMU |
+
+- 频率轴统一：`f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
+- 帧元数据：`spectrumMode / freqStartHz / binHz / fftShift`；缺省按 real、`Fs/fftSize` 推导。
+- 三个 Mock 与配置页都支持 `spectrumMode` 切换；`real` 只取 I 通道，`complex` 使用 I/Q 完整 FFT。
+- `SpectrumChart`/`SpectrogramChart` 均支持带符号轴、负频显示、游标/CSV/测量 API。
 
 ## 二、适配器（前端自转）
 
@@ -103,24 +115,24 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 
 ## 四、四组件一览
 
-| 组件                 | 输入（经 adapter）                                                                   | 内部计算                                                                                                                                                                                                           | 渲染                                                                                                                                                                                                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                        | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层；Canvas2D 降级为普通折线/散点                                                                                                                                                                                          |
-| `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（dB/线性，含 `sampleRate/fftSize/dbScale` 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；Canvas2D 降级为折线/散点；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线） |
-| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`                                                    | 行累计瀑布（最新行在顶部，历史向下滚动；行长变化自动重置）                                                                                                                                                         | WebGL2 R8 纹理 + LUT 着色（Canvas2D LUT 降级）；轴/色标/游标/频率缩放/冻结/导出                                                                                                                                                                                                                |
-| `ConstellationChart` | `{i,q}`                                                                              | 环形缓冲 500k 点，对称方形视口                                                                                                                                                                                     | WebGL Points（pointSize 可调；演示级骨架）                                                                                                                                                                                                                                                     |
+| 组件                 | 输入（经 adapter）                                                                                                | 内部计算                                                                                                                                                                                                           | 渲染                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                                                     | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层；Canvas2D 降级为普通折线/散点                                                                                                                                                                                                                 |
+| `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（real N/2 / complex N；含 `spectrumMode/freqStartHz/binHz/fftShift`+dB 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；Canvas2D 降级为折线/散点；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线）、real/complex 带符号轴 |
+| `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`（real N/2 / complex N；含频率轴元数据）                                         | 行累计瀑布（最新行在顶部，历史向下滚动；行长/模式变化自动重置）                                                                                                                                                    | WebGL2 R8 纹理 + LUT 着色（Canvas2D LUT 降级）；轴/色标/游标/频率缩放/冻结/PNG/CSV；real/complex 带符号轴                                                                                                                                                                                                             |
+| `ConstellationChart` | `{i,q}`                                                                                                           | 环形缓冲 500k 点，对称方形视口                                                                                                                                                                                     | WebGL Points（pointSize 可调；演示级骨架）                                                                                                                                                                                                                                                                            |
 
 ## 五、性能要点
 
 - 全链路 `Float32Array` 二进制；宿主若从 Worker/IPC 取数，可先 `postMessage(buf, [buf])` 零拷贝转移再喂 `appendData`
 - 组件零外部依赖：类型内联于 `core/types.ts`，仅依赖 Vue 3 + 浏览器 WebGL2/Canvas2D；IQ/频谱/时频 `renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D，只有强制 `renderer='webgl2'` 且创建失败时才 emit error + 占位；星座为演示级骨架。
-- 瀑布 `ImageData` 行刷 + 离屏 canvas 复用（最新行在顶部，历史向下滚动）
+- 瀑布 WebGL2 R8 纹理逐行 `texSubImage2D` + LUT 着色；Canvas2D 回退用 ImageData 行刷 + 离屏 canvas 复用（最新行在顶部，历史向下滚动）
 - `viewport` 抽稀到 `~2×px` 点，1M 点/帧 → 2k 点绘制
 
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test
-npm run test:visual   # canvas2d/webgl2 像素级回归
+npm run typecheck && npm run lint && npm test   # 当前 150 例（含 real/complex 频谱/瀑布）
+npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

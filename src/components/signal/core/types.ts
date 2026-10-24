@@ -275,6 +275,9 @@ export interface SpectrumLimitLine {
   label?: string
 }
 
+/** 频谱/时频语义：real=实信号单边 0~Fs/2；complex=完整复谱（通常 -Fs/2~+Fs/2） */
+export type SpectrumMode = 'real' | 'complex'
+
 /** 频谱幅度显示单位（内部数据为归一化 dB：0 dB = 满量程复单音；dBm 等为宿主自行校准后的口径） */
 export type SpectrumUnit = 'dBFS' | 'dBm' | 'dBuV' | 'dBmV' | 'dBW'
 
@@ -303,6 +306,14 @@ export interface SpectrumProps extends ChartBaseProps {
   fftSize?: number
   /** 数据单位（帧元数据优先）：true=dB（默认）/ false=线性幅度 */
   dbScale?: boolean
+  /** 频谱语义（帧元数据优先；默认 real=单边实信号） */
+  spectrumMode?: SpectrumMode
+  /** 第 0 个 bin 的物理频率 Hz（real 通常 0；complex+fftShift 通常 -Fs/2） */
+  freqStartHz?: number
+  /** bin 宽 Hz（缺省 sampleRate/fftSize） */
+  binHz?: number
+  /** 复谱数据是否已 fftShift（仅 complex；默认 true） */
+  fftShift?: boolean
   /** 手动纵轴参考电平 dB（autoScale=false 时生效；默认 0） */
   refLevel?: number
   /** 纵轴 dB/格（autoScale=false 时生效；默认 10） */
@@ -380,6 +391,9 @@ export interface SpectrumStats {
   paused: boolean
   traceCount: number
   markerCount: number
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** SpectrumChart 光标读数（cursorChange 事件载荷；移出绘图区为 null） */
@@ -392,6 +406,9 @@ export interface SpectrumCursorInfo {
   /** 原始 dB 值（线性显示时已转 dB） */
   levelDb: number
   dbScale: boolean
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** SpectrumChart 可见窗口活动迹线数据（getVisibleData()，返回拷贝） */
@@ -400,6 +417,9 @@ export interface SpectrumVisibleData {
   data: Float32Array
   startBin: number
   endBin: number
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** SpectrumChart getView() 返回值 / viewportChange 事件载荷 */
@@ -417,6 +437,9 @@ export interface SpectrumViewInfo {
   freqMax?: number
   centerHz?: number
   spanHz?: number
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** 频谱运行元数据（帧元数据优先，缺省由 props 推导） */
@@ -427,6 +450,11 @@ export interface SpectrumMeta {
   binHz?: number
   /** 数据单位：true=dB / false=线性幅度 */
   dbScale: boolean
+  spectrumMode?: SpectrumMode
+  /** 数据第 0 个 bin 的物理频率 Hz */
+  freqStartHz?: number
+  /** 复谱是否已 fftShift（仅 complex） */
+  fftShift?: boolean
 }
 
 // ── 时频（瀑布）──
@@ -440,6 +468,14 @@ export interface SpectrogramMeta {
   fftSize?: number
   /** 时频行恒为 dB；保留字段用于兼容 */
   dbScale?: boolean
+  /** 频谱语义：real=单边；complex=完整复谱（带符号频率） */
+  spectrumMode?: SpectrumMode
+  /** 数据第 0 个 bin 的物理频率 Hz */
+  freqStartHz?: number
+  /** bin 宽 Hz */
+  binHz?: number
+  /** 复谱是否已 fftShift（仅 complex） */
+  fftShift?: boolean
   /** 行时间戳（ms）；用于时间轴/游标读数，缺省用工整的行步长 */
   timestamp?: number
   /** 服务端行序号（可选） */
@@ -465,8 +501,16 @@ export interface SpectrogramProps extends ChartBaseProps {
   maxRows?: number
   /** 采样率 Hz（帧元数据优先） */
   sampleRate?: number
-  /** FFT 大小（帧元数据优先；缺省由行宽 ×2 推导） */
+  /** FFT 大小（帧元数据优先；缺省由行宽和频谱模式推导） */
   fftSize?: number
+  /** 频谱语义（帧元数据优先；默认 real） */
+  spectrumMode?: SpectrumMode
+  /** 第 0 个 bin 的物理频率 Hz（real 通常 0；complex 通常 -Fs/2） */
+  freqStartHz?: number
+  /** bin 宽 Hz（缺省 sampleRate/fftSize） */
+  binHz?: number
+  /** 复谱是否已 fftShift（仅 complex；默认 true） */
+  fftShift?: boolean
   /** 频率显示偏移 Hz（仅显示层） */
   freqOffsetHz?: number
   /** 行间时间步长秒（帧元数据优先；缺省由 fftSize/sampleRate 推导） */
@@ -520,6 +564,9 @@ export interface SpectrogramCursorInfo {
   timeSec?: number
   /** dB 原始值（未加 ampOffsetDb） */
   levelDb: number
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** 时频运行统计 */
@@ -533,6 +580,9 @@ export interface SpectrogramStats {
   dbMin: number
   dbMax: number
   paused: boolean
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 /** 时频可见数据（getVisibleData()，newest→oldest 拷贝） */
@@ -544,6 +594,9 @@ export interface SpectrogramVisibleData {
   sampleRate?: number
   timeStepSec?: number
   freqOffsetHz: number
+  spectrumMode?: SpectrumMode
+  freqStartHz?: number
+  binHz?: number
 }
 
 // ── 星座 ──

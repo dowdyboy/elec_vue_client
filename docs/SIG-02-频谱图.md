@@ -17,25 +17,37 @@
 
 <script setup>
 const spec = useTemplateRef('spec')
-// 帧元数据随数据一起传入（AnalysisFrame：sampleRate/fftSize/dbScale）
+// 帧元数据随数据一起传入（AnalysisFrame：sampleRate/fftSize/dbScale/spectrumMode/freqStartHz/binHz/fftShift）
 ws.onmessage = (e) => {
   const frame = unpack(e.data)
   spec.value.appendData(frame.data, {
     sampleRate: frame.sampleRate,
     fftSize: frame.fftSize,
-    dbScale: frame.dbScale
+    dbScale: frame.dbScale,
+    spectrumMode: frame.spectrumMode,
+    freqStartHz: frame.freqStartHz,
+    binHz: frame.binHz,
+    fftShift: frame.fftShift
   })
 }
 </script>
 ```
 
-**输入**：服务端算好的幅度谱 `Float32Array`（长度 = fftSize/2）。窗函数/FFT/dB 换算在服务端完成；组件只做迹线累计、检波/抽稀、峰值/带宽类测量与显示换算。
+**输入**：服务端算好的幅度谱 `Float32Array`。窗函数/FFT/dB 换算在服务端完成；组件只做迹线累计、检波/抽稀、峰值/带宽类测量与显示换算。
+
+- **real 模式（默认）**：长度 = `fftSize/2`，单边 `0 ~ Fs/2`，非 DC 幅度已由服务端 ×2；
+- **complex 模式**：长度 = `fftSize`，完整复谱，通常 `fftShift` 后覆盖 `-Fs/2 ~ +Fs/2`；
+- 频率轴统一按 `f = freqStartHz + bin × binHz` 计算；`freqStartHz` 缺省时 real=0、complex+fftShift=-Fs/2；
+- `freqOffsetHz` 只影响显示读数，API/CSV 返回物理频率。
 
 **元数据**（频率轴与单位换算）：优先级 帧元数据 > props > 推导 ——
 
-- `sampleRate` + `fftSize`：频率换算 `f = bin × (sampleRate / fftSize)`，显示范围 0 ~ Fs/2；两者缺省时 X 轴退化为 bin 索引
+- `sampleRate` + `fftSize`：缺省 bin 宽 `sampleRate / fftSize`；`binHz` 可显式覆盖（抽稀/非标准 FFT）；
+- `spectrumMode`：`real`（单边实信号）/ `complex`（复谱带符号）；
+- `freqStartHz`：数据第 0 个 bin 的物理频率；complex 常为 `-Fs/2`；
+- `fftShift`：复谱是否已把 0 Hz 移到中心（默认 true）；
 - `dbScale`：true（默认）= 数据为 dB；false = 线性幅度。**线性显示下功率类测量（OBW/N dB/信道功率/区间功率/ACPR/噪声密度）会先转 dB 再计算，结果始终以 dB 表示**
-- 分辨率显示 `RBW≈ 采样率/FFT 大小`（含窗函数影响的 ENBW 未计入，仅作参考）
+- 分辨率显示 `RBW≈ binHz`（含窗函数影响的 ENBW 未计入，仅作参考）
 - 服务端已按**窗相干增益**补偿：同一 0 dBFS 复单音切 rect/hann/hamming/blackman 峰值都读 0 dB；`pointsPerFrame < fftSize` 时跨帧凑满再算，不再零填充
 
 ## 二、Props
@@ -61,6 +73,10 @@ interface SpectrumProps {
   sampleRate?: number // 元数据兜底
   fftSize?: number
   dbScale?: boolean
+  spectrumMode?: 'real' | 'complex' // real=单边实信号（默认）；complex=完整复谱（带符号频率）
+  freqStartHz?: number // 第 0 bin 物理频率（real 通常 0；complex+fftShift 通常 -Fs/2）
+  binHz?: number // 显式 bin 宽（缺省 sampleRate/fftSize）
+  fftShift?: boolean // complex 是否已 fftShift（默认 true）
   paused?: boolean // 冻结/暂停（支持 v-model:paused；也可调用 setPaused）
   contextMenu?: boolean // 内置右键菜单（默认 true；false 时仍 emit contextmenu）
   preserveDrawingBuffer?: boolean // 默认 true；无余辉需求可设 false 降低拷贝开销
@@ -147,7 +163,7 @@ interface SpectrumProps {
 | 悬停            | 十字光标 + 频率/幅度芯片 + 浮动读数（最近 bin）                                                        |
 
 缩放窗口以**真实 bin 域**计算（不含显示留白），锚点保持屏上相对位置；窗宽钳制 `[8, 全带宽]`，
-达到全带宽即精确吸附 `0 ~ Fs/2` 并锁定平移（键盘 / 框选缩到全宽同样吸附）。
+达到全带宽即精确吸附 `0 ~ N-1` 并锁定平移（real 对应 0~~Fs/2；complex+fftShift 对应 -Fs/2~~+Fs/2-Δf；键盘 / 框选缩到全宽同样吸附）。
 快捷键仅在鼠标悬停本图表且焦点不在输入控件内时响应；键盘微调与滚轮缩放均写入缩放历史（30 级）。
 演示页顶部标签行显示 Span/Center/RBW/Ref 便于快速查看；图内参数栏由 `showInfo` 控制（默认开启，见 §11），两者并存属演示页的有意冗余。
 
@@ -159,7 +175,7 @@ interface SpectrumProps {
 ## 七、导出
 
 - `exportPNG()`：波形 + 网格 + 标记合成（导出前同步重绘保证 WebGL 帧有效；无画布状态面板，画面不被遮挡）
-- `exportCSV()`：可见跨度 `freq_hz,level`（无采样率元数据时为 `bin,level`）
+- `exportCSV()`：可见跨度 `freq_hz,level`（无频率元数据时为 `bin,level`；复谱为带符号物理频率）
 - `exportHandler` 提供后交由宿主持久化，否则回退 `<a download>`；两条路径均发 `exported` 事件
 
 ## 八、方法 / 事件
@@ -172,9 +188,9 @@ setMeta({ sampleRate?, fftSize?, dbScale? })
 clear() / resetTraces()
 setPaused(bool) // 也可用 paused prop / v-model:paused
 setViewport({ xMin?, xMax?, yMin?, yMax?, autoScale? }) // x 为 bin
-getView(): SpectrumViewInfo // 含 freqMin/freqMax/centerHz/spanHz
-getMeta(): SpectrumMeta // { sampleRate, fftSize, binHz, dbScale }
-getStats(): SpectrumStats // { bins, fftSize, sampleRate, dbScale, paused, traceCount, markerCount }
+getView(): SpectrumViewInfo // 含 freqMin/freqMax/centerHz/spanHz/spectrumMode/freqStartHz/binHz
+getMeta(): SpectrumMeta // { sampleRate, fftSize, binHz, dbScale, spectrumMode, freqStartHz, fftShift }
+getStats(): SpectrumStats // { bins, fftSize, sampleRate, dbScale, paused, traceCount, markerCount, spectrumMode, freqStartHz, binHz }
 getVisibleData(): SpectrumVisibleData | null // 活动迹线可见窗数据拷贝 + startBin/endBin
 zoomReset() // 全带宽 + 自动量程
 peakSearch() / nextPeak() / clearMarkers()
@@ -223,7 +239,7 @@ dispose() // 手动释放监听/渲染器/rAF（幂等；卸载时自动调用�
 
 ## 十、性能
 
-- 单帧 ~fftSize/2 个 bin（默认 512），累计器 copy/环形均为 O(bin)
+- 单帧 real ~fftSize/2 bin（默认 512），complex fftSize bin；累计器 copy/环形均为 O(bin)
 - 仅在窗口 bin 数超过绘图区像素宽时 minmax 抽稀；绘制顶点 ≤ 2×像素宽
 - 重绘统一 rAF 调度并按 `fpsLimit` 节流；`useGlChart` 每帧校准画布尺寸与 DPI
 - 默认 WebGL2；无法创建 WebGL2 时 `renderer='auto'` 自动回退 Canvas2D（折线/散点 + 现有轴层），余辉用低 alpha 背景覆盖模拟；Canvas2D 建议保持 minmax 抽稀
@@ -296,7 +312,7 @@ Center/Start/Stop 在演示页做显示域换算）。
 主信道取 `[c−mh, c+mh]`、邻道取 `[c−mh−2·ah, c−mh−1]` / `[c+mh+1, c+mh+2·ah]`（各 2·ah bin，与主信道等宽），
 避免旧实现邻道只积分一半导致的 ~3 dB 偏好；三信道填充 + `ACPR L/U dBc` 芯片（`acprBands` 纯函数）。
 
-**限制线**：`limitLines: [{ points:[{freqHz|bin, level}], type:'upper'|'lower' }]`——折线（超限区间红染）
+**限制线**：`limitLines: [{ points:[{freqHz|bin, level}], type:'upper'|'lower' }]`——`freqHz` 为物理频率（含复谱负频），组件按 `freqStartHz + bin×binHz` 反算 bin；折线（超限区间红染）
 
 - 左上 `限制通过 / 限制超限 ×n` 判定芯片（en-US 为 `LIMIT PASS / FAIL ×n`）；`getLimitResult()` 返回 `pass/violations/worstMarginDb`。
   `level` 使用当前数据单位（dB 模式为 dB，线性显示时为幅度），与活动迹线原始数据比较（不含显示偏移）。

@@ -14,7 +14,15 @@ const paused = ref(false)
 const autoLevel = ref(false)
 const showColorbar = ref(true)
 const hasData = ref(false)
-const lastMeta = ref({ rows: 0, cols: 0, fftSize: 0, sampleRate: 0, timeStepSec: 0 })
+const lastMeta = ref({
+  rows: 0,
+  cols: 0,
+  fftSize: 0,
+  sampleRate: 0,
+  timeStepSec: 0,
+  mode: 'real' as 'real' | 'complex',
+  freqStartHz: 0
+})
 
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
@@ -23,7 +31,11 @@ sig.onSpectrogram((row, frame) => {
     sampleRate: frame.sampleRate,
     fftSize: frame.fftSize,
     timeStepSec: frame.timeStepSec,
-    seq: frame.seq
+    seq: frame.seq,
+    spectrumMode: frame.spectrumMode,
+    freqStartHz: frame.freqStartHz,
+    binHz: frame.binHz,
+    fftShift: frame.fftShift
   })
   hasData.value = true
   const st = chartRef.value?.getStats()
@@ -33,7 +45,9 @@ sig.onSpectrogram((row, frame) => {
       cols: st.cols,
       fftSize: st.fftSize ?? 0,
       sampleRate: st.sampleRate ?? 0,
-      timeStepSec: st.timeStepSec ?? 0
+      timeStepSec: st.timeStepSec ?? 0,
+      mode: st.spectrumMode ?? 'real',
+      freqStartHz: st.freqStartHz ?? 0
     }
 })
 
@@ -97,8 +111,9 @@ function onExportCsv(): void {
         >
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        {{ lastMeta.rows }} 行 / {{ lastMeta.cols }} bin · FFT {{ lastMeta.fftSize || '-' }} · Fs
-        {{ lastMeta.sampleRate || '-' }} · Δt
+        {{ lastMeta.rows }} 行 / {{ lastMeta.cols }} bin ·
+        {{ lastMeta.mode === 'complex' ? '复谱 -Fs/2~+Fs/2' : '单边 0~Fs/2' }} · FFT
+        {{ lastMeta.fftSize || '-' }} · Fs {{ lastMeta.sampleRate || '-' }} · Δt
         {{ lastMeta.timeStepSec ? lastMeta.timeStepSec.toExponential(3) + ' s' : '-' }}
         · 重叠 / FFT 处理在服务端配置（请至“Mock 配置”页）
       </div>

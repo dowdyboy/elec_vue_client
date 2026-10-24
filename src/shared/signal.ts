@@ -7,6 +7,12 @@
 export type WindowType = 'rect' | 'hann' | 'hamming' | 'blackman'
 export type ColorMap = 'viridis' | 'turbo' | 'jet' | 'grayscale' | 'hot'
 export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
+/**
+ * 频谱语义：
+ * - real：只取实信号 I 通道，输出单边谱 0~Fs/2（非 DC 幅度 ×2）
+ * - complex：使用 I/Q，输出完整 N bin 复谱并 fftShift 到 -Fs/2~+Fs/2
+ */
+export type SpectrumMode = 'real' | 'complex'
 
 /** 处理配置（全部在服务端；UI 配置页只改这里，组件不持有） */
 export interface SignalAnalysisConfig {
@@ -24,6 +30,7 @@ export interface SignalAnalysisConfig {
   window: WindowType
   dbScale: boolean
   overlap: number // 0~0.9，仅影响时频图行重叠
+  spectrumMode: SpectrumMode // real=单边实信号；complex=完整复谱（带符号频率）
 }
 
 export type AnalysisFrameType = 'spectrum' | 'spectrogram' | 'iq'
@@ -33,7 +40,9 @@ export interface AnalysisFrame {
   type: AnalysisFrameType
   seq: number
   /**
-   * spectrum / spectrogram：服务端算好的幅度 Float32Array（长度 = fftSize/2）
+   * spectrum / spectrogram：服务端算好的幅度 Float32Array
+   *   - real：长度 = fftSize/2（单边 0~Fs/2）
+   *   - complex：长度 = fftSize（完整复谱，通常 fftShift 到 -Fs/2~+Fs/2）
    *   - spectrum：按 cfg.dbScale 输出 dB 或线性幅度
    *   - spectrogram：恒为 dB 行（时频图着色口径固定 -120~0 dB）
    * iq：交织原始 IQ Float32Array [I0,Q0,I1,Q1...]（时域图直接绘制）
@@ -44,13 +53,21 @@ export interface AnalysisFrame {
   sampleRate?: number
   /** 数据是否 dB 刻度（频谱按配置；时频恒为 true；远程后端可省略，缺省回退组件 props） */
   dbScale?: boolean
+  /** 频谱语义（频谱/时频；远程可省略，缺省 real） */
+  spectrumMode?: SpectrumMode
+  /** 数据第 0 个 bin 的物理频率 Hz（real 通常 0；complex+fftShift 通常 -Fs/2） */
+  freqStartHz?: number
+  /** bin 宽 Hz（通常 sampleRate/fftSize；可显式提供给抽稀/非标准 FFT） */
+  binHz?: number
+  /** 复谱是否已 fftShift（仅 complex 有意义；默认 true） */
+  fftShift?: boolean
   /** 时频行间时间步长秒（重叠 hop / sampleRate；仅 spectrogram） */
   timeStepSec?: number
   modType?: ModType
 }
 
 /** 远程后端（socket.io）事件协议：外部后端 emit('signal:analysis', { type, seq, fftSize, buffer })
- *  buffer 为 Float32Array 的二进制（Length = fftSize/2 或交织 IQ）
+ *  buffer 为 Float32Array 的二进制（real 长度 = fftSize/2；complex 长度 = fftSize；IQ 为交织）
  *  type 取 FRAME_TYPE_CODE 的数值；Electron 端（RemoteAnalysisSource）据此解析
  */
 export const FRAME_TYPE_CODE: Record<AnalysisFrameType, number> = {
@@ -74,7 +91,8 @@ export function defaultAnalysisConfig(): SignalAnalysisConfig {
     fftSize: 1024,
     window: 'hann',
     dbScale: true,
-    overlap: 0.5
+    overlap: 0.5,
+    spectrumMode: 'real'
   }
 }
 
@@ -164,6 +182,11 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
     const o = num('overlap')
     if (o === null || o < 0 || o > 0.9) errors.push('overlap 须为 0~0.9 的数')
     else out.overlap = o
+  }
+  if ('spectrumMode' in src) {
+    if (src.spectrumMode === 'real' || src.spectrumMode === 'complex')
+      out.spectrumMode = src.spectrumMode
+    else errors.push('spectrumMode 须为 real 或 complex')
   }
 
   if (errors.length > 0) return { ok: false, error: errors.join('; ') }

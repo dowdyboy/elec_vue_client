@@ -40,7 +40,7 @@ export function getWindowInfo(type: WindowType, n: number): WindowInfo {
 /**
  * 由交织复数切片计算一行幅度谱。
  * @param slice 交织 IQ（长度不足 fftSize*2 时按实际样本数加窗，调用方应保证已凑满）
- * @param cfg 处理配置
+ * @param cfg 处理配置（spectrumMode 决定实信号单边 / 复信号双边）
  * @param opts.forceDb 忽略 cfg.dbScale，强制输出 dB（时频图固定 dB 行）
  */
 export function computeSpectrumRow(
@@ -49,20 +49,31 @@ export function computeSpectrumRow(
   opts: { forceDb?: boolean } = {}
 ): Float32Array {
   const n = cfg.fftSize
+  const complex = (cfg.spectrumMode ?? 'real') === 'complex'
   const re = new Float32Array(n)
   const im = new Float32Array(n)
   const count = Math.min(n, Math.floor(slice.length / 2))
   for (let k = 0; k < count; k++) {
     re[k] = slice[2 * k] ?? 0
-    im[k] = slice[2 * k + 1] ?? 0
+    // real 模式只取 I 通道，Q 不参与（对应真实 ADC/传感器实信号）
+    if (complex) im[k] = slice[2 * k + 1] ?? 0
   }
   const { win, gain } = getWindowInfo(cfg.window, n)
   applyWindow(re, win)
-  applyWindow(im, win)
-  const mag = magnitudeSpectrum(re, im)
-  // 相干增益补偿：rect=1，hann=0.5（补偿后峰值 +6 dB），保证窗型切换不改变电平读数
+  if (complex) applyWindow(im, win)
+  const mag = complex
+    ? magnitudeSpectrum(re, im, { full: true, fftShift: true })
+    : magnitudeSpectrum(re)
+  // 窗相干增益补偿：保证切换窗型不改变电平读数
   const inv = gain > 1e-12 ? 1 / gain : 1
-  for (let i = 0; i < mag.length; i++) mag[i] = (mag[i] ?? 0) * inv
+  if (complex) {
+    for (let i = 0; i < mag.length; i++) mag[i] = (mag[i] ?? 0) * inv
+  } else {
+    // 实信号单边谱：除 DC 外正频率幅度 ×2（Nyquist bin 不在 N/2 单边输出内）
+    for (let i = 0; i < mag.length; i++) {
+      mag[i] = (mag[i] ?? 0) * inv * (i === 0 ? 1 : 2)
+    }
+  }
   return opts.forceDb || cfg.dbScale ? toDB(mag) : mag
 }
 

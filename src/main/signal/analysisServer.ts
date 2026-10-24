@@ -139,6 +139,10 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
           dbScale: cfg.dbScale,
+          spectrumMode: cfg.spectrumMode,
+          freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+          binHz: cfg.sampleRate / cfg.fftSize,
+          fftShift: cfg.spectrumMode === 'complex',
           modType: cfg.modType
         })
       }
@@ -152,6 +156,10 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
           dbScale: true,
+          spectrumMode: cfg.spectrumMode,
+          freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
+          binHz: cfg.sampleRate / cfg.fftSize,
+          fftShift: cfg.spectrumMode === 'complex',
           timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
           modType: cfg.modType
         })
@@ -327,6 +335,30 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
             : typeof p.time_step_sec === 'number'
               ? (p.time_step_sec as number)
               : undefined
+        const spectrumMode =
+          p.spectrumMode === 'complex' || p.spectrumMode === 'real'
+            ? p.spectrumMode
+            : p.spectrum_mode === 'complex' || p.spectrum_mode === 'real'
+              ? p.spectrum_mode
+              : undefined
+        const freqStartHz =
+          typeof p.freqStartHz === 'number'
+            ? p.freqStartHz
+            : typeof p.freq_start_hz === 'number'
+              ? (p.freq_start_hz as number)
+              : undefined
+        const binHz =
+          typeof p.binHz === 'number'
+            ? p.binHz
+            : typeof p.bin_hz === 'number'
+              ? (p.bin_hz as number)
+              : undefined
+        const fftShift =
+          typeof p.fftShift === 'boolean'
+            ? p.fftShift
+            : typeof p.fft_shift === 'boolean'
+              ? (p.fft_shift as boolean)
+              : undefined
         const payload = extractRemotePayload(p)
         let data: Float32Array
         if (
@@ -395,6 +427,10 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           sampleRate,
           dbScale,
           timeStepSec,
+          spectrumMode,
+          freqStartHz,
+          binHz,
+          fftShift,
           modType
         })
       } catch (e) {
@@ -520,6 +556,10 @@ export function registerSignalAnalysisServer(): () => void {
         fftSize: f.fftSize,
         sampleRate: f.sampleRate,
         dbScale: f.dbScale,
+        spectrumMode: f.spectrumMode,
+        freqStartHz: f.freqStartHz,
+        binHz: f.binHz,
+        fftShift: f.fftShift,
         timeStepSec: f.timeStepSec,
         modType: f.modType,
         buffer: buf

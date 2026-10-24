@@ -55,6 +55,43 @@ describe('rcTaps（升余弦成型脉冲）', () => {
   })
 })
 
+describe('magnitudeSpectrum（实/复谱）', () => {
+  function tone(n: number, bin: number): { re: Float32Array; im: Float32Array } {
+    const re = new Float32Array(n)
+    const im = new Float32Array(n)
+    for (let k = 0; k < n; k++) {
+      const ph = (2 * Math.PI * bin * k) / n
+      re[k] = Math.cos(ph)
+      im[k] = Math.sin(ph)
+    }
+    return { re, im }
+  }
+  function peakBin(row: Float32Array): number {
+    let idx = 0
+    for (let i = 1; i < row.length; i++) if (row[i]! > row[idx]!) idx = i
+    return idx
+  }
+
+  it('fftShift 后正/负频率落在正确半区', () => {
+    const n = 64
+    const pos = tone(n, 7)
+    const neg = tone(n, -7)
+    const fullPos = magnitudeSpectrum(pos.re, pos.im, { full: true, fftShift: true })
+    const fullNeg = magnitudeSpectrum(neg.re, neg.im, { full: true, fftShift: true })
+    expect(fullPos.length).toBe(n)
+    expect(peakBin(fullPos)).toBe(n / 2 + 7)
+    expect(peakBin(fullNeg)).toBe(n / 2 - 7)
+  })
+
+  it('默认仍返回 N/2 单边谱（向后兼容）', () => {
+    const n = 64
+    const tone7 = tone(n, 7)
+    const half = magnitudeSpectrum(tone7.re, tone7.im)
+    expect(half.length).toBe(n / 2)
+    expect(peakBin(half)).toBe(7)
+  })
+})
+
 describe('createSignalGenerator（有状态、跨帧连续）', () => {
   it('分两次 next(1024) 与一次 next(2048) 逐值一致（相位/符号/成型状态连续）', () => {
     const cfg: SignalAnalysisConfig = { ...defaultAnalysisConfig(), modType: 'BPSK', freq: 512 }

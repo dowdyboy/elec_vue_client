@@ -1,4 +1,4 @@
-# SIG-03 - 时频图（瀑布）
+﻿# SIG-03 - 时频图（瀑布）
 
 > `src/components/signal/SpectrogramChart.vue` —— 生产级可复用组件
 >
@@ -20,11 +20,15 @@
 ```ts
 // 服务端每算好一行 dB 就追加（帧元数据可随行传入）
 ws.onmessage = (e) => {
-  const frame = unpack(e.data) // { data, sampleRate, fftSize, timeStepSec }
+  const frame = unpack(e.data) // { data, sampleRate, fftSize, timeStepSec, spectrumMode, freqStartHz, binHz, fftShift }
   specgram.value?.appendData(frame.data, {
     sampleRate: frame.sampleRate,
     fftSize: frame.fftSize,
     timeStepSec: frame.timeStepSec,
+    spectrumMode: frame.spectrumMode,
+    freqStartHz: frame.freqStartHz,
+    binHz: frame.binHz,
+    fftShift: frame.fftShift,
     seq: frame.seq
   })
 }
@@ -32,20 +36,27 @@ ws.onmessage = (e) => {
 
 ## 一、数据契约
 
-- 每行是服务端算好的 **dB 幅度谱** `Float32Array`，长度 = `fftSize / 2`，口径固定 **-120~0 dBFS**（与频谱图的 `dbScale` 显示开关解耦）。
-- 行长度是强契约：行长变化（如 fftSize 调整）会清空旧瀑布并重建，避免混行黑条。
+- 每行是服务端算好的 **dB 幅度谱** `Float32Array`，口径固定 **-120~0 dBFS**（与频谱图的 `dbScale` 显示开关解耦）。
+- **real 模式（默认）**：长度 = `fftSize/2`，单边 `0~Fs/2`，非 DC 已 ×2。
+- **complex 模式**：长度 = `fftSize`，完整复谱，通常 fftShift 后覆盖 `-Fs/2~+Fs/2`；负频是独立信息。
+- 行长度是强契约：行长变化（如 fftSize/模式调整）会清空旧瀑布并重建，避免混行黑条。
 - 非有限值（NaN/Inf）在入口填 `-160 dB`。
 - 行元数据（均可选，帧优先于 props）：
 
-| 字段          | 说明                                             |
-| ------------- | ------------------------------------------------ |
-| `sampleRate`  | 采样率 Hz，用于频率轴                            |
-| `fftSize`     | FFT 大小，频率分辨率 = sampleRate/fftSize        |
-| `timeStepSec` | 行间时间（重叠 hop/sampleRate），用于时间轴/游标 |
-| `seq`         | 服务端行序号（诊断）                             |
-| `timestamp`   | 行时间戳（ms，预留）                             |
+| 字段           | 说明                                                      |
+| -------------- | --------------------------------------------------------- |
+| `sampleRate`   | 采样率 Hz，用于频率轴                                     |
+| `fftSize`      | FFT 大小                                                  |
+| `spectrumMode` | `real` / `complex`                                        |
+| `freqStartHz`  | 第 0 bin 物理频率；real 通常 0，complex+fftShift 为 -Fs/2 |
+| `binHz`        | bin 宽 Hz（缺省 sampleRate/fftSize）                      |
+| `fftShift`     | 复谱是否已 fftShift（仅 complex）                         |
+| `timeStepSec`  | 行间时间（重叠 hop/sampleRate），用于时间轴/游标          |
+| `seq`          | 服务端行序号（诊断）                                      |
+| `timestamp`    | 行时间戳（ms，预留）                                      |
 
 服务端计算重叠行时：`timeStepSec = fftSize * (1 - overlap) / sampleRate`。
+频率轴统一为 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示，CSV/API 返回物理频率。
 
 ## 二、Props
 
@@ -63,6 +74,10 @@ interface SpectrogramProps {
   // 频率/时间
   sampleRate?: number
   fftSize?: number
+  spectrumMode?: 'real' | 'complex' // 默认 real；complex=带符号全复谱
+  freqStartHz?: number // 第 0 bin 物理频率
+  binHz?: number // 显式 bin 宽
+  fftShift?: boolean // complex 默认 true
   freqOffsetHz?: number // 显示偏移
   timeStepSec?: number
   // 电平/色阶
@@ -125,10 +140,10 @@ setPaused(v)
 setLevelRange(min, max) // 手动电平
 setFrequencyRange(startBin, endBin)
 resetView() // 频率全带宽
-getStats(): SpectrogramStats
+getStats(): SpectrogramStats // 含 spectrumMode/freqStartHz/binHz
 getVisibleData(): SpectrogramVisibleData | null // newest→oldest 拷贝
 getRows(): number
-getView(): { freqStart, freqEnd, fullSpan, paused }
+getView(): { freqStart, freqEnd, fullSpan, paused, spectrumMode, freqStartHz, binHz }
 resize() / redraw()
 exportPNG() / exportPNGAsync() / exportCSV({ maxRows? })
 dispose()
@@ -140,13 +155,14 @@ dispose()
 
 ## 六、限制
 
-- 单边谱 **0~Fs/2**；真实基带负频不在当前契约内。
+- **real 模式**输出单边 `0~Fs/2`（N/2 bin）；**complex 模式**输出完整 N bin 带符号复谱；组件按 `spectrumMode`/`freqStartHz` 选择轴语义。
 - `timeStepSec` 未知时按 `fftSize/sampleRate` 推导；存在重叠时请由服务端/宿主显式传入。
-- CSV 按矩阵导出（`time_s` + 各 bin 列），默认最多约 100 万单元格，可用 `maxRows` 限制。
+- CSV 按矩阵导出（`time_s` + 各 bin 频率列），默认最多约 100 万单元格，可用 `maxRows` 限制。
 - 强制 `renderer="webgl2"` 且创建失败时 emit error + 占位，不回退；默认 `auto` 会回退 Canvas2D。
 
 ## 七、测试
 
 - 核心：`core/spectrogram.test.ts` 8 例（色阶端点/LUT、电平/gamma/NaN、环形缓冲换行/容量/冻结拷贝）。
-- 总单测：**144**（`npm test`）。
-- 视觉：`npm run test:visual` 的 canvas2d/webgl2 双基线包含时频图。
+- DSP：real 单边 ×2、complex 全 bin/fftShift、正负频率方向（`signalFrames.test.ts` / `signalDsp.test.ts`）。
+- 总单测：**150**（`npm test`）。
+- 视觉：`npm run test:visual` 的 canvas2d/webgl2 双基线包含 real 与 complex 时频图。

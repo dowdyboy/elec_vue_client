@@ -28,6 +28,37 @@ function cfg(over: Partial<SignalAnalysisConfig> = {}): SignalAnalysisConfig {
   return { ...defaultAnalysisConfig(), fftSize: 1024, sampleRate: 4096, ...over }
 }
 
+describe('实信号单边 / 复信号双边', () => {
+  it('real：只取 I 通道，单边 N/2 行，正频率非 DC ×2', () => {
+    const c = cfg({ spectrumMode: 'real', window: 'hann', dbScale: true })
+    const pos = complexTone(1024, 64, 1024)
+    const neg = complexTone(1024, -64, 1024)
+    const row = computeSpectrumRow(pos, c)
+    expect(row.length).toBe(512)
+    expect(peak(row)).toBeCloseTo(0, 1)
+    // I 通道相同 → real 模式对 Q 的符号不敏感
+    expect(Array.from(computeSpectrumRow(neg, c))).toEqual(Array.from(row))
+  })
+
+  it('complex：完整 N bin + fftShift，保留正/负频率方向', () => {
+    const c = cfg({ spectrumMode: 'complex', window: 'hann', dbScale: true })
+    const pos = computeSpectrumRow(complexTone(1024, 64, 1024), c)
+    const neg = computeSpectrumRow(complexTone(1024, -64, 1024), c)
+    expect(pos.length).toBe(1024)
+    expect(neg.length).toBe(1024)
+    let p = 0
+    let n = 0
+    for (let i = 1; i < pos.length; i++) {
+      if (pos[i]! > pos[p]!) p = i
+      if (neg[i]! > neg[n]!) n = i
+    }
+    expect(p).toBe(512 + 64)
+    expect(n).toBe(512 - 64)
+    expect(pos[p]).toBeCloseTo(0, 1)
+    expect(neg[n]).toBeCloseTo(0, 1)
+  })
+})
+
 describe('窗相干增益补偿', () => {
   it('rect/hann/hamming/blackman 的相干增益符合理论值', () => {
     expect(getWindowInfo('rect', 1024).gain).toBeCloseTo(1, 6)

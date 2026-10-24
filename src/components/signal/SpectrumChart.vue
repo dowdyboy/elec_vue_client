@@ -71,6 +71,7 @@ import type {
   SpectrumViewInfo,
   SpectrumVisibleData,
   SpectrumMeta,
+  SpectrumMode,
   SpectrumTraceMode,
   SpectrumTraceSpec,
   SpectrumUnit,
@@ -100,6 +101,7 @@ const props = withDefaults(defineProps<SpectrumProps>(), {
   showInfo: true,
   // Boolean prop 未传会被 Vue 转成 false：显式 true 才能让「仅传数据、不传元数据」的宿主按 dB 解析
   dbScale: true,
+  spectrumMode: 'real' as SpectrumMode,
   detector: 'minmax' as SpectrumDetector,
   dots: 'auto' as SpectrumDots,
   freqOffsetHz: 0,
@@ -234,43 +236,93 @@ const FADE_OUT_ALPHA = 0.25
 let frameFftSize: number | undefined
 let frameSampleRate: number | undefined
 let frameDbScale: boolean | undefined
+let frameSpectrumMode: SpectrumMode | undefined
+let frameFreqStartHz: number | undefined
+let frameBinHz: number | undefined
+let frameFftShift: boolean | undefined
 let curFftSize: number | undefined
 let curSampleRate: number | undefined
 let curDbScale = true
+let curSpectrumMode: SpectrumMode = 'real'
+let curFreqStartHz = 0
+let curFftShift = false
+let curBinHz: number | undefined
 let bufferLen = 0
 
 function binHz(): number | undefined {
+  if (curBinHz !== undefined && Number.isFinite(curBinHz) && curBinHz > 0) return curBinHz
   return curSampleRate && curFftSize ? curSampleRate / curFftSize : undefined
+}
+/** 数据第 0 个 bin 的物理频率（real=0；complex 通常 -Fs/2） */
+function binBaseHz(): number {
+  return curFreqStartHz
+}
+/** bin 索引 → 物理频率（不含显示偏移） */
+function binToHz(bin: number): number | undefined {
+  const step = binHz()
+  return step === undefined ? undefined : binBaseHz() + bin * step
 }
 
 function metaInfo(): SpectrumMeta {
-  return { sampleRate: curSampleRate, fftSize: curFftSize, binHz: binHz(), dbScale: curDbScale }
+  return {
+    sampleRate: curSampleRate,
+    fftSize: curFftSize,
+    binHz: binHz(),
+    dbScale: curDbScale,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    fftShift: curFftShift
+  }
 }
 
 let fftMismatchWarned = false
 function updateMeta(): void {
-  const fft = frameFftSize ?? props.fftSize ?? (bufferLen > 0 ? bufferLen * 2 : undefined)
+  const mode = frameSpectrumMode ?? props.spectrumMode ?? 'real'
+  const complex = mode === 'complex'
+  const fft =
+    frameFftSize ??
+    props.fftSize ??
+    (bufferLen > 0 ? (complex ? bufferLen : bufferLen * 2) : undefined)
   const sr = frameSampleRate ?? props.sampleRate
   const db = frameDbScale ?? props.dbScale ?? true
-  // 协议约定 bin 数 = fftSize/2；外部后端给错元数据会让频率轴整体缩放错，DEV 下提示一次。
+  const shift = frameFftShift ?? props.fftShift ?? complex
+  const base =
+    frameFreqStartHz ?? props.freqStartHz ?? (complex && shift && sr !== undefined ? -sr / 2 : 0)
+  const step =
+    frameBinHz ?? props.binHz ?? (sr !== undefined && fft !== undefined ? sr / fft : undefined)
+  // 协议约定：real bin 数 = fftSize/2；complex bin 数 = fftSize。
   // （允许后端做抽稀，所以只告警不覆盖元数据）
   if (
     IS_DEV &&
     !fftMismatchWarned &&
     frameFftSize !== undefined &&
     bufferLen > 0 &&
-    Math.round(frameFftSize / 2) !== bufferLen
+    Math.round(complex ? frameFftSize : frameFftSize / 2) !== bufferLen
   ) {
     fftMismatchWarned = true
     console.warn('[SpectrumChart] fftSize 元数据与数据长度不一致', {
       fftSize: frameFftSize,
-      bins: bufferLen
+      bins: bufferLen,
+      mode
     })
   }
-  if (fft === curFftSize && sr === curSampleRate && db === curDbScale) return
+  if (
+    fft === curFftSize &&
+    sr === curSampleRate &&
+    db === curDbScale &&
+    mode === curSpectrumMode &&
+    base === curFreqStartHz &&
+    step === curBinHz &&
+    shift === curFftShift
+  )
+    return
   curFftSize = fft
   curSampleRate = sr
   curDbScale = db
+  curSpectrumMode = mode
+  curFreqStartHz = base
+  curBinHz = step
+  curFftShift = shift
   for (const t of traceInsts.value) t.buf.setDbScale(db) // 功率平均需随数据域同步
   emit('metaChange', metaInfo())
   schedule()
@@ -512,6 +564,10 @@ function setMeta(m: Partial<SpectrumMeta>): void {
   if (m.fftSize !== undefined) frameFftSize = m.fftSize
   if (m.sampleRate !== undefined) frameSampleRate = m.sampleRate
   if (m.dbScale !== undefined) frameDbScale = m.dbScale
+  if (m.spectrumMode !== undefined) frameSpectrumMode = m.spectrumMode
+  if (m.freqStartHz !== undefined) frameFreqStartHz = m.freqStartHz
+  if (m.binHz !== undefined) frameBinHz = m.binHz
+  if (m.fftShift !== undefined) frameFftShift = m.fftShift
   updateMeta()
 }
 
@@ -755,6 +811,10 @@ watch(
     () => props.dbScale,
     () => props.sampleRate,
     () => props.fftSize,
+    () => props.spectrumMode,
+    () => props.freqStartHz,
+    () => props.binHz,
+    () => props.fftShift,
     () => props.unit,
     () => props.impedance,
     () => props.vbw,
@@ -1127,10 +1187,12 @@ function unitName(stepHz: number): string {
 function fmtFreqStep(hz: number, stepHz: number): string {
   return `${trimZeros(hz / unitScale(stepHz), stepHz / unitScale(stepHz))} ${unitName(stepHz)}`
 }
-/** 频率读数（小数位随 bin 宽自适应） */
+/** 频率读数（小数位随 bin 宽自适应；按值自动选 Hz/kHz/MHz 单位） */
 function fmtFreq(hz: number): string {
   const step = binHz() ?? 1
-  return `${trimZeros(hz, step)} ${unitName(step)}`
+  const a = Math.abs(hz)
+  const unit = a >= 1e6 ? 1e6 : a >= 1e4 ? 1e3 : 1
+  return `${trimZeros(hz / unit, step / unit)} ${unitName(unit)}`
 }
 function buildFreqTicks(
   min: number,
@@ -1139,11 +1201,12 @@ function buildFreqTicks(
   const bHz = binHz()
   if (!bHz || !(max > min)) return undefined
   const off = props.freqOffsetHz
-  const ticks = niceTicks(min * bHz + off, max * bHz + off, 6)
+  const base = binBaseHz()
+  const ticks = niceTicks(base + min * bHz + off, base + max * bHz + off, 6)
   if (!ticks.length) return undefined
   const stepHz = ticks.length > 1 ? ticks[1]! - ticks[0]! : ((max - min) * bHz) / 6
   return {
-    values: ticks.map((f) => (f - off) / bHz),
+    values: ticks.map((f) => (f - off - base) / bHz),
     labels: ticks.map((f) => fmtFreqStep(f, stepHz))
   }
 }
@@ -1323,7 +1386,8 @@ function drawOverlay(
     ctx.fillText(refInfo, plot.x + 20, infoTop)
     // 右上：Center/Span（下移避开峰值表面板）
     if (bHz && lastXrReal) {
-      const center = ((lastXrReal.min + lastXrReal.max) / 2) * bHz + props.freqOffsetHz
+      const cRaw = binToHz((lastXrReal.min + lastXrReal.max) / 2)
+      const center = dispHz(cRaw ?? 0)
       const span = (lastXrReal.max - lastXrReal.min) * bHz
       ctx.textAlign = 'right'
       ctx.fillText(
@@ -1349,7 +1413,7 @@ function drawOverlay(
   if (peakRows.length > 0) {
     ctx.font = '11px system-ui, -apple-system, sans-serif'
     const lines = peakRows.map((p, i) => {
-      const fTxt = bHz ? fmtFreq(dispHz(p.bin * bHz)) : `bin ${p.bin}`
+      const fTxt = bHz ? fmtFreq(dispHz(binToHz(p.bin) ?? 0)) : `bin ${p.bin}`
       return `${i + 1}  ${fTxt}  ${levelText(p.value + activeTraceOffset())}`
     })
     let wMax = 0
@@ -1607,7 +1671,7 @@ function drawOverlay(
       if (!data) return ''
       const b = Math.round(binF)
       if (b < 0 || b >= data.length) return ''
-      const fTxt = bHz ? fmtFreq(dispHz(b * bHz)) : `bin ${b}`
+      const fTxt = bHz ? fmtFreq(dispHz(binToHz(b) ?? 0)) : `bin ${b}`
       return `${fTxt} · ${levelText(data[b]! + activeTraceOffset())}`
     }
     const lines: string[] = []
@@ -1655,7 +1719,7 @@ function drawOverlay(
         // 标记表：列 # / 频率 / 电平（+Δ 行；噪声标记行含密度）
         const rows: string[][] = markers.map((m, i) => {
           const b = Math.min((data?.length ?? 1) - 1, Math.max(0, Math.round(m)))
-          const fTxt = bHz ? fmtFreq(dispHz(b * bHz)) : `bin ${b}`
+          const fTxt = bHz ? fmtFreq(dispHz(binToHz(b) ?? 0)) : `bin ${b}`
           const lv = data ? levelText(data[b]! + activeTraceOffset()) : '—'
           const rawDb = noiseMarkerIdx === i && bHz ? levelAtDb(m) : null
           const nz =
@@ -1727,7 +1791,7 @@ function drawOverlay(
   ctx.textBaseline = 'middle'
   const chipBg = t.labelChipBg
   const dispBin = pxToBin(cursor.px)
-  const xText = bHz ? fmtFreq(dispHz(dispBin * bHz)) : String(Math.round(dispBin))
+  const xText = bHz ? fmtFreq(dispHz(binToHz(dispBin) ?? 0)) : String(Math.round(dispBin))
   drawChip(ctx, cxp, plot.y + plot.h + 3, xText, chipBg, t.text, 'center', {
     min: plot.x,
     max: plot.x + plot.w
@@ -1738,7 +1802,7 @@ function drawOverlay(
 
   const smp = sampleAt(cursor.px)
   if (!smp) return
-  const idxLine = bHz ? `#${smp.bin} · ${fmtFreq(dispHz(smp.bin * bHz))}` : `#${smp.bin}`
+  const idxLine = bHz ? `#${smp.bin} · ${fmtFreq(dispHz(binToHz(smp.bin) ?? 0))}` : `#${smp.bin}`
   const lines = [idxLine, levelText(smp.value + activeTraceOffset())]
   ctx.textAlign = 'left'
   let wMax = 0
@@ -1903,14 +1967,16 @@ function updateCursor(evt: MouseEvent): void {
     const bin = cursor ? Math.round(pxToBin(cursor.px)) : null
     const level = bin === null ? null : levelAtDb(bin)
     if (cursor && bin !== null && level !== null) {
-      const b = binHz()
       emit('cursorChange', {
         px: cursor.px,
         py: cursor.py,
         bin,
-        freqHz: b ? bin * b : undefined,
+        freqHz: binToHz(bin),
         levelDb: level,
-        dbScale: curDbScale
+        dbScale: curDbScale,
+        spectrumMode: curSpectrumMode,
+        freqStartHz: binBaseHz(),
+        binHz: binHz()
       })
     } else if (!wasNull) {
       emit('cursorChange', null)
@@ -2622,7 +2688,11 @@ function bandPower(
   if (!r) return null
   measBand = { lo, hi, powerDb: r.powerDb, densityDbPerHz: r.densityDbPerHz }
   schedule()
-  return { ...r, fLowHz: lo * bHz, fHighHz: hi * bHz }
+  return {
+    ...r,
+    fLowHz: binToHz(lo) ?? lo * bHz,
+    fHighHz: binToHz(hi) ?? hi * bHz
+  }
 }
 
 /** 噪声标记：在某标记处追加 dB/Hz 读数（默认 M1；线性显示时先转 dB） */
@@ -2690,7 +2760,8 @@ function limitArrays(): Array<{ arr: Float32Array; type: 'upper' | 'lower' }> {
   for (const line of lines) {
     const pts: Array<{ bin: number; level: number }> = []
     for (const p of line.points) {
-      const bin = p.bin ?? (p.freqHz !== undefined && bHz ? p.freqHz / bHz : undefined)
+      const bin =
+        p.bin ?? (p.freqHz !== undefined && bHz ? (p.freqHz - binBaseHz()) / bHz : undefined)
       if (bin === undefined) continue
       pts.push({ bin, level: p.level })
     }
@@ -2731,7 +2802,12 @@ function measureOBW(
   const obwHz = (r.hiBin - r.loBin) * bHz
   measObw = { lo: r.loBin, hi: r.hiBin, obwHz, totalDb: r.totalDb }
   schedule()
-  return { fLowHz: r.loBin * bHz, fHighHz: r.hiBin * bHz, obwHz, totalDb: r.totalDb }
+  return {
+    fLowHz: binToHz(r.loBin) ?? r.loBin * bHz,
+    fHighHz: binToHz(r.hiBin) ?? r.hiBin * bHz,
+    obwHz,
+    totalDb: r.totalDb
+  }
 }
 
 function measureNdB(
@@ -2752,7 +2828,12 @@ function measureNdB(
   const widthHz = (r.hiBin - r.loBin) * bHz
   measNdb = { lo: r.loBin, hi: r.hiBin, widthHz, nDb, peakValue: r.peakValue }
   schedule()
-  return { fLowHz: r.loBin * bHz, fHighHz: r.hiBin * bHz, widthHz, centerHz: r.peakBin * bHz }
+  return {
+    fLowHz: binToHz(r.loBin) ?? r.loBin * bHz,
+    fHighHz: binToHz(r.hiBin) ?? r.hiBin * bHz,
+    widthHz,
+    centerHz: binToHz(r.peakBin) ?? r.peakBin * bHz
+  }
 }
 
 function measureChannelPower(range?: SpectrumBinRange): { powerDb: number } | null {
@@ -2769,7 +2850,14 @@ function measureChannelPower(range?: SpectrumBinRange): { powerDb: number } | nu
 function getVisibleData(): SpectrumVisibleData | null {
   const slice = visibleSlice()
   if (!slice) return null
-  return { data: slice.data.slice(slice.s, slice.e), startBin: slice.s, endBin: slice.e - 1 }
+  return {
+    data: slice.data.slice(slice.s, slice.e),
+    startBin: slice.s,
+    endBin: slice.e - 1,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    binHz: binHz()
+  }
 }
 
 /** 运行统计（宿主诊断/性能面板） */
@@ -2781,7 +2869,10 @@ function getStats(): SpectrumStats {
     dbScale: curDbScale,
     paused,
     traceCount: traceInsts.value.length,
-    markerCount: markers.length
+    markerCount: markers.length,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    binHz: binHz()
   }
 }
 
@@ -2839,14 +2930,14 @@ function exportCSV(opts?: { allTraces?: boolean }): void {
     const names = cols.map((t, ci) => `t${ci + 1}_${t.mode}`)
     parts.push(`${bHz ? 'freq_hz' : 'bin'},${names.join(',')}`)
     for (let i = s; i < e; i++) {
-      const row = [bHz ? (i * bHz).toFixed(6) : String(i)]
+      const row = [bHz ? (binToHz(i) ?? i * bHz).toFixed(6) : String(i)]
       for (const d of colsData) row.push(d[i] !== undefined ? String(d[i]) : '')
       parts.push(row.join(','))
     }
   } else {
     parts.push(bHz ? 'freq_hz,level' : 'bin,level')
     for (let i = s; i < e; i++) {
-      parts.push(bHz ? `${(i * bHz).toFixed(6)},${data[i]}` : `${i},${data[i]}`)
+      parts.push(bHz ? `${(binToHz(i) ?? i * bHz).toFixed(6)},${data[i]}` : `${i},${data[i]}`)
     }
   }
   const filename = `spectrum-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
@@ -2917,11 +3008,14 @@ function viewInfo(): SpectrumViewInfo {
     yAuto: view.yAuto
   }
   if (bHz) {
-    info.freqMin = xr.min * bHz
-    info.freqMax = xr.max * bHz
-    info.centerHz = ((xr.min + xr.max) / 2) * bHz
+    info.freqMin = binToHz(xr.min) ?? xr.min * bHz
+    info.freqMax = binToHz(xr.max) ?? xr.max * bHz
+    info.centerHz = binToHz((xr.min + xr.max) / 2) ?? ((xr.min + xr.max) / 2) * bHz
     info.spanHz = (xr.max - xr.min) * bHz
   }
+  info.spectrumMode = curSpectrumMode
+  info.freqStartHz = binBaseHz()
+  info.binHz = bHz
   return info
 }
 

@@ -24,6 +24,7 @@ import type {
   SpectrogramProps,
   SpectrogramStats,
   SpectrogramVisibleData,
+  SpectrumMode,
   Theme
 } from './core/types'
 
@@ -35,6 +36,10 @@ const props = withDefaults(defineProps<SpectrogramProps>(), {
   maxRows: undefined,
   sampleRate: undefined,
   fftSize: undefined,
+  spectrumMode: 'real' as SpectrumMode,
+  freqStartHz: undefined,
+  binHz: undefined,
+  fftShift: undefined,
   freqOffsetHz: 0,
   timeStepSec: undefined,
   dbMin: -120,
@@ -116,20 +121,54 @@ function initialCapacity(): number {
 const buffer = new SpectrogramBuffer(initialCapacity())
 let frameSampleRate: number | undefined
 let frameFftSize: number | undefined
+let frameSpectrumMode: SpectrumMode | undefined
+let frameFreqStartHz: number | undefined
+let frameBinHz: number | undefined
+let frameFftShift: boolean | undefined
 let frameTimeStepSec: number | undefined
 let frameTimestamp: number | undefined
 let curSampleRate: number | undefined
 let curFftSize: number | undefined
+let curSpectrumMode: SpectrumMode = 'real'
+let curFreqStartHz = 0
+let curBinStepHz: number | undefined
+let curFftShift = false
 let curTimeStepSec: number | undefined
 let curTimestamp: number | undefined
 let metaInited = false
 
 function binHz(): number | undefined {
+  if (curBinStepHz !== undefined && Number.isFinite(curBinStepHz) && curBinStepHz > 0)
+    return curBinStepHz
   return curSampleRate && curFftSize ? curSampleRate / curFftSize : undefined
 }
+function binBaseHz(): number {
+  return curFreqStartHz
+}
+/** bin → 物理频率（不含显示偏移） */
+function binToHz(bin: number): number | undefined {
+  const step = binHz()
+  return step === undefined ? undefined : binBaseHz() + bin * step
+}
+/** 显示频率（物理 + freqOffsetHz） */
+function dispHz(hz: number): number {
+  return hz + props.freqOffsetHz
+}
 function updateDerivedMeta(): void {
-  const fft = frameFftSize ?? props.fftSize ?? (buffer.cols > 0 ? buffer.cols * 2 : undefined)
+  const mode = frameSpectrumMode ?? props.spectrumMode ?? 'real'
+  const complex = mode === 'complex'
+  const fft =
+    frameFftSize ??
+    props.fftSize ??
+    (buffer.cols > 0 ? (complex ? buffer.cols : buffer.cols * 2) : undefined)
   const sr = frameSampleRate ?? props.sampleRate
+  const shift = frameFftShift ?? props.fftShift ?? complex
+  const base =
+    frameFreqStartHz ?? props.freqStartHz ?? (complex && shift && sr !== undefined ? -sr / 2 : 0)
+  const binStep =
+    frameBinHz ??
+    props.binHz ??
+    (sr !== undefined && fft !== undefined && fft > 0 ? sr / fft : undefined)
   const step =
     frameTimeStepSec ?? props.timeStepSec ?? (sr && fft && sr > 0 && fft > 0 ? fft / sr : undefined)
   const changed =
@@ -137,9 +176,17 @@ function updateDerivedMeta(): void {
     sr !== curSampleRate ||
     step !== curTimeStepSec ||
     frameTimestamp !== curTimestamp ||
+    mode !== curSpectrumMode ||
+    base !== curFreqStartHz ||
+    binStep !== curBinStepHz ||
+    shift !== curFftShift ||
     !metaInited
   curFftSize = fft
   curSampleRate = sr
+  curSpectrumMode = mode
+  curFreqStartHz = base
+  curBinStepHz = binStep
+  curFftShift = shift
   curTimeStepSec = step
   curTimestamp = frameTimestamp
   if (changed) {
@@ -149,7 +196,11 @@ function updateDerivedMeta(): void {
       fftSize: curFftSize,
       dbScale: true,
       timeStepSec: curTimeStepSec,
-      timestamp: frameTimestamp
+      timestamp: frameTimestamp,
+      spectrumMode: curSpectrumMode,
+      freqStartHz: binBaseHz(),
+      binHz: binHz(),
+      fftShift: curFftShift
     })
   }
 }
@@ -157,6 +208,11 @@ function setFrameMeta(m: SpectrogramMeta | undefined): void {
   if (!m) return
   if (typeof m.sampleRate === 'number' && m.sampleRate > 0) frameSampleRate = m.sampleRate
   if (typeof m.fftSize === 'number' && m.fftSize > 0) frameFftSize = m.fftSize
+  if (m.spectrumMode === 'real' || m.spectrumMode === 'complex') frameSpectrumMode = m.spectrumMode
+  if (typeof m.freqStartHz === 'number' && Number.isFinite(m.freqStartHz))
+    frameFreqStartHz = m.freqStartHz
+  if (typeof m.binHz === 'number' && m.binHz > 0) frameBinHz = m.binHz
+  if (typeof m.fftShift === 'boolean') frameFftShift = m.fftShift
   if (typeof m.timeStepSec === 'number' && m.timeStepSec > 0) frameTimeStepSec = m.timeStepSec
   if (typeof m.timestamp === 'number' && Number.isFinite(m.timestamp)) frameTimestamp = m.timestamp
   updateDerivedMeta()
@@ -459,7 +515,9 @@ function sanitizeRow(row: Float32Array): Float32Array {
 function applyCols(cols: number): void {
   if (buffer.cols !== cols) {
     buffer.configure(cols, initialCapacity())
-    frameFftSize = cols * 2 // 行宽是强契约；频率轴以实际行长为准
+    // 行宽是强契约：real -> fftSize/2；complex -> fftSize
+    const mode = frameSpectrumMode ?? props.spectrumMode ?? 'real'
+    frameFftSize = mode === 'complex' ? cols : cols * 2
     lastAutoSeq = -1
     freqFull = true
     freqStart = 0
@@ -763,8 +821,7 @@ function fmtDuration(sec: number): string {
   return `${(sec * 1e9).toFixed(0)} ns`
 }
 function freqAtBin(bin: number): number | undefined {
-  const b = binHz()
-  return b ? bin * b + props.freqOffsetHz : undefined
+  return binToHz(bin)
 }
 function rowTimeSec(age: number): number | undefined {
   return curTimeStepSec ? -age * curTimeStepSec : undefined
@@ -804,8 +861,10 @@ function drawOverlay(): void {
 
   // 网格/刻度（频率 X，时间 Y）
   const bHz = binHz()
-  const freqMin = bHz ? f0 * bHz + props.freqOffsetHz : f0
-  const freqMax = bHz ? f1 * bHz + props.freqOffsetHz : f1
+  const fMinRaw = binToHz(f0)
+  const fMaxRaw = binToHz(f1)
+  const freqMin = fMinRaw !== undefined ? dispHz(fMinRaw) : f0
+  const freqMax = fMaxRaw !== undefined ? dispHz(fMaxRaw) : f1
   if (props.axis !== false) {
     ctx.strokeStyle = grid
     ctx.lineWidth = 1
@@ -907,6 +966,7 @@ function drawOverlay(): void {
     if (row) {
       const db = row[bin] ?? -160
       const f = freqAtBin(bin)
+      const fDisp = f !== undefined ? dispHz(f) : undefined
       const t = rowTimeSec(age)
       ctx.font = '11px system-ui, -apple-system, sans-serif'
       ctx.textAlign = 'center'
@@ -915,14 +975,14 @@ function drawOverlay(): void {
         ctx,
         cx,
         plot.y + plot.h + 3,
-        bHz && f !== undefined ? fmtFreq(f) : `bin ${bin}`,
+        bHz && fDisp !== undefined ? fmtFreq(fDisp) : `bin ${bin}`,
         th.value.labelChipBg,
         text
       )
       drawChip(ctx, Math.max(plot.x + 30, cx), cy, levelText(db), th.value.labelChipBg, text)
       const lines = [
         `${t !== undefined ? `t ${fmtDuration(t)}` : `row -${age}`}`,
-        `${bHz && f !== undefined ? `f ${fmtFreq(f)}` : `bin ${bin}`}`,
+        `${bHz && fDisp !== undefined ? `f ${fmtFreq(fDisp)}` : `bin ${bin}`}`,
         `L ${levelText(db)}`
       ]
       const panelW = 146
@@ -1023,7 +1083,10 @@ function updateCursor(evt: MouseEvent): void {
           bin,
           freqHz: freqAtBin(bin),
           timeSec: rowTimeSec(age),
-          levelDb: db
+          levelDb: db,
+          spectrumMode: curSpectrumMode,
+          freqStartHz: binBaseHz(),
+          binHz: binHz()
         })
       } else {
         emit('cursorChange', null)
@@ -1321,7 +1384,10 @@ function getStats(): SpectrogramStats {
     timeStepSec: curTimeStepSec,
     dbMin: currentLevel().min,
     dbMax: currentLevel().max,
-    paused
+    paused,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    binHz: binHz()
   }
 }
 function getVisibleData(): SpectrogramVisibleData | null {
@@ -1337,7 +1403,10 @@ function getVisibleData(): SpectrogramVisibleData | null {
     fftSize: curFftSize,
     sampleRate: curSampleRate,
     timeStepSec: curTimeStepSec,
-    freqOffsetHz: props.freqOffsetHz
+    freqOffsetHz: props.freqOffsetHz,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    binHz: binHz()
   }
 }
 function setLevelRange(min: number, max: number): void {
@@ -1558,7 +1627,15 @@ watch(
   }
 )
 watch(
-  () => [props.sampleRate, props.fftSize, props.timeStepSec],
+  () => [
+    props.sampleRate,
+    props.fftSize,
+    props.timeStepSec,
+    props.spectrumMode,
+    props.freqStartHz,
+    props.binHz,
+    props.fftShift
+  ],
   () => {
     updateDerivedMeta()
     schedule()
@@ -1673,7 +1750,15 @@ defineExpose({
   getStats,
   getVisibleData,
   getRows: () => buffer.count,
-  getView: () => ({ freqStart, freqEnd, fullSpan: freqFull, paused }),
+  getView: () => ({
+    freqStart,
+    freqEnd,
+    fullSpan: freqFull,
+    paused,
+    spectrumMode: curSpectrumMode,
+    freqStartHz: binBaseHz(),
+    binHz: binHz()
+  }),
   resize: () => {
     glChartResize?.()
     schedule()

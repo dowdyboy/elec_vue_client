@@ -31,16 +31,18 @@ describe('独立脚本 Mock 与共享实现保持一致', () => {
     expect(scriptDefaultCfg()).toEqual(defaultAnalysisConfig())
   })
 
-  it('computeRow 在 dB/线性、rect/hann 下逐 bin 一致', () => {
+  it('computeRow 在 dB/线性、rect/hann、real/complex 下逐 bin 一致', () => {
     const base: SignalAnalysisConfig = { ...defaultAnalysisConfig(), fftSize: 256 }
     const tone = complexTone(256, 32, 256)
     for (const window of ['rect', 'hann'] as const) {
       for (const dbScale of [true, false]) {
-        const cfg = { ...base, window, dbScale }
-        const a = computeSpectrumRow(tone, cfg)
-        const b = scriptComputeRow(tone, cfg)
-        expect(b.length).toBe(a.length)
-        for (let i = 0; i < a.length; i++) expect(b[i]).toBeCloseTo(a[i]!, 4)
+        for (const spectrumMode of ['real', 'complex'] as const) {
+          const cfg = { ...base, window, dbScale, spectrumMode }
+          const a = computeSpectrumRow(tone, cfg)
+          const b = scriptComputeRow(tone, cfg)
+          expect(b.length).toBe(a.length)
+          for (let i = 0; i < a.length; i++) expect(b[i]).toBeCloseTo(a[i]!, 4)
+        }
       }
     }
   })

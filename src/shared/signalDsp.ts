@@ -29,7 +29,18 @@ export function applyWindow(data: Float32Array, win: Float32Array): void {
 
 // ── 简易 FFT（复数输入 → 正频率幅度谱）──
 // 返回线性幅度（已除以 n），长度 n/2
-export function magnitudeSpectrum(input: Float32Array, imIn?: Float32Array): Float32Array {
+export interface MagnitudeSpectrumOptions {
+  /** true=返回完整 N bin 复谱（complex）；false/缺省=单边 N/2 bin（real） */
+  full?: boolean
+  /** full 模式下是否把 0 Hz 移到中间（-Fs/2~+Fs/2）；默认 false */
+  fftShift?: boolean
+}
+
+export function magnitudeSpectrum(
+  input: Float32Array,
+  imIn?: Float32Array,
+  opts: MagnitudeSpectrumOptions = {}
+): Float32Array {
   const n = input.length
   if ((n & (n - 1)) !== 0) throw new Error('FFT size must be power of two')
   const re = new Float32Array(n)
@@ -74,6 +85,15 @@ export function magnitudeSpectrum(input: Float32Array, imIn?: Float32Array): Flo
         wi = nxtI
       }
     }
+  }
+  if (opts.full) {
+    const out = new Float32Array(n)
+    const shift = opts.fftShift ? n / 2 : 0
+    for (let i = 0; i < n; i++) {
+      const k = (i + shift) % n
+      out[i] = Math.hypot(re[k]!, imm[k]!) / n
+    }
+    return out
   }
   const out = new Float32Array(n / 2)
   for (let i = 0; i < n / 2; i++) out[i] = Math.hypot(re[i], imm[i]) / n
