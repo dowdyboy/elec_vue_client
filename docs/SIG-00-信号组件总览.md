@@ -5,9 +5,9 @@
 > 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）统一使用 `shared/signalDsp.ts` 的有状态生成器与 `shared/signalFrames.ts` 的帧构造：
 > sine 复载波；BPSK/QPSK/16QAM 符号集归一化到 E|a|²=1，经**升余弦成型**（β=0.35）后上变频（默认载波 512 Hz > 符号率 256 Bd，主瓣完整居中）——频谱为典型带限谱形，而非矩形脉冲的 sinc²。
 > 噪声每路方差统一为「信号功率 / (2·10^(snr/10))」，**同一 SNR 设置下各调制方式实测一致**（旧实现调制信号乘 0.3，BPSK 会比 sine 高约 10 dB）。
-> 频谱行按**窗相干增益补偿**（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时由 `SpectrumAnalyzer` 跨帧凑满窗再算，不再零填充（旧实现会低 20~75 dB）。
+> 频谱行按**窗相干增益补偿**（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时由 `SpectrumAnalyzer` 跨帧凑满窗再算，不再零填充（旧实现会低 20~~75 dB）。
 > 独立脚本是纯 JS 同步副本（供终端直接运行），`src/shared/remoteScriptParity.test.ts` 会对比行计算，防止三套 Mock 再次漂移。
-> 复谱演示：Mock 配置新增 `imageDb`（-120~0 dB），在 `-freq` 叠加共轭镜像；`-120` 关闭，`0 dB` 约等于把解析复单音变成实单音。默认 `-120`，不改变原有单边/解析信号行为。
+> 复谱演示：Mock 配置新增 `imageDb`（-120~~0 dB），在 `-freq` 叠加共轭镜像；`-120` 关闭，`0 dB` 约等于把解析复单音变成实单音。`imageDb` 是相对载波电平（-20 dB = 负频峰低 20 dB），只有 0 dB 正负等幅；默认 `-120`，不改变原有单边/解析信号行为。
 
 ## 一、快速拷贝
 

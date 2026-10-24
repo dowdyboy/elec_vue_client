@@ -569,7 +569,7 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi :span="2">
-            <NFormItem label="负频/镜像分量">
+            <NFormItem label="负频/镜像（相对载波）">
               <NSwitch v-model:value="imageOn" />
               <NSelect
                 v-if="imageOn"
@@ -578,7 +578,8 @@ onMounted(async () => {
                 style="width: 118px; margin-left: 8px"
               />
               <span style="margin-left: 12px; color: #888; font-size: 12px">
-                在 -freq 处叠加共轭镜像（复谱模式看负频）；0 dB ≈ 实单音，关闭 = 纯解析复信号
+                在 -freq 处叠加共轭镜像；-20 dB 表示负频峰比正频低 20 dB，只有 0 dB 才等幅（sine
+                变实单音）
               </span>
             </NFormItem>
           </NGi>
