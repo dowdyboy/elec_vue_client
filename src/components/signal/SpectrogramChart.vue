@@ -825,6 +825,8 @@ function drawOverlay(): void {
           ctx.stroke()
           ctx.globalAlpha = 1
         }
+        // 边缘刻度贴边对齐，避免与右侧色标/左侧轴标题互相覆盖
+        ctx.textAlign = px > plot.x + plot.w - 30 ? 'right' : px < plot.x + 30 ? 'left' : 'center'
         ctx.globalAlpha = 0.85
         ctx.fillText(bHz ? fmtFreq(v) : String(Math.round(v)), px, plot.y + plot.h + 4)
         ctx.globalAlpha = 1
