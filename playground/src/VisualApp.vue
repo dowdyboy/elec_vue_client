@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { IqChart, SpectrumChart, SpectrogramChart } from '@signal'
+import { IqChart, SpectrumChart, SpectrogramChart, ConstellationChart } from '@signal'
 
 type Renderer = 'auto' | 'webgl2' | 'canvas2d'
 const q = new URLSearchParams(location.search).get('renderer')
@@ -11,6 +11,7 @@ const spec = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const specComplex = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const specgram = ref<InstanceType<typeof SpectrogramChart> | null>(null)
 const specgramComplex = ref<InstanceType<typeof SpectrogramChart> | null>(null)
+const constellation = ref<InstanceType<typeof ConstellationChart> | null>(null)
 
 /** 固定种子 PRNG（mulberry32）：坐标/字体/数据完全确定，截图才可像素回归 */
 function mulberry32(seed: number): () => number {
@@ -34,6 +35,17 @@ onMounted(() => {
     iqData[2 * k + 1] = Math.cos(t) * 0.45 + (rand() - 0.5) * 0.02
   }
   iq.value?.appendData(iqData, { sampleRate: 1_000_000 })
+
+  // 星座：确定性 QPSK 四簇 + 小噪声，验证轴/网格/WebGL 与 Canvas2D 散点
+  const constData = new Float32Array(4096 * 2)
+  const levels = [-0.7, 0.7]
+  for (let k = 0; k < 4096; k++) {
+    const si = levels[(rand() * 2) | 0]!
+    const sq = levels[(rand() * 2) | 0]!
+    constData[2 * k] = si + (rand() - 0.5) * 0.08
+    constData[2 * k + 1] = sq + (rand() - 0.5) * 0.08
+  }
+  constellation.value?.appendData(constData)
 
   const bins = 512
   const specData = new Float32Array(bins)
@@ -185,6 +197,19 @@ onMounted(() => {
         :fps-limit="30"
       />
     </div>
+    <div class="chart-row chart-row-constellation">
+      <ConstellationChart
+        ref="constellation"
+        :renderer="renderer"
+        theme="dark"
+        locale="en-US"
+        :width="1100"
+        :height="320"
+        :point-size="2"
+        :alpha="0.7"
+        :fps-limit="30"
+      />
+    </div>
   </div>
 </template>
 
@@ -207,5 +232,8 @@ onMounted(() => {
 }
 .chart-row-complex-specgram {
   height: 240px;
+}
+.chart-row-constellation {
+  height: 320px;
 }
 </style>

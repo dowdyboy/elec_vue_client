@@ -84,7 +84,21 @@ export const zhCN = {
   'spectrogram.menuExportPng': '导出 PNG',
   'spectrogram.menuExportCsv': '导出 CSV',
   'spectrogram.exportEmpty': '没有可导出的行',
-  'spectrogram.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，时频图无法渲染'
+  'spectrogram.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，时频图无法渲染',
+
+  'constellation.aria': '星座图',
+  'constellation.waiting': '等待 IQ 数据…',
+  'constellation.points': '{n} 点',
+  'constellation.axisI': 'I',
+  'constellation.axisQ': 'Q',
+  'constellation.info': '{n} 点 · {x}',
+  'constellation.rms': 'RMS',
+  'constellation.power': '功率',
+  'constellation.peak': '峰值',
+  'constellation.autoFit': '自适应',
+  'constellation.fitTitle': '双击或点击「自适应」恢复全量程',
+  'constellation.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，星座图无法渲染',
+  'constellation.exportEmpty': '没有可导出的点'
 } as const
 
 export type ChartMessageKey = keyof typeof zhCN
@@ -167,7 +181,21 @@ export const enUS: Record<ChartMessageKey, string> = {
   'spectrogram.menuExportPng': 'Export PNG',
   'spectrogram.menuExportCsv': 'Export CSV',
   'spectrogram.exportEmpty': 'No rows to export',
-  'spectrogram.webglUnsupported': 'WebGL2/Canvas2D unavailable; spectrogram cannot render'
+  'spectrogram.webglUnsupported': 'WebGL2/Canvas2D unavailable; spectrogram cannot render',
+
+  'constellation.aria': 'Constellation chart',
+  'constellation.waiting': 'Waiting for IQ data…',
+  'constellation.points': '{n} points',
+  'constellation.axisI': 'I',
+  'constellation.axisQ': 'Q',
+  'constellation.info': '{n} points · {x}',
+  'constellation.rms': 'RMS',
+  'constellation.power': 'Power',
+  'constellation.peak': 'Peak',
+  'constellation.autoFit': 'Auto fit',
+  'constellation.fitTitle': 'Double-click or press Auto fit to restore full scale',
+  'constellation.webglUnsupported': 'WebGL2/Canvas2D unavailable; constellation cannot render',
+  'constellation.exportEmpty': 'No points to export'
 }
 
 /** 解析文案：messages > locale 内置 > key 本身；支持 {name} 插值 */

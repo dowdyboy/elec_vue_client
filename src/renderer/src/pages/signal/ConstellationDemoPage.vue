@@ -1,60 +1,148 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NCard, NSlider, NButton, NEmpty, useMessage } from 'naive-ui'
+import { nextTick, onUnmounted, ref } from 'vue'
+import {
+  NButton,
+  NCard,
+  NDescriptions,
+  NDescriptionsItem,
+  NEmpty,
+  NSelect,
+  NSlider,
+  NSwitch,
+  NTag,
+  useMessage
+} from 'naive-ui'
 import ConstellationChart from '@components/signal/ConstellationChart.vue'
+import type { ConstellationStats } from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
 import { isDark } from '@renderer/stores/theme'
 
 const message = useMessage()
 const chartRef = ref<InstanceType<typeof ConstellationChart> | null>(null)
+const renderer = ref<'auto' | 'webgl2' | 'canvas2d'>('auto')
 const pointSize = ref(2)
+const alpha = ref(0.7)
+const showAxis = ref(true)
+const showGrid = ref(true)
 const hasData = ref(false)
+const points = ref(0)
+const stats = ref<ConstellationStats | null>(null)
+const backend = ref('-')
+let lastStatsAt = 0
 
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
 sig.onIq((iq) => {
   chartRef.value?.appendData(iq)
   hasData.value = true
+  points.value = chartRef.value?.getLength() ?? points.value
+  const now = performance.now()
+  if (now - lastStatsAt > 500) {
+    lastStatsAt = now
+    const st = chartRef.value?.getStats()
+    if (st) stats.value = st
+    backend.value = chartRef.value?.getBackend() ?? '-'
+  }
 })
+
+function refreshBackend(): void {
+  void nextTick(() => {
+    backend.value = chartRef.value?.getBackend() ?? '-'
+    points.value = chartRef.value?.getLength() ?? 0
+  })
+}
 
 function onClear(): void {
   chartRef.value?.clear()
   hasData.value = false
+  points.value = 0
+  stats.value = null
   message.success('已清空')
 }
+
+function onResetView(): void {
+  chartRef.value?.resetView()
+  message.success('已恢复自动量程')
+}
+
+function onExportPNG(): void {
+  chartRef.value?.exportPNG()
+}
+
+function onExportCSV(): void {
+  chartRef.value?.exportCSV()
+}
+
+onUnmounted(() => {
+  lastStatsAt = 0
+})
 </script>
 
 <template>
   <div style="padding: 16px">
-    <NCard title="✨ 星座图" style="margin-bottom: 16px">
+    <NCard title="星座图" style="margin-bottom: 16px">
       <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center">
-        <span>点大小</span>
-        <NSlider v-model:value="pointSize" :min="1" :max="6" style="width: 100px" />
+        <span>后端</span>
+        <NSelect
+          v-model:value="renderer"
+          size="small"
+          :options="[
+            { label: 'auto', value: 'auto' },
+            { label: 'webgl2', value: 'webgl2' },
+            { label: 'canvas2d', value: 'canvas2d' }
+          ]"
+          style="width: 120px"
+          @update:value="refreshBackend"
+        />
+        <span>点数</span>
+        <NSlider v-model:value="pointSize" :min="1" :max="6" :step="0.5" style="width: 100px" />
+        <span>透明度</span>
+        <NSlider v-model:value="alpha" :min="0.1" :max="1" :step="0.05" style="width: 100px" />
+        <span>轴</span>
+        <NSwitch v-model:value="showAxis" size="small" />
+        <span>网格</span>
+        <NSwitch v-model:value="showGrid" size="small" />
+        <NButton size="small" @click="onResetView">自适应</NButton>
+        <NButton size="small" @click="onExportPNG">导出 PNG</NButton>
+        <NButton size="small" @click="onExportCSV">导出 CSV</NButton>
         <NButton size="small" @click="onClear">清空</NButton>
-        <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
-          >等待服务端（请至“Mock 配置”页启动）…</span
-        >
-        <span v-else-if="sig.remoteError.value" style="color: #d03050; font-size: 12px"
-          >远程错误: {{ sig.remoteError.value }}</span
-        >
+        <NTag size="small" :bordered="false">{{ backend }}</NTag>
+        <NTag size="small" :bordered="false">{{ points }} 点</NTag>
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        星座图绘制服务端下发的原始 IQ；调制 / 信噪比等请至“Mock
-        配置”页配置，重启后生效。主题跟随全局。
+        滚轮缩放、拖拽平移、双击恢复自动量程；QPSK 的原始 IQ
+        含符号过渡轨迹，若只想看判决点，需要在宿主侧做符号同步/抽点。
+      </div>
+      <div
+        v-if="!hasData && !sig.remoteError.value"
+        style="color: #18a058; font-size: 12px; margin-top: 6px"
+      >
+        等待服务端（请至「Mock 配置」页启动/选择源）
+      </div>
+      <div
+        v-else-if="sig.remoteError.value"
+        style="color: #d03050; font-size: 12px; margin-top: 6px"
+      >
+        远程错误: {{ sig.remoteError.value }}
       </div>
     </NCard>
+
     <NCard content-style="padding: 0">
-      <div style="position: relative; height: 420px">
+      <div style="position: relative; height: 480px">
         <ConstellationChart
           ref="chartRef"
+          :key="renderer"
+          :renderer="renderer"
           :theme="isDark ? 'dark' : 'light'"
           :point-size="pointSize"
-          :alpha="0.7"
-          :height="420"
+          :alpha="alpha"
+          :axis="showAxis"
+          :grid="showGrid"
+          :height="480"
         />
         <NEmpty
           v-if="!hasData"
-          description="暂无数据，请至“Mock 配置”页启动服务…"
+          description="暂无数据，请至「Mock 配置」页启动服务"
           style="
             position: absolute;
             inset: 0;
@@ -66,6 +154,23 @@ function onClear(): void {
           "
         />
       </div>
+    </NCard>
+
+    <NCard v-if="stats" title="统计" style="margin-top: 16px" size="small">
+      <NDescriptions :column="4" size="small" label-placement="left">
+        <NDescriptionsItem label="缓冲点">{{ stats.points }}</NDescriptionsItem>
+        <NDescriptionsItem label="绘制点">{{ stats.renderPoints }}</NDescriptionsItem>
+        <NDescriptionsItem label="I RMS">{{ stats.iRms.toFixed(4) }}</NDescriptionsItem>
+        <NDescriptionsItem label="Q RMS">{{ stats.qRms.toFixed(4) }}</NDescriptionsItem>
+        <NDescriptionsItem label="功率">{{ stats.powerDbfs.toFixed(2) }} dBFS</NDescriptionsItem>
+        <NDescriptionsItem label="峰值">{{ stats.peak.toFixed(4) }}</NDescriptionsItem>
+        <NDescriptionsItem label="I 范围">
+          {{ stats.iMin.toFixed(3) }} … {{ stats.iMax.toFixed(3) }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="Q 范围">
+          {{ stats.qMin.toFixed(3) }} … {{ stats.qMax.toFixed(3) }}
+        </NDescriptionsItem>
+      </NDescriptions>
     </NCard>
   </div>
 </template>

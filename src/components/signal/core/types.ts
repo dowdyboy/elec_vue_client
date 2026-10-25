@@ -73,6 +73,9 @@ export interface ChartLabels {
   stale?: string
   /** 画布无障碍标签（默认「IQ 时域图」/「频谱图」/「时频图」） */
   aria?: string
+  /** 星座图 I/Q 轴标题（默认 I / Q） */
+  i?: string
+  q?: string
   /** 迹线图例文案（频谱多迹线） */
   legend?: {
     clear?: string
@@ -605,8 +608,53 @@ export type ConstellationAdapter = (raw: RawInput) => ConstellationNormalized | 
 export interface ConstellationProps extends ChartBaseProps {
   pointSize?: number
   alpha?: number
+  /** 外观覆盖项，优先级：chartStyle > 主题预置 */
+  chartStyle?: ChartStyle
+  /** 可覆盖的界面文案（I/Q 轴标题等） */
+  labels?: ChartLabels
+  /** 坐标轴/网格（默认开启；关闭后为满幅点云） */
+  axis?: boolean
+  /** 网格线（axis 开启时生效） */
+  grid?: boolean
+  /** 轴单位标题 I/Q（默认开启） */
+  axisLabels?: boolean
+  /** 图内信息（点数/自动量程等，默认开启） */
+  showInfo?: boolean
+  /** 环形缓冲上限（点数，默认 500,000） */
+  maxPoints?: number
+  /** 单帧最多绘制点数（默认 WebGL 150k / Canvas2D 30k；抽点渲染，不丢缓冲） */
+  maxRenderPoints?: number
+  /** 导出交付回调：提供后 PNG/CSV 交由宿主持久化（同 IQ/频谱） */
+  exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: ConstellationAdapter
   data?: RawInput | ConstellationNormalized
+}
+
+export interface ConstellationViewInfo {
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  autoScale: boolean
+}
+
+export interface ConstellationStats {
+  /** 缓冲内总点数 */
+  points: number
+  /** 实际绘制点数（抽点后） */
+  renderPoints: number
+  iMin: number
+  iMax: number
+  qMin: number
+  qMax: number
+  iRms: number
+  qRms: number
+  /** E[I²+Q²]（归一化功率） */
+  power: number
+  /** 10·log10(power)，0 dBFS = 单位复幅度 */
+  powerDbfs: number
+  /** 最大 |I+jQ| */
+  peak: number
 }
 
 // ── 内部 ──

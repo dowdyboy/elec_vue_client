@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 为 dist-signal 生成可发布的 package.json（ESM + 类型 + CSS）。
  * 由 `npm run build:signal` 在 vite/vue-tsc 之后调用。
  */
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const pkg = {
   name: 'elec-signal-charts',
-  version: '1.5.1',
+  version: '1.6.0',
   description:
     'Reusable IQ time-domain / spectrum / spectrogram Vue 3 components (WebGL2 + Canvas2D fallback)',
   type: 'module',

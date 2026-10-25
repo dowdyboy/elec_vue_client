@@ -314,19 +314,25 @@ void main(){
 
 export interface PointsRenderer {
   setData(i: Float32Array, q: Float32Array): void
+  clear(): void
   draw(
     xRange: { min: number; max: number },
     yRange: { min: number; max: number },
     color: string,
     alpha: number,
-    pointSize?: number
+    pointSize?: number,
+    plotRect?: { x: number; y: number; w: number; h: number }
   ): void
   dispose(): void
 }
 
 export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer {
-  const gl = canvas.getContext('webgl2', { antialias: true }) as WebGL2RenderingContext | null
-  if (!gl) throw new Error('WebGL2 not supported')
+  const glMaybe = canvas.getContext('webgl2', {
+    antialias: true,
+    preserveDrawingBuffer: true
+  }) as WebGL2RenderingContext | null
+  if (!glMaybe) throw new Error('WebGL2 not supported')
+  const gl: WebGL2RenderingContext = glMaybe
   const prog = createProgram(gl, VS_POINTS, FS_POINTS)
   const aPosLoc = gl.getAttribLocation(prog, 'aPos')
   const uXRangeLoc = gl.getUniformLocation(prog, 'uXRange')
@@ -336,6 +342,14 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
   const uPointSizeLoc = gl.getUniformLocation(prog, 'uPointSize')
   const buf = gl.createBuffer()
   let count = 0
+
+  function clear(): void {
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.disable(gl.SCISSOR_TEST)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  }
+
   return {
     setData(i, q) {
       const n = Math.min(i.length, q.length)
@@ -348,11 +362,24 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
       gl.bindBuffer(gl.ARRAY_BUFFER, buf)
       gl.bufferData(gl.ARRAY_BUFFER, inter, gl.DYNAMIC_DRAW)
     },
-    draw(xRange, yRange, color, alpha, pointSize = 3) {
+    clear,
+    draw(xRange, yRange, color, alpha, pointSize = 3, plotRect) {
+      clear()
       if (count === 0) return
-      gl.viewport(0, 0, canvas.width, canvas.height)
-      gl.clearColor(0, 0, 0, 0)
-      gl.clear(gl.COLOR_BUFFER_BIT)
+      const cssW = canvas.clientWidth || canvas.width
+      const cssH = canvas.clientHeight || canvas.height
+      const plot = plotRect ?? { x: 0, y: 0, w: cssW, h: cssH }
+      if (plot.w <= 0 || plot.h <= 0) return
+      const sx = canvas.width / Math.max(1, cssW)
+      const sy = canvas.height / Math.max(1, cssH)
+      // GL 坐标原点在左下；plotRect 使用 CSS 左上原点
+      const vx = Math.round(plot.x * sx)
+      const vy = Math.round(canvas.height - (plot.y + plot.h) * sy)
+      const vw = Math.max(1, Math.round(plot.w * sx))
+      const vh = Math.max(1, Math.round(plot.h * sy))
+      gl.viewport(vx, vy, vw, vh)
+      gl.enable(gl.SCISSOR_TEST)
+      gl.scissor(vx, vy, vw, vh)
       gl.useProgram(prog)
       gl.bindBuffer(gl.ARRAY_BUFFER, buf)
       gl.enableVertexAttribArray(aPosLoc)
@@ -366,6 +393,7 @@ export function createPointsRenderer(canvas: HTMLCanvasElement): PointsRenderer 
       gl.enable(gl.BLEND)
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       gl.drawArrays(gl.POINTS, 0, count)
+      gl.disable(gl.SCISSOR_TEST)
     },
     dispose() {
       gl.deleteBuffer(buf)
