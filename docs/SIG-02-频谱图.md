@@ -35,7 +35,7 @@ ws.onmessage = (e) => {
 
 **输入**：服务端算好的幅度谱 `Float32Array`。窗函数/FFT/dB 换算在服务端完成；组件只做迹线累计、检波/抽稀、峰值/带宽类测量与显示换算。
 
-> **源输出域 ≠ 分析域**：Mock 的 `outputMode` 决定源发实数（Q=0）还是复数 IQ；组件的 `spectrumMode` 只决定 FFT 单边/双边。Real 源做复谱分析会自然左右对称（同一实单音单边 0 dB 时，复谱两侧各约 -6 dB，是能量分半而非幅度错误）；Complex 源做 real 分析只是 I 投影。
+> **源输出域 ≠ 分析域**：Mock 的 `outputMode` 决定源发实数（Q=0）还是复数 IQ；组件的 `spectrumMode` 只决定 FFT 单边/双边。Real 源做复谱分析会自然左右对称（同一实单音单边 0 dB 时，复谱两侧各约 -6 dB，是能量分半而非幅度错误）；Complex 源做 real 分析只是 I 投影。**Complex IQ 不保证双边**：QPSK 复载波在 +f 单边是正常的，负频为空；要负频请用实数输出、镜像或独立负频。
 
 - **real 模式（默认）**：长度 = `fftSize/2`，单边 `0 ~ Fs/2`，非 DC 幅度已由服务端 ×2；
 - **complex 模式**：长度 = `fftSize`，完整复谱，通常 `fftShift` 后覆盖 `-Fs/2 ~ +Fs/2`；

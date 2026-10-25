@@ -8,7 +8,7 @@
 >
 > **波形** `waveform`：CW / AM / FM / Pulse / Two-tone / Noise / Digital（BPSK/QPSK/16QAM）；参数含调制频率、AM 调制度、FM 频偏、脉冲周期/占空比、双音间隔、AWGN SNR。数字调制符号集归一化到 E|a|²=1，经升余弦成型（β=0.35）后上变频；Real 输出取实部，Complex 输出保留 I/Q。
 >
-> **分析域** `spectrumMode`：`real` 单边 0–Fs/2 / `complex` 完整带符号复谱；它只决定 FFT 怎么算，不改变源。Real 源用复谱分析会自然得到左右对称谱；Complex 源用 real 分析只是 I 投影。
+> **分析域** `spectrumMode`：`real` 单边 0–Fs/2 / `complex` 完整带符号复谱；它只决定 FFT 怎么算，不改变源。Real 源用复谱分析会自然得到左右对称谱；Complex 源用 real 分析只是 I 投影。**Complex IQ 不保证双边**：QPSK 复载波在 +f 单边是正常的，负频为空；要负频请用实数输出、镜像或独立负频。
 >
 > 噪声按输出域保持 SNR：complex 每路 σ²=信号功率/(2·SNR)，real 只加 I 路同 σ；镜像/损伤只对 complex 有效。`imageDb` 为相对载波电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅；0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化）。
 >
