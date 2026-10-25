@@ -578,8 +578,8 @@ onMounted(async () => {
                 style="width: 118px; margin-left: 8px"
               />
               <span style="margin-left: 12px; color: #888; font-size: 12px">
-                在 -freq 处叠加共轭镜像；-20 dB 表示负频峰比正频低 20 dB，只有 0 dB 才等幅（sine
-                变实单音）
+                在 -freq 处叠加共轭镜像；-20 dB = 负频低 20 dB，0 dB 才等幅，但 Q
+                会抵消（基带变实，QPSK/16QAM 退化）；复调制请关闭镜像或使用独立负频
               </span>
             </NFormItem>
           </NGi>

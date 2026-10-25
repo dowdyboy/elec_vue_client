@@ -145,7 +145,7 @@ spec.value?.appendData(fullNRow, {
 
 > `real`：只取 I 通道，非 DC ×2，长度 `fftSize/2`；`complex`：I/Q 完整 FFT，长度 `fftSize`，负频独立。
 > 频率轴统一 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
-> Mock 配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。
+> Mock 配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
 
 ### 时频瀑布
 
