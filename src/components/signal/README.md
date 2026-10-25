@@ -1,4 +1,4 @@
-# 信号组件（IQ / 频谱 / 时频）集成指南
+﻿# 信号组件（IQ / 频谱 / 时频）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -298,7 +298,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 156 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（含 real/complex 时频与频谱，见下节）。
+- 无浏览器级单测；核心数学/文案有 158 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（含 real/complex 时频与频谱，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -336,4 +336,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.5.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.5.1'`（公共 API 变更时按语义化版本维护）。

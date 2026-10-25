@@ -914,7 +914,7 @@ function emitRefChange(immediate = false): void {
 
 // ── 自动/手动 Y 轴 ──
 // 频谱专用自动量程：包络快攻慢释 + 档位滞回/收窄驻留 + 平滑显示，避免噪声导致的档位翻转抖动
-const autoRange = new SpectrumAutoRange()
+const autoRange = new SpectrumAutoRange({ snap: true })
 function resetYAuto(): void {
   autoRange.reset()
 }

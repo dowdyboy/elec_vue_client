@@ -145,10 +145,10 @@ interface ChartStyle {
 导出交付：配置 `exportHandler?` 回调后 PNG/CSV 交由宿主持久化（如 Electron 写入自定义目录），
 否则回退浏览器 `<a download>`；两种路径均发 `exported` 事件（`{kind, filename}`）供宿主 UI 反馈
 
-**自动 Y 轴**：目标范围经「V/div 档位量化」（向外吸附到刻度步进族）+ 快扩张/慢收缩平滑——
-小幅波动被同一档位吸收，流式刷新时刻度完全静止；仅跨档时离散更新并缓入新档；
-另设**换档滞回 + 收窄驻留**（`YAutoScaler({hysteresis:0.25, holdFrames:60, shrinkRelease:0.05})`）：
-扩张仍即时（不裁切），收窄需候选跨度明显变小且连续稳定约 1s 才换档——抑制随机调制信号（QAM/PSK 过冲起伏）
+**自动 Y 轴**：目标范围经「V/div 档位量化」（向外吸附到刻度步进族）+ 快扩张/收窄驻留——
+小幅波动被同一档位吸收；跨档时用 `snap` 直接吸附新档，不做逐帧缓动，避免刻度/网格连续“呼吸”；
+另设**换档滞回 + 收窄驻留**（`YAutoScaler({hysteresis:0.3, holdFrames:120, shrinkRelease:0.05, snap:true})`）：
+扩张仍即时（不裁切），收窄需候选跨度明显变小且连续稳定约 2s 才换档——抑制随机调制信号（QAM/PSK 过冲起伏）
 极值在档位边界附近来回导致的逐帧翻转抖动；
 清空数据/双击复位/外部切回 autoScale 时状态重置、直接吸附目标范围
 
@@ -171,11 +171,11 @@ interface ChartStyle {
 - 可移植性：`renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D（余辉用 Canvas 覆盖模拟）；`renderer='webgl2'` 强制且失败时 emit `error/errorDetail` + 占位提示
 - 批量/触控/无障碍：离屏暂停重绘；根节点 `tabindex=0`、`role=application`、`aria-label`（可由 `labels.aria` 覆盖）；触摸双指 X 缩放
 
-**单元测试**：`npm test`（vitest，当前 156 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
-`yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/换档滞回与收窄驻留/reset，12）、
+**单元测试**：`npm test`（vitest，当前 158 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
+`yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/换档滞回与收窄驻留/snap 直接吸附/reset，13）、
 `pyramid`（整树重建随机区间/增量追加/bucketChannel 与旧实现逐值一致/扩容重建/queryStats/包络 env 通道/compactShift 环形淘汰增量，9）、
 `trigger`（findEdge 边沿检测/triggerWindow 钳制/triggerRightNeed·pending 提升门控/auto·normal pending 与 promote·single 状态机与 reset，18）、
-`spectrum`（迹线累计/自动量程/峰值/缩放窗口/ACPR/平均与保持/稳健极值，56）、
+`spectrum`（迹线累计/自动量程/峰值/缩放窗口/ACPR/平均与保持/稳健极值/snap 不漂移，57）、
 `adapters`（对齐/类型守卫/int16·float64/字节序/平面/工厂/频谱 uint8，11）、`i18n`（中英/覆盖/插值，5）、
 `spectrogram`（色阶/LUT/电平/环形缓冲/冻结拷贝，8）、
 `shared/signal`（默认 real / spectrumMode / imageDb / 专业源参数校验，4）、

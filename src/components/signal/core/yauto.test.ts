@@ -124,4 +124,13 @@ describe('YAutoScaler 稳定性参数（换档滞回 + 收窄驻留）', () => {
     const r = s.resolve(-0.5, 0.5)
     expect(r.max).toBeLessThan(1.1) // 重置后直接吸附小目标
   })
+
+  it('snap：档位变化直接吸附，不逐帧缓动（刻度不爬行）', () => {
+    const s = new YAutoScaler({ snap: true })
+    const wide = s.resolve(-3, 3)
+    const narrow = s.resolve(-0.5, 0.5)
+    expect(narrow.max).toBeLessThan(wide.max)
+    const again = s.resolve(-0.5, 0.5)
+    expect(again).toEqual(narrow)
+  })
 })

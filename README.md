@@ -1,4 +1,4 @@
-# ⚡ Electron 教学与模板项目
+﻿# ⚡ Electron 教学与模板项目
 
 基于 **Electron 39 + Vue 3 + TypeScript + Naive UI** 的教学与模板项目。
 

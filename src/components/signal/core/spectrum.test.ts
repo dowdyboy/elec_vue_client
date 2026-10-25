@@ -313,6 +313,14 @@ describe('SpectrumAutoRange（自动量程稳定性）', () => {
     expect(c).toEqual(a)
   })
 
+  it('snap：显示范围与档位一致，不逐帧缓动（刻度不漂移）', () => {
+    const ar = new SpectrumAutoRange({ snap: true })
+    ar.update(-90, -10)
+    expect(ar.display()).toEqual(ar.tier())
+    ar.update(-95, -5)
+    expect(ar.display()).toEqual(ar.tier())
+  })
+
   it('resetTier 保留显示范围（帧长变化不闪默认量程）', () => {
     const ar = new SpectrumAutoRange()
     ar.update(-90, -10)

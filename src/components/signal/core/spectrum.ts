@@ -386,6 +386,11 @@ export interface AutoRangeOptions {
   shrinkRelease?: number
   /** 包络衰减比例（每帧，按包络跨度；默认 0.003） */
   envelopeDecay?: number
+  /**
+   * true=档位变化直接吸附，避免逐帧缓动造成 Y 轴刻度/网格连续漂移。
+   * 默认 false 保留平滑语义；实时频谱建议开启。
+   */
+  snap?: boolean
 }
 
 /**
@@ -404,6 +409,7 @@ export class SpectrumAutoRange {
   private readonly shrinkRatio: number
   private readonly shrinkRelease: number
   private readonly decayRatio: number
+  private readonly snapTier: boolean
 
   private db = true
   private envMin: number | null = null
@@ -420,6 +426,7 @@ export class SpectrumAutoRange {
     this.shrinkRatio = Math.min(0.95, Math.max(0.1, opts.shrinkRatio ?? 0.55))
     this.shrinkRelease = Math.min(0.9, Math.max(0.01, opts.shrinkRelease ?? 0.05))
     this.decayRatio = Math.max(0, opts.envelopeDecay ?? 0.003)
+    this.snapTier = opts.snap === true
   }
 
   reset(): void {
@@ -488,6 +495,11 @@ export class SpectrumAutoRange {
     const tier = this.tierRange
     const shown = this.shownRange
     if (!tier || !shown) return
+    if (this.snapTier) {
+      shown.min = tier.min
+      shown.max = tier.max
+      return
+    }
     if (shown.min > tier.min) shown.min = tier.min
     else shown.min += (tier.min - shown.min) * this.shrinkRelease
     if (shown.max < tier.max) shown.max = tier.max

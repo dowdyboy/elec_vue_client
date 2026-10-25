@@ -29,6 +29,11 @@ export interface YAutoOptions {
   holdFrames?: number
   /** 收缩方向缓动比例（默认 0.08） */
   shrinkRelease?: number
+  /**
+   * true=档位变化直接吸附，避免逐帧缓动造成 Y 轴刻度/网格连续爬行。
+   * 流式频谱/示波器建议开启；默认 false 保留旧的平滑语义。
+   */
+  snap?: boolean
 }
 
 const Y_RELEASE = 0.08 // 默认收缩速度：每帧向目标靠拢的比例（九成幅度约半秒收敛）
@@ -41,11 +46,13 @@ export class YAutoScaler {
   private readonly hysteresis: number
   private readonly holdFrames: number
   private readonly release: number
+  private readonly snap: boolean
 
   constructor(opts: YAutoOptions = {}) {
     this.hysteresis = Math.min(0.9, Math.max(0, opts.hysteresis ?? 0))
     this.holdFrames = Math.max(0, Math.round(opts.holdFrames ?? 0))
     this.release = Math.min(0.9, Math.max(0.01, opts.shrinkRelease ?? Y_RELEASE))
+    this.snap = opts.snap === true
   }
 
   /** 重置：下一帧直接吸附新目标，不从旧范围滑入 */
@@ -89,6 +96,12 @@ export class YAutoScaler {
     }
     const cur = this.cur!
     const target = this.tgt!
+    // 直接吸附档位：避免流式显示下 Y 轴刻度逐帧“呼吸”
+    if (this.snap) {
+      cur.min = target.min
+      cur.max = target.max
+      return { min: cur.min, max: cur.max }
+    }
     // 非对称更新：新极值即时扩入（防裁剪）；富余缓慢回落
     if (target.min < cur.min) cur.min = target.min
     else cur.min += (target.min - cur.min) * this.release

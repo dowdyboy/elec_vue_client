@@ -593,9 +593,14 @@ function resolveXRange(): { min: number; max: number } {
 
 // ── 自动 Y 轴平滑（即时扩张 / 慢速收缩）──
 // 流式数据下逐帧精确自适应会导致刻度值与网格行每帧跳动；见 core/yauto.ts。
-// 稳定参数：换档滞回 + 收窄驻留 + 更慢收缩——抑制随机调制信号（QAM 过冲）极值在档位边界
-// 附近的逐帧翻转抖动；扩张仍即时保证不裁切
-const yAuto = new YAutoScaler({ hysteresis: 0.25, holdFrames: 60, shrinkRelease: 0.05 })
+// 稳定参数：换档滞回 + 收窄驻留 + 档位直接吸附——抑制随机调制信号（QAM 过冲）极值在档位边界
+// 附近的逐帧翻转，以及自动量程缓动造成的刻度/网格“呼吸”。扩张仍即时保证不裁切。
+const yAuto = new YAutoScaler({
+  hysteresis: 0.3,
+  holdFrames: 120,
+  shrinkRelease: 0.05,
+  snap: true
+})
 
 /** 可见窗口真实极值（尊重图例显隐通道）；无效返回 null */
 function computeVisibleMM(s: number, e: number): { min: number; max: number } | null {
