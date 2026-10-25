@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
   NAlert,
   NButton,
@@ -30,6 +30,10 @@ const points = ref(0)
 const stats = ref<ConstellationStats | null>(null)
 const backend = ref('-')
 const sourceMode = ref<'real' | 'complex'>('real')
+const sourceWaveform = ref('')
+const symbolStrobe = ref(true)
+const samplesPerSymbol = ref(16)
+const effectiveStrobe = computed(() => symbolStrobe.value && sourceWaveform.value === 'digital')
 const oneDimensional = computed(() => hasData.value && !!stats.value && stats.value.qRms < 1e-9)
 let lastStatsAt = 0
 
@@ -37,9 +41,13 @@ const sig = useSignalAnalysis({ autoSubscribe: true })
 
 sig.onIq((iq, frame) => {
   if (frame.outputMode) sourceMode.value = frame.outputMode
+  if (frame.waveform) sourceWaveform.value = frame.waveform
+  if (typeof frame.samplesPerSymbol === 'number' && frame.samplesPerSymbol > 0)
+    samplesPerSymbol.value = frame.samplesPerSymbol
   chartRef.value?.appendData(iq, {
     sampleRate: frame.sampleRate,
-    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0
+    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0,
+    samplesPerSymbol: frame.samplesPerSymbol
   })
   hasData.value = true
   points.value = chartRef.value?.getLength() ?? points.value
@@ -83,6 +91,22 @@ function onExportCSV(): void {
 onUnmounted(() => {
   lastStatsAt = 0
 })
+
+watch(symbolStrobe, () => {
+  chartRef.value?.clear()
+  hasData.value = false
+  points.value = 0
+  stats.value = null
+})
+
+// 首帧 waveform 元数据到达后才确定是否抽点；清掉此前可能混入的原始采样
+watch(effectiveStrobe, (v) => {
+  if (!v) return
+  chartRef.value?.clear()
+  hasData.value = false
+  points.value = 0
+  stats.value = null
+})
 </script>
 
 <template>
@@ -109,6 +133,12 @@ onUnmounted(() => {
         <NSwitch v-model:value="showAxis" size="small" />
         <span>网格</span>
         <NSwitch v-model:value="showGrid" size="small" />
+        <span>符号抽点</span>
+        <NSwitch
+          v-model:value="symbolStrobe"
+          size="small"
+          :disabled="sourceWaveform !== 'digital'"
+        />
         <NButton size="small" @click="onResetView">自适应</NButton>
         <NButton size="small" @click="onExportPNG">导出 PNG</NButton>
         <NButton size="small" @click="onExportCSV">导出 CSV</NButton>
@@ -118,10 +148,13 @@ onUnmounted(() => {
         <NTag size="small" :bordered="false">
           {{ sourceMode === 'complex' ? '复数 IQ' : '实数源（Q=0）' }}
         </NTag>
+        <NTag size="small" :bordered="false">
+          {{ effectiveStrobe ? '符号判决点' : '全部采样' }}
+        </NTag>
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        滚轮缩放、拖拽平移、双击恢复自动量程；QPSK 的原始 IQ
-        含符号过渡轨迹，若只想看判决点，需要在宿主侧做符号同步/抽点。
+        高 SNR 只去噪声，不会去掉 RRC 符号过渡轨迹；开启「符号抽点」按
+        {{ samplesPerSymbol }} 点/符号只显示判决点。滚轮缩放、拖拽平移、双击恢复自动量程。
       </div>
       <NAlert
         v-if="oneDimensional"
@@ -157,6 +190,8 @@ onUnmounted(() => {
           :alpha="alpha"
           :axis="showAxis"
           :grid="showGrid"
+          :symbol-strobe="effectiveStrobe"
+          :samples-per-symbol="samplesPerSymbol"
           :height="480"
         />
         <NEmpty

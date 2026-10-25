@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const pkg = {
   name: 'elec-signal-charts',
-  version: '1.6.2',
+  version: '1.7.0',
   description:
     'Reusable IQ time-domain / spectrum / spectrogram Vue 3 components (WebGL2 + Canvas2D fallback)',
   type: 'module',

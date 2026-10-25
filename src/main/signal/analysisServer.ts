@@ -128,6 +128,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
         data: iq,
         sampleRate: cfg.sampleRate,
         carrierHz: cfg.freq,
+        samplesPerSymbol: cfg.samplesPerSymbol,
         outputMode: cfg.outputMode,
         waveform: cfg.waveform,
         modType: cfg.modType
@@ -142,6 +143,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
           carrierHz: cfg.freq,
+          samplesPerSymbol: cfg.samplesPerSymbol,
           dbScale: cfg.dbScale,
           spectrumMode: cfg.spectrumMode,
           freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
@@ -162,6 +164,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
           carrierHz: cfg.freq,
+          samplesPerSymbol: cfg.samplesPerSymbol,
           dbScale: true,
           spectrumMode: cfg.spectrumMode,
           freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
@@ -364,6 +367,12 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
               : typeof p.freq === 'number'
                 ? p.freq
                 : undefined
+        const samplesPerSymbol =
+          typeof p.samplesPerSymbol === 'number'
+            ? p.samplesPerSymbol
+            : typeof p.samples_per_symbol === 'number'
+              ? p.samples_per_symbol
+              : undefined
         const waveform =
           typeof p.waveform === 'string' &&
           ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'].includes(p.waveform)
@@ -458,6 +467,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           spectrumMode,
           outputMode,
           carrierHz,
+          samplesPerSymbol,
           waveform,
           freqStartHz,
           binHz,
@@ -594,6 +604,7 @@ export function registerSignalAnalysisServer(): () => void {
         timeStepSec: f.timeStepSec,
         outputMode: f.outputMode,
         carrierHz: f.carrierHz,
+        samplesPerSymbol: f.samplesPerSymbol,
         waveform: f.waveform,
         modType: f.modType,
         buffer: buf

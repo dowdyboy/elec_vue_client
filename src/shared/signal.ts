@@ -75,6 +75,8 @@ export interface AnalysisFrame {
   outputMode?: OutputMode
   /** 源载波频率 Hz（IQ/频谱帧；星座等需要下变频时使用） */
   carrierHz?: number
+  /** 数字调制的每符号采样数（星座判决点抽点用） */
+  samplesPerSymbol?: number
   /** 源波形（IQ/频谱帧；远程可省略） */
   waveform?: SourceWaveform
   /** 频谱语义（频谱/时频；远程可省略，缺省 real） */

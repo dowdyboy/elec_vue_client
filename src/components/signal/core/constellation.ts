@@ -198,6 +198,41 @@ export function derotateIQ(
   return { i: oi, q: oq, phase: ph }
 }
 
+export interface StrobeResult {
+  i: Float32Array
+  q: Float32Array
+  count: number
+  /** 下一帧的起始抽点相位（0..sps-1） */
+  phase: number
+}
+
+/**
+ * 符号抽点：以 phase 为帧内首个采样偏移，每隔 samplesPerSymbol 取一点。
+ * 用于星座图只显示判决点，过滤 RRC 符号间过渡轨迹；phase 跨帧连续。
+ */
+export function strobeIQ(
+  i: Float32Array,
+  q: Float32Array,
+  samplesPerSymbol: number,
+  phase = 0
+): StrobeResult {
+  const n = Math.min(i.length, q.length)
+  const sps = Math.max(1, Math.floor(samplesPerSymbol))
+  if (sps <= 1 || n === 0) {
+    return { i: i.subarray(0, n), q: q.subarray(0, n), count: n, phase: 0 }
+  }
+  const start = ((Math.floor(phase) % sps) + sps) % sps
+  const count = start < n ? Math.floor((n - 1 - start) / sps) + 1 : 0
+  const oi = new Float32Array(count)
+  const oq = new Float32Array(count)
+  for (let k = 0; k < count; k++) {
+    const idx = start + k * sps
+    oi[k] = i[idx]!
+    oq[k] = q[idx]!
+  }
+  return { i: oi, q: oq, count, phase: (start + n) % sps }
+}
+
 /**
  * 让 I/Q 的单位长度在屏幕上一致：
  * 绘图区越宽，x 范围同比放宽（或 y 范围放宽），避免星座被拉成椭圆。

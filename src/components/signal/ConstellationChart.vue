@@ -28,6 +28,7 @@ import {
   equalizeRange,
   formatConstellationTick,
   sampleConstellation,
+  strobeIQ,
   type ConstellationRange,
   type SampledConstellation
 } from './core/constellation'
@@ -87,6 +88,7 @@ let overlayCtx: CanvasRenderingContext2D | null = null
 let derotPhase = 0
 let derotCarrier = 0
 let derotRate = 0
+let strobePhase = 0
 
 interface ViewState {
   auto: boolean
@@ -524,7 +526,15 @@ function appendData(raw: unknown, meta?: ConstellationAppendMeta): void {
   }
   const clean = sanitizePair(p.i, p.q)
   const base = derotate(clean, meta)
-  buffer.append(base.i, base.q)
+  const sps = Number(meta?.samplesPerSymbol ?? props.samplesPerSymbol ?? 0)
+  if (props.symbolStrobe && sps > 1) {
+    const st = strobeIQ(base.i, base.q, sps, strobePhase)
+    strobePhase = st.phase
+    buffer.append(st.i, st.q)
+  } else {
+    strobePhase = 0
+    buffer.append(base.i, base.q)
+  }
   pointCount.value = buffer.length
   sampleCache = null
   schedule()
@@ -562,6 +572,7 @@ function setData(raw: unknown, meta?: ConstellationAppendMeta): void {
   pointCount.value = 0
   sampleCache = null
   derotPhase = 0
+  strobePhase = 0
   resetAutoRange()
   appendData(raw, meta)
 }
@@ -573,6 +584,7 @@ function clear(): void {
   derotPhase = 0
   derotCarrier = 0
   derotRate = 0
+  strobePhase = 0
   resetAutoRange()
   schedule()
 }
@@ -828,6 +840,9 @@ watch([() => props.carrierHz, () => props.sampleRate], () => {
   derotCarrier = 0
   derotRate = 0
   schedule()
+})
+watch([() => props.symbolStrobe, () => props.samplesPerSymbol], () => {
+  strobePhase = 0
 })
 watch(
   () => props.viewport,

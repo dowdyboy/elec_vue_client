@@ -7,7 +7,8 @@ import {
   derotateIQ,
   equalizeRange,
   formatConstellationTick,
-  sampleConstellation
+  sampleConstellation,
+  strobeIQ
 } from './constellation'
 
 describe('ConstellationBuffer（实时点缓冲）', () => {
@@ -122,6 +123,30 @@ describe('derotateIQ（带载波 IQ 下变频）', () => {
     const b = derotateIQ(i.subarray(17), q.subarray(17), f, fs, a.phase)
     for (let k = 0; k < 17; k++) expect(a.i[k]).toBeCloseTo(all.i[k]!, 5)
     for (let k = 17; k < n; k++) expect(b.i[k - 17]).toBeCloseTo(all.i[k]!, 5)
+  })
+})
+
+describe('strobeIQ（符号判决点抽点）', () => {
+  it('每 samplesPerSymbol 取一点', () => {
+    const n = 32
+    const i = new Float32Array(n)
+    const q = new Float32Array(n)
+    for (let k = 0; k < n; k++) i[k] = k
+    const s = strobeIQ(i, q, 4, 0)
+    expect(s.count).toBe(8)
+    expect(Array.from(s.i)).toEqual([0, 4, 8, 12, 16, 20, 24, 28])
+    expect(s.phase).toBe(0)
+  })
+
+  it('跨帧相位连续', () => {
+    const n = 20
+    const i = new Float32Array(n)
+    const q = new Float32Array(n)
+    for (let k = 0; k < n; k++) i[k] = k
+    const a = strobeIQ(i.subarray(0, 10), q.subarray(0, 10), 4, 0)
+    const b = strobeIQ(i.subarray(10), q.subarray(10), 4, a.phase)
+    expect(Array.from(a.i)).toEqual([0, 4, 8])
+    expect(Array.from(b.i)).toEqual([12, 16]) // 全局 12、16
   })
 })
 

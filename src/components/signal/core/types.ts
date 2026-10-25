@@ -610,6 +610,8 @@ export interface ConstellationAppendMeta {
   sampleRate?: number
   /** 源载波频率 Hz；提供后 appendData 内部先乘 e^{-j2πf n/Fs} 再去画 */
   carrierHz?: number
+  /** 每符号采样点数：symbolStrobe 开启时用于抽判决点 */
+  samplesPerSymbol?: number
 }
 export interface ConstellationProps extends ChartBaseProps {
   pointSize?: number
@@ -618,6 +620,10 @@ export interface ConstellationProps extends ChartBaseProps {
   sampleRate?: number
   /** 默认载波频率 Hz：用于把带载波 IQ 下变频到基带；0/缺省=按基带处理 */
   carrierHz?: number
+  /** 只画判决点：按 samplesPerSymbol 抽点，过滤 RRC 符号过渡轨迹（默认 false） */
+  symbolStrobe?: boolean
+  /** 每符号采样点数（symbolStrobe 开启时；appendData meta 可覆盖） */
+  samplesPerSymbol?: number
   /** 外观覆盖项，优先级：chartStyle > 主题预置 */
   chartStyle?: ChartStyle
   /** 可覆盖的界面文案（I/Q 轴标题等） */

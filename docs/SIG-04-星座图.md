@@ -16,6 +16,8 @@
   :alpha="0.7"
   :max-points="200000"
   :renderer="'auto'"
+  :symbol-strobe="true"
+  :samples-per-symbol="16"
   :height="420"
 />
 
@@ -25,7 +27,8 @@ const const = ref()
 onIq((iq, frame) =>
   const.value?.appendData(iq, {
     sampleRate: frame.sampleRate,
-    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0
+    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0,
+    samplesPerSymbol: frame.samplesPerSymbol
   })
 )
 </script>
@@ -33,8 +36,12 @@ onIq((iq, frame) =>
 
 ```ts
 const const = ref<InstanceType<typeof ConstellationChart>>()
-const.appendData(iq, { sampleRate: 8192, carrierHz: 512 }) // 带载波复数 IQ：先下变频到基带
-const.setData(iq)              // 清空后写入（meta 可选）
+const.appendData(iq, {
+  sampleRate: 8192,
+  carrierHz: 512,
+  samplesPerSymbol: 16
+}) // 带载波复数 IQ：下变频 + 判决点抽点
+const.setData(iq)
 const.clear()
 const.resetView()              // 双击/自适应
 const.getStats()               // I/Q 极值、RMS、功率、峰值
@@ -44,6 +51,8 @@ const.exportCSV()
 ```
 
 > **带载波 IQ 必须先下变频**：Mock 的复数 QPSK 在 `+freq` 载波上，直接画原始 I/Q 会得到旋转圆盘。传 `carrierHz` + `sampleRate` 后，组件内部按帧连续乘 `e^{-j2πf n/Fs}`，再存入星座缓冲。
+>
+> **高 SNR 仍会看到过渡轨迹**：`symbolStrobe=false` 时画的是全部采样，RRC 脉冲成型的符号切换路径会形成网格/圆弧；`symbolStrobe=true` + `samplesPerSymbol` 按符号周期抽点，只显示判决点。抽点不改变源数据。
 
 ## 二、输入与适配器
 
@@ -98,6 +107,8 @@ const adapter = (raw: unknown) => {
 | `viewport` | — | 手动 I/Q 量程 |
 | `sampleRate` | — | 默认采样率；`appendData` meta 可覆盖 |
 | `carrierHz` | — | 默认源载波；提供后内部下变频到基带（0/缺省=基带） |
+| `symbolStrobe` | `false` | 只画判决点：按符号周期抽点，过滤 RRC 过渡轨迹 |
+| `samplesPerSymbol` | — | 每符号采样数（抽点用；meta 可覆盖） |
 | `exportHandler` | — | 接管 PNG/CSV 持久化 |
 | `adapter` / `data` | — | 数据输入 |
 
@@ -112,7 +123,7 @@ const adapter = (raw: unknown) => {
 | 双击 / `0` | 恢复自动量程 |
 | `+` / `-` | 中心缩放 |
 | `getView()` | `{xMin,xMax,yMin,yMax,autoScale}` |
-| `appendData(iq, { sampleRate, carrierHz })` | 追加原始/带载波 IQ；带载波时先下变频 |
+| `appendData(iq, { sampleRate, carrierHz, samplesPerSymbol })` | 追加原始/带载波 IQ；带载波时先下变频，可选判决点抽点 |
 | `setData(iq, meta)` | 清空后写入，重置 NCO 相位 |
 | `setViewport(v)` | 手动范围；`{autoScale:true}` 恢复自动 |
 | `getStats()` | `{points,renderPoints,iMin,iMax,qMin,qMax,iRms,qRms,power,powerDbfs,peak}` |
@@ -139,15 +150,16 @@ const adapter = (raw: unknown) => {
 
 ## 八、测试
 
-`src/components/signal/core/constellation.test.ts`（11）：
+`src/components/signal/core/constellation.test.ts`（13）：
 
 - 环形缓冲追加/淘汰/`setMaxPoints`；
 - 对称自动量程/全零回退；
 - 自动量程扩张即时、收窄滞回+驻留、边界不翻转；
 - 带载波 IQ 下变频到基带；跨帧 NCO 相位连续；
+- 符号抽点数量/跨帧相位连续；
 - 宽/高画布的等比扩展；
 - 抽点数量与不修改原缓冲；
 - I/Q 极值/RMS/功率/峰值；
 - 刻度格式。
 
-总测试：`npm test` 当前 **169** 例；视觉回归 `npm run test:visual` 双后端。
+总测试：`npm test` 当前 **171** 例；视觉回归 `npm run test:visual` 双后端。

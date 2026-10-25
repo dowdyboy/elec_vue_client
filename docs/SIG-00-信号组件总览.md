@@ -126,7 +126,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 | `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                                                     | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层；Canvas2D 降级为普通折线/散点                                                                                                                                                                                                                 |
 | `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（real N/2 / complex N；含 `spectrumMode/freqStartHz/binHz/fftShift`+dB 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；Canvas2D 降级为折线/散点；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线）、real/complex 带符号轴 |
 | `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`（real N/2 / complex N；含频率轴元数据）                                         | 行累计瀑布（最新行在顶部，历史向下滚动；行长/模式变化自动重置）                                                                                                                                                    | WebGL2 R8 纹理 + LUT 着色（Canvas2D LUT 降级）；轴/色标/游标/频率缩放/冻结/PNG/CSV；real/complex 带符号轴                                                                                                                                                                                                             |
-| `ConstellationChart` | `{i,q}` 或交织 `Float32Array`                                                                                     | 环形缓冲（默认 500k 点，抽点绘制）；带载波 IQ 可传 `carrierHz/sampleRate` 做连续 NCO 下变频；正方形 I/Q 等比视口；自动/手动量程、缩放/平移、I/Q 统计；PNG/CSV 导出 | WebGL2 Points + Canvas2D 轴层；Canvas2D 散点降级；I/Q 轴/网格/十字游标/自动量程；`renderer` 可强制后端 |
+| `ConstellationChart` | `{i,q}` 或交织 `Float32Array`                                                                                     | 环形缓冲（默认 500k 点，抽点绘制）；带载波 IQ 可传 `carrierHz/sampleRate` 做连续 NCO 下变频；`symbolStrobe/samplesPerSymbol` 只画判决点；正方形 I/Q 等比视口；自动/手动量程、缩放/平移、I/Q 统计；PNG/CSV 导出 | WebGL2 Points + Canvas2D 轴层；Canvas2D 散点降级；I/Q 轴/网格/十字游标/自动量程；`renderer` 可强制后端 |
 
 ## 五、性能要点
 
@@ -138,7 +138,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 169 例（含 real/complex 频谱/瀑布/星座）
+npm run typecheck && npm run lint && npm test   # 当前 171 例（含 real/complex 频谱/瀑布/星座）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```
