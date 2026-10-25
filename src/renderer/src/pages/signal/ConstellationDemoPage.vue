@@ -14,13 +14,13 @@ import {
   useMessage
 } from 'naive-ui'
 import ConstellationChart from '@components/signal/ConstellationChart.vue'
-import type { ConstellationStats } from '@components/signal'
+import type { ConstellationStats, Theme } from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
-import { isDark } from '@renderer/stores/theme'
 
 const message = useMessage()
 const chartRef = ref<InstanceType<typeof ConstellationChart> | null>(null)
 const renderer = ref<'auto' | 'webgl2' | 'canvas2d'>('auto')
+const themeKey = ref<Theme>('spectrum')
 const pointSize = ref(2)
 const alpha = ref(0.7)
 const showAxis = ref(true)
@@ -125,6 +125,18 @@ watch(effectiveStrobe, (v) => {
           style="width: 120px"
           @update:value="refreshBackend"
         />
+        <span>主题</span>
+        <NSelect
+          v-model:value="themeKey"
+          size="small"
+          :options="[
+            { label: 'auto（跟随系统）', value: 'auto' },
+            { label: 'dark', value: 'dark' },
+            { label: 'light', value: 'light' },
+            { label: 'spectrum（黑底黄迹）', value: 'spectrum' }
+          ]"
+          style="width: 190px"
+        />
         <span>点数</span>
         <NSlider v-model:value="pointSize" :min="1" :max="6" :step="0.5" style="width: 100px" />
         <span>透明度</span>
@@ -185,7 +197,7 @@ watch(effectiveStrobe, (v) => {
           ref="chartRef"
           :key="renderer"
           :renderer="renderer"
-          :theme="isDark ? 'dark' : 'light'"
+          :theme="themeKey"
           :point-size="pointSize"
           :alpha="alpha"
           :axis="showAxis"

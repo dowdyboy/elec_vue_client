@@ -114,6 +114,13 @@ const adapter = (raw: unknown) => {
 
 通用 props（`width/height/fpsLimit/locale/messages/renderer`）与其它组件一致。
 
+## 主题与配色
+
+- `theme`：`auto`（跟随系统）/ `dark` / `light` / `spectrum`（黑底黄迹）；
+- `chartStyle.traceColor` 覆盖点颜色，`grid/text/border/plotBg/zeroLine/crosshair` 等复用通用字段；
+- 主题切换只重绘，不清空缓冲/量程；
+- Demo 顶部提供 `auto/dark/light/spectrum` 下拉，与 IQ/频谱页一致。
+
 ## 五、交互与 API
 
 | 操作 | 行为 |
