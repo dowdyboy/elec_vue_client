@@ -118,7 +118,7 @@ export function referencePoints(mod: ConstellationModulation): RefPoint[] {
   ]
 }
 
-/** 由 z^M 相邻自相关估计载波/残余频偏（BPSK M=2，QPSK/16QAM M=4） */
+/** 由 z^M 相邻自相关估计载波/残余频偏（仅作粗估计；分析仪内部改用判决点相位斜率） */
 export function estimateCarrierOffset(
   i: Float32Array,
   q: Float32Array,
@@ -157,6 +157,45 @@ export function estimateCarrierOffset(
   const off = (Math.atan2(accI, accR) / (TAU * m)) * sampleRate
   const limit = sampleRate / (2 * m)
   return Math.max(-limit, Math.min(limit, off))
+}
+
+/**
+ * 在候选残余频偏上做 EVM 搜索（BPSK/QPSK/16QAM 通用）。
+ * 用于分析仪首帧：中心频率已大致对准时，残余频偏一般在 ±symbolRate/4 内。
+ */
+export function estimateCarrierOffsetByEvm(
+  i: Float32Array,
+  q: Float32Array,
+  mod: ConstellationModulation,
+  symbolRateHz: number
+): number {
+  const n = Math.min(i.length, q.length)
+  if (!(symbolRateHz > 0) || n < 16) return 0
+  const max = symbolRateHz / 8
+  const step = Math.max(0.25, symbolRateHz / 1024)
+  let best = 0
+  let bestEvm = Infinity
+  const ri = new Float32Array(n)
+  const rq = new Float32Array(n)
+  for (let f = -max; f <= max; f += step) {
+    const wStep = (TAU * f) / symbolRateHz
+    let w = 0
+    for (let k = 0; k < n; k++) {
+      const c = Math.cos(w)
+      const s = Math.sin(w)
+      const iv = i[k]!
+      const qv = q[k]!
+      ri[k] = iv * c + qv * s
+      rq[k] = qv * c - iv * s
+      w += wStep
+    }
+    const m = computeEvm(ri, rq, mod, n)
+    if (m.evmRms < bestEvm) {
+      bestEvm = m.evmRms
+      best = f
+    }
+  }
+  return best
 }
 
 /** 按符号周期抽取判决点；sps 可为小数，phase 为下一帧起点（0..sps） */
@@ -405,8 +444,13 @@ export class ConstellationAnalyzer {
         probeTiming
       )
       const residual =
-        probeSymbols.count >= 8
-          ? estimateCarrierOffset(probeSymbols.i, probeSymbols.q, opt.modulation, opt.symbolRateHz)
+        probeSymbols.count >= 16
+          ? estimateCarrierOffsetByEvm(
+              probeSymbols.i,
+              probeSymbols.q,
+              opt.modulation,
+              opt.symbolRateHz
+            )
           : 0
       this.carrierOffsetHz = opt.frequencyOffsetHz + residual
       this.carrierEstimated = true

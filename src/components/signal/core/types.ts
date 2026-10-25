@@ -626,7 +626,7 @@ export interface ConstellationAnalysisConfig {
   symbolRateHz?: number
   /** 每符号采样数；缺省回退 props.samplesPerSymbol，再缺省 1 */
   samplesPerSymbol?: number
-  /** 自动估计残余载波频偏（BPSK/QPSK 有效；16QAM 用 4 次方近似） */
+  /** 自动估计残余载波频偏（BPSK/QPSK/16QAM：判决点 EVM 搜索；需中心频率大致对准） */
   autoCarrier?: boolean
   /** 自动搜索符号定时相位（按 EVM 最小） */
   autoSymbolTiming?: boolean

@@ -206,7 +206,8 @@ watch(analysisConfig, () => {
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
         纯显示：IQ 点原样绘制，不做载波/符号/EVM；分析仪：中心频率下变频 + 可选自动载波/定时 +
-        判决点/EVM。高 SNR 不会去掉 RRC 过渡轨迹，分析仪只画判决点。
+        判决点/EVM。高 SNR 不会去掉 RRC 过渡轨迹，分析仪只画判决点。自动定时只补偿符号相位； Mock
+        通常已对齐，结果为 0，看不到变化是正常的。
       </div>
       <NAlert
         v-if="oneDimensional"

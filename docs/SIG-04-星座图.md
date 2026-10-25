@@ -79,7 +79,7 @@ const.value?.getAnalysisStats()
 | `phaseOffsetDeg` | 0 | 已知相位偏移 |
 | `symbolRateHz` | — | 符号率；与 `samplesPerSymbol` 二选一 |
 | `samplesPerSymbol` | props/meta | 每符号采样数 |
-| `autoCarrier` | false | 用判决点 z^M 自相关估计残余频偏 |
+| `autoCarrier` | false | 用判决点 EVM 搜索估计残余频偏（BPSK/QPSK/16QAM 通用） |
 | `autoSymbolTiming` | false | 搜索最小 EVM 的定时相位 |
 | `estimatorSymbols` | 4096 | 参与 EVM/不平衡统计的最近符号数 |
 
@@ -88,14 +88,14 @@ const.value?.getAnalysisStats()
 ```text
 原始复数 IQ
   → 中心频率 NCO 下变频
-  → 可选残余载波估计（判决点 z^M 自相关）
+  → 可选残余载波估计（在 ±symbolRate/8 内做判决点 EVM 搜索）
   → 可选符号定时相位搜索（最小 EVM）
   → 判决点抽取
   → EVM/MER、幅度/相位误差、IQ 增益/相位不平衡
 ```
 
 - **载波恢复**：首帧用标称中心频率粗抽判决点，再用判决点估计残余频偏；RRC 过渡点不会直接拉偏估计；
-- **符号定时**：在 `[0, samplesPerSymbol)` 内搜索整数采样偏移，取 EVM 最小；
+- **符号定时**：在 `[0, samplesPerSymbol)` 内搜索整数采样偏移，取 EVM 最小；Mock 的符号中心通常已在整数边界上，自动结果常为 0，此时开关不会有视觉变化，属于正常；
 - **相位旋转**：EVM 计算自动尝试 BPSK 2 个 / QPSK·16QAM 4 个参考相位；
 - **统计窗口**：最近 `estimatorSymbols` 个判决点，滚动更新。
 
@@ -144,8 +144,8 @@ API：
 ## 七、限制
 
 - 载波恢复估计的是**残余频偏**，要求 `centerFrequencyHz` 大致正确；大频偏请先设置中心频率；
-- 自动定时只搜索整数采样相位，不做连续定时跟踪/Gardner 环；
-- 16QAM 的自动载波使用 4 次方近似，复杂损伤场景建议关闭 `autoCarrier` 手动给频偏；
+- 自动定时只搜索整数采样相位，不做连续定时跟踪/Gardner 环；源本来对齐时结果就是 0；
+- 自动载波搜索范围约 ±symbolRate/8，要求中心频率已大致对准；大频偏请先设中心频率；
 - 不负责解调比特、信道解码、协议解析；
 - 输入原始 IQ 时若 `analysis` 的 `sampleRate/symbolRate` 不正确，EVM 不可信；
 - 纯显示模式下组件不会猜测基带/载波，调用方传入什么就画什么。
@@ -153,6 +153,6 @@ API：
 ## 八、测试
 
 - `core/constellation.test.ts`（13）：缓冲、量程、抽点、去载波、符号抽点、统计；
-- `core/constellationAnalysis.test.ts`（7）：EVM、载波估计、定时、分析仪、配置校验；
-- 总测试：`npm test` 当前 **178** 例；
+- `core/constellationAnalysis.test.ts`（8）：EVM、载波估计、定时、分析仪、配置校验；
+- 总测试：`npm test` 当前 **179** 例；
 - 视觉回归：`npm run test:visual` Canvas2D/WebGL2 双后端，1200×2000 页面。

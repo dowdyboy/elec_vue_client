@@ -3,6 +3,7 @@ import {
   ConstellationAnalyzer,
   computeEvm,
   estimateCarrierOffset,
+  estimateCarrierOffsetByEvm,
   estimateTimingOffset,
   extractSymbolsAt,
   resolveAnalysisConfig
@@ -76,6 +77,32 @@ describe('星座分析核心', () => {
     const off = estimateCarrierOffset(sig.i, sig.q, 'QPSK', 8192)
     expect(off).toBeGreaterThan(505)
     expect(off).toBeLessThan(519)
+  })
+
+  it('EVM 搜索可估计 QPSK/16QAM 残余频偏', () => {
+    for (const mod of ['QPSK', '16QAM'] as const) {
+      const n = 256
+      const i = new Float32Array(n)
+      const q = new Float32Array(n)
+      const symbolRate = 512
+      const offset = 3.5
+      const levels = mod === 'QPSK' ? [Math.SQRT1_2, -Math.SQRT1_2] : [-3, -1, 1, 3]
+      const inv = mod === 'QPSK' ? 1 : 1 / Math.sqrt(10)
+      let seed = 7
+      const rnd = (): number => {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        return seed / 4294967296
+      }
+      for (let k = 0; k < n; k++) {
+        const si = levels[Math.floor(rnd() * levels.length)]! * inv
+        const sq = levels[Math.floor(rnd() * levels.length)]! * inv
+        const ph = (2 * Math.PI * offset * k) / symbolRate
+        i[k] = si * Math.cos(ph) - sq * Math.sin(ph)
+        q[k] = si * Math.sin(ph) + sq * Math.cos(ph)
+      }
+      const est = estimateCarrierOffsetByEvm(i, q, mod, symbolRate)
+      expect(Math.abs(est - offset)).toBeLessThan(0.6)
+    }
   })
 
   it('按符号周期抽点并跨帧返回相位', () => {
