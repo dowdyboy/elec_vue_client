@@ -2,6 +2,9 @@
  * 星座图核心（零依赖，可单测）：
  * - ConstellationBuffer：定长环形缓冲（按点淘汰，供实时 IQ 流）
  * - autoConstellationRange：以 0 为中心的对称自动量程（1/2/5 档位）
+ * - ConstellationAutoRange：扩张即时、收窄滞回+驻留，抑制档位边界抖动
+ * - derotateIQ：带载波 IQ 连续 NCO 下变频到基带
+ * - strobeIQ：按 samplesPerSymbol 抽取符号判决点（跨帧相位连续）
  * - equalizeRange：按绘图区宽高比扩展范围，保证 I/Q 单位长度一致（不被拉成椭圆）
  * - sampleConstellation：绘制抽点，缓冲不丢点
  * - computeConstellationStats：I/Q 极值、RMS、功率、峰值

@@ -183,7 +183,7 @@ interface ChartStyle {
 `shared/signalDsp`（升余弦成型/生成器连续性/成型谱形/SNR 口径/full+fftShift/镜像/real-complex/波形，11）、
 `shared/signalFrames`（窗增益补偿/跨帧 FIFO/时频固定 dB 行/real 单边与 complex 全谱，9）、`shared/remoteScriptParity`（独立脚本与共享实现的帧计算/生成器/波形逐样本一致，4）
 
-**帧元数据**：IQ 帧携带 `sampleRate`、`outputMode`/`waveform`（[shared/signal.ts](../src/shared/signal.ts)），演示页默认随帧自动同步采样率，手动修改后锁定、点「自动」恢复；
+**帧元数据**：IQ 帧携带 `sampleRate`、`outputMode`/`waveform`、`carrierHz`（源载波）、`samplesPerSymbol`（数字调制判决点抽点）等（[shared/signal.ts](../src/shared/signal.ts)），演示页默认随帧自动同步采样率，手动修改后锁定、点「自动」恢复；
 宿主应优先使用帧元数据换算时间轴，`sampleRate` prop 仅作缺省回退。
 
 **内部**：环形 2M 点；**min/max 极值金字塔**（`core/pyramid.ts`，默认 16 样本/块，多层预聚合，含 min/max 下标以保持原索引顺序）——

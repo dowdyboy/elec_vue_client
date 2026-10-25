@@ -2,9 +2,11 @@
 /**
  * ConstellationChart（星座图，可复用）
  * - 输入：交织 Float32 IQ 或 {i,q}；adapter 与 IQ 组件共用
+ * - 带载波 IQ 可传 carrierHz/sampleRate：按帧连续 NCO 下变频到基带
+ * - symbolStrobe + samplesPerSymbol：按符号周期抽点，只显示判决点
  * - 渲染：WebGL2 POINTS 优先，Canvas2D 自动降级；轴/网格/游标在独立 2D 覆盖层
- * - I/Q 等比映射（不会被宽画布拉成椭圆），自动量程/手动视口、滚轮缩放、拖拽平移
- * - 统计：I/Q 极值/RMS、功率、峰值；PNG/CSV 导出
+ * - 正方形 I/Q 映射（不会被宽画布拉成椭圆），自动/手动量程、滚轮缩放、拖拽平移
+ * - 统计：I/Q 极值/RMS、功率、峰值；PNG/CSV 导出；theme/chartStyle 主题配色
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { createPointsRenderer, type PointsRenderer } from './core/gl'
