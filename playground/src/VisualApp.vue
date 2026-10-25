@@ -36,16 +36,29 @@ onMounted(() => {
   }
   iq.value?.appendData(iqData, { sampleRate: 1_000_000 })
 
-  // 星座：确定性 QPSK 四簇 + 小噪声，验证轴/网格/WebGL 与 Canvas2D 散点
-  const constData = new Float32Array(4096 * 2)
+  // 星座：载波 QPSK 复信号（+512 Hz），组件用 carrierHz 下变频后应显示四簇；
+  // 同时验证轴/网格/WebGL 与 Canvas2D 散点
+  const constN = 4096
+  const constSps = 16
+  const constFs = 8192
+  const constFc = 512
+  const constData = new Float32Array(constN * 2)
   const levels = [-0.7, 0.7]
-  for (let k = 0; k < 4096; k++) {
-    const si = levels[(rand() * 2) | 0]!
-    const sq = levels[(rand() * 2) | 0]!
-    constData[2 * k] = si + (rand() - 0.5) * 0.08
-    constData[2 * k + 1] = sq + (rand() - 0.5) * 0.08
+  let bi = 0
+  let bq = 0
+  for (let k = 0; k < constN; k++) {
+    if (k % constSps === 0) {
+      bi = levels[(rand() * 2) | 0]!
+      bq = levels[(rand() * 2) | 0]!
+    }
+    const ph = (2 * Math.PI * constFc * k) / constFs
+    constData[2 * k] = bi * Math.cos(ph) - bq * Math.sin(ph) + (rand() - 0.5) * 0.05
+    constData[2 * k + 1] = bi * Math.sin(ph) + bq * Math.cos(ph) + (rand() - 0.5) * 0.05
   }
-  constellation.value?.appendData(constData)
+  constellation.value?.appendData(constData, {
+    sampleRate: constFs,
+    carrierHz: constFc
+  })
 
   const bins = 512
   const specData = new Float32Array(bins)

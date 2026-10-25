@@ -24,6 +24,7 @@ import {
   ConstellationBuffer,
   autoConstellationRange,
   computeConstellationStats,
+  derotateIQ,
   equalizeRange,
   formatConstellationTick,
   sampleConstellation,
@@ -31,6 +32,7 @@ import {
   type SampledConstellation
 } from './core/constellation'
 import type {
+  ConstellationAppendMeta,
   ConstellationProps,
   ConstellationStats,
   ConstellationViewInfo,
@@ -82,6 +84,9 @@ const stableAuto = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 180
 let renderer: PointsRenderer | null = null
 let canvasRenderer: ConstellationCanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
+let derotPhase = 0
+let derotCarrier = 0
+let derotRate = 0
 
 interface ViewState {
   auto: boolean
@@ -511,31 +516,63 @@ function sanitizePair(i: Float32Array, q: Float32Array): { i: Float32Array; q: F
   return { i: ci, q: cq }
 }
 
-function appendData(raw: unknown): void {
+function appendData(raw: unknown, meta?: ConstellationAppendMeta): void {
   const p = normalize(raw)
   if (!p) {
     reportError('adapter', tr('common.adapterNull'))
     return
   }
   const clean = sanitizePair(p.i, p.q)
-  buffer.append(clean.i, clean.q)
+  const base = derotate(clean, meta)
+  buffer.append(base.i, base.q)
   pointCount.value = buffer.length
   sampleCache = null
   schedule()
 }
 
-function setData(raw: unknown): void {
+/**
+ * 带载波复数 IQ → 基带：乘 e^{-j2π f n/Fs}
+ * - carrierHz 缺省/0 时按基带处理
+ * - 相位跨帧连续；载波/采样率变化时重置相位
+ */
+function derotate(
+  p: { i: Float32Array; q: Float32Array },
+  meta?: ConstellationAppendMeta
+): { i: Float32Array; q: Float32Array } {
+  const carrier = Number(meta?.carrierHz ?? props.carrierHz ?? 0)
+  const rate = Number(meta?.sampleRate ?? props.sampleRate ?? 0)
+  if (!(rate > 0) || !Number.isFinite(carrier) || Math.abs(carrier) < 1e-12) {
+    derotCarrier = 0
+    derotRate = 0
+    derotPhase = 0
+    return p
+  }
+  if (carrier !== derotCarrier || rate !== derotRate) {
+    derotCarrier = carrier
+    derotRate = rate
+    derotPhase = 0
+  }
+  const out = derotateIQ(p.i, p.q, carrier, rate, derotPhase)
+  derotPhase = out.phase
+  return { i: out.i, q: out.q }
+}
+
+function setData(raw: unknown, meta?: ConstellationAppendMeta): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
+  derotPhase = 0
   resetAutoRange()
-  appendData(raw)
+  appendData(raw, meta)
 }
 
 function clear(): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
+  derotPhase = 0
+  derotCarrier = 0
+  derotRate = 0
   resetAutoRange()
   schedule()
 }
@@ -786,6 +823,12 @@ watch(
     schedule()
   }
 )
+watch([() => props.carrierHz, () => props.sampleRate], () => {
+  derotPhase = 0
+  derotCarrier = 0
+  derotRate = 0
+  schedule()
+})
 watch(
   () => props.viewport,
   (v) => {

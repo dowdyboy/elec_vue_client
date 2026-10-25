@@ -127,6 +127,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
         seq,
         data: iq,
         sampleRate: cfg.sampleRate,
+        carrierHz: cfg.freq,
         outputMode: cfg.outputMode,
         waveform: cfg.waveform,
         modType: cfg.modType
@@ -140,6 +141,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           data: spec,
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
+          carrierHz: cfg.freq,
           dbScale: cfg.dbScale,
           spectrumMode: cfg.spectrumMode,
           freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
@@ -159,6 +161,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           data: row,
           fftSize: cfg.fftSize,
           sampleRate: cfg.sampleRate,
+          carrierHz: cfg.freq,
           dbScale: true,
           spectrumMode: cfg.spectrumMode,
           freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
@@ -353,6 +356,14 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
             : p.output_mode === 'complex' || p.output_mode === 'real'
               ? p.output_mode
               : undefined
+        const carrierHz =
+          typeof p.carrierHz === 'number'
+            ? p.carrierHz
+            : typeof p.carrier_hz === 'number'
+              ? p.carrier_hz
+              : typeof p.freq === 'number'
+                ? p.freq
+                : undefined
         const waveform =
           typeof p.waveform === 'string' &&
           ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'].includes(p.waveform)
@@ -446,6 +457,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           timeStepSec,
           spectrumMode,
           outputMode,
+          carrierHz,
           waveform,
           freqStartHz,
           binHz,
@@ -581,6 +593,7 @@ export function registerSignalAnalysisServer(): () => void {
         fftShift: f.fftShift,
         timeStepSec: f.timeStepSec,
         outputMode: f.outputMode,
+        carrierHz: f.carrierHz,
         waveform: f.waveform,
         modType: f.modType,
         buffer: buf

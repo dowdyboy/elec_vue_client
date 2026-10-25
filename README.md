@@ -1,4 +1,4 @@
-﻿# ⚡ Electron 教学与模板项目
+# ⚡ Electron 教学与模板项目
 
 基于 **Electron 39 + Vue 3 + TypeScript + Naive UI** 的教学与模板项目。
 
@@ -54,7 +54,7 @@ IQ 时域/频谱/时频/星座 4 个组件已按“可被其他上位机集成�
 - int16/float64/平面/字节序适配器，程序化 API（follow/paused、标记、区间测量、峰值、统计/可见数据、星座统计/导出）
 - **real 单边 0~Fs/2 与 complex 带符号复谱 -Fs/2~+Fs/2** 双模式（`spectrumMode`/`freqStartHz`/`binHz`/`fftShift`）
 - Mock 专业源：`outputMode` real/complex、CW/AM/FM/Pulse/Two-tone/Noise/Digital、AWGN 与 IQ 镜像；源输出域与分析域独立
-- 星座图：正方形 I/Q 视口、自动/手动量程、滚轮缩放/拖拽、I/Q 轴/网格/游标、统计与 PNG/CSV
+- 星座图：带载波 IQ 下变频、正方形 I/Q 视口、自动/手动量程、滚轮缩放/拖拽、I/Q 轴/网格/游标、统计与 PNG/CSV
 - 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例

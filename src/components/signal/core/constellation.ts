@@ -168,6 +168,36 @@ export class ConstellationAutoRange {
   }
 }
 
+/** 带载波复数 IQ → 基带：乘 e^{-j2π f n/Fs}，返回下一帧起始相位（跨帧连续） */
+export function derotateIQ(
+  i: Float32Array,
+  q: Float32Array,
+  carrierHz: number,
+  sampleRate: number,
+  startPhase = 0
+): { i: Float32Array; q: Float32Array; phase: number } {
+  const n = Math.min(i.length, q.length)
+  if (!(sampleRate > 0) || !isFinite(carrierHz) || Math.abs(carrierHz) < 1e-12) {
+    return { i: i.subarray(0, n), q: q.subarray(0, n), phase: 0 }
+  }
+  const oi = new Float32Array(n)
+  const oq = new Float32Array(n)
+  const step = (2 * Math.PI * carrierHz) / sampleRate
+  let ph = startPhase
+  for (let k = 0; k < n; k++) {
+    const c = Math.cos(ph)
+    const s = Math.sin(ph)
+    const iv = i[k]!
+    const qv = q[k]!
+    oi[k] = iv * c + qv * s
+    oq[k] = qv * c - iv * s
+    ph += step
+    if (ph > Math.PI * 2) ph -= Math.PI * 2
+    else if (ph < 0) ph += Math.PI * 2
+  }
+  return { i: oi, q: oq, phase: ph }
+}
+
 /**
  * 让 I/Q 的单位长度在屏幕上一致：
  * 绘图区越宽，x 范围同比放宽（或 y 范围放宽），避免星座被拉成椭圆。

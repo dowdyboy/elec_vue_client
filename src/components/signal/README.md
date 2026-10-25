@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频）集成指南
+# 信号组件（IQ / 频谱 / 时频）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -170,12 +170,13 @@ Mock 配置按专业源拆分：
 ```
 
 ```ts
-const.value?.appendData(iq) // Float32Array 交织或 { i, q }
+const.value?.appendData(iq, { sampleRate: 8192, carrierHz: 512 }) // 带载波 IQ 先下变频
 const.value?.resetView()
 const.value?.getStats()
 ```
 
 - 正方形 I/Q 视口 + 自动/手动量程，滚轮缩放/拖拽平移/双击复位；
+- 带载波 IQ 传 `carrierHz/sampleRate`，组件按帧连续乘 `e^{-j2πf n/Fs}` 到基带；
 - WebGL2 Points 优先，Canvas2D 散点自动降级；
 - 轴/网格/十字游标、PNG/CSV、`viewportChange`/`exported` 事件；
 - 原始 IQ 含符号过渡轨迹；判决点需宿主做符号同步/抽点；
@@ -322,7 +323,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 167 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 169 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -360,4 +361,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.6.1'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.6.2'`（公共 API 变更时按语义化版本维护）。

@@ -73,6 +73,8 @@ export interface AnalysisFrame {
   dbScale?: boolean
   /** 源输出域（IQ/频谱帧；远程可省略） */
   outputMode?: OutputMode
+  /** 源载波频率 Hz（IQ/频谱帧；星座等需要下变频时使用） */
+  carrierHz?: number
   /** 源波形（IQ/频谱帧；远程可省略） */
   waveform?: SourceWaveform
   /** 频谱语义（频谱/时频；远程可省略，缺省 real） */

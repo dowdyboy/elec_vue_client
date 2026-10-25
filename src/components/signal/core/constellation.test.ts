@@ -4,6 +4,7 @@ import {
   ConstellationBuffer,
   autoConstellationRange,
   computeConstellationStats,
+  derotateIQ,
   equalizeRange,
   formatConstellationTick,
   sampleConstellation
@@ -83,6 +84,44 @@ describe('ConstellationAutoRange（自动量程稳定性）', () => {
     expect(r.max).toBe(1)
     ar.reset()
     expect(ar.resolve({ min: -0.5, max: 0.5 })).toEqual({ min: -0.5, max: 0.5 })
+  })
+})
+
+describe('derotateIQ（带载波 IQ 下变频）', () => {
+  it('正频复载波去旋转后落在 +I 轴', () => {
+    const n = 64
+    const f = 512
+    const fs = 8192
+    const i = new Float32Array(n)
+    const q = new Float32Array(n)
+    for (let k = 0; k < n; k++) {
+      const p = (2 * Math.PI * f * k) / fs
+      i[k] = Math.cos(p)
+      q[k] = Math.sin(p)
+    }
+    const d = derotateIQ(i, q, f, fs)
+    for (let k = 0; k < n; k++) {
+      expect(d.i[k]).toBeCloseTo(1, 5)
+      expect(d.q[k]).toBeCloseTo(0, 5)
+    }
+  })
+
+  it('跨帧相位连续：分两段与整段一致', () => {
+    const n = 50
+    const f = 700
+    const fs = 8192
+    const i = new Float32Array(n)
+    const q = new Float32Array(n)
+    for (let k = 0; k < n; k++) {
+      const p = (2 * Math.PI * f * k) / fs + 0.2
+      i[k] = Math.cos(p)
+      q[k] = Math.sin(p)
+    }
+    const all = derotateIQ(i, q, f, fs)
+    const a = derotateIQ(i.subarray(0, 17), q.subarray(0, 17), f, fs)
+    const b = derotateIQ(i.subarray(17), q.subarray(17), f, fs, a.phase)
+    for (let k = 0; k < 17; k++) expect(a.i[k]).toBeCloseTo(all.i[k]!, 5)
+    for (let k = 17; k < n; k++) expect(b.i[k - 17]).toBeCloseTo(all.i[k]!, 5)
   })
 })
 

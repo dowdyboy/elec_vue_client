@@ -605,9 +605,19 @@ export interface SpectrogramVisibleData {
 // ── 星座 ──
 export type ConstellationNormalized = IqData | Float32Array
 export type ConstellationAdapter = (raw: RawInput) => ConstellationNormalized | null
+/** 追加帧元数据：带载波 IQ 时用于数字下变频；缺省视为基带 */
+export interface ConstellationAppendMeta {
+  sampleRate?: number
+  /** 源载波频率 Hz；提供后 appendData 内部先乘 e^{-j2πf n/Fs} 再去画 */
+  carrierHz?: number
+}
 export interface ConstellationProps extends ChartBaseProps {
   pointSize?: number
   alpha?: number
+  /** 默认源采样率（appendData meta 可覆盖） */
+  sampleRate?: number
+  /** 默认载波频率 Hz：用于把带载波 IQ 下变频到基带；0/缺省=按基带处理 */
+  carrierHz?: number
   /** 外观覆盖项，优先级：chartStyle > 主题预置 */
   chartStyle?: ChartStyle
   /** 可覆盖的界面文案（I/Q 轴标题等） */

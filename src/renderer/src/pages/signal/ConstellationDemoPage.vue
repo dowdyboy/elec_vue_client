@@ -37,7 +37,10 @@ const sig = useSignalAnalysis({ autoSubscribe: true })
 
 sig.onIq((iq, frame) => {
   if (frame.outputMode) sourceMode.value = frame.outputMode
-  chartRef.value?.appendData(iq)
+  chartRef.value?.appendData(iq, {
+    sampleRate: frame.sampleRate,
+    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0
+  })
   hasData.value = true
   points.value = chartRef.value?.getLength() ?? points.value
   const now = performance.now()
