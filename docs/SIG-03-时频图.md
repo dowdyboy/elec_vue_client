@@ -57,7 +57,8 @@ ws.onmessage = (e) => {
 
 服务端计算重叠行时：`timeStepSec = fftSize * (1 - overlap) / sampleRate`。
 频率轴统一为 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示，CSV/API 返回物理频率。
-Mock 的 `imageDb`（-120~0 dB）会在 `-freq` 叠加共轭镜像，用于验证复谱/瀑布负频；默认 -120 关闭。
+Mock 的 `outputMode`（real/complex）决定源输出，本组件的 `spectrumMode` 只决定行按单边还是复谱计算，两者独立。Real 源复谱分析天然左右对称，Complex 源 real 分析是 I 投影。
+Mock 的 `imageDb`（-120~0 dB，仅 complex 输出）会在 `-freq` 叠加共轭镜像，用于验证复谱/瀑布负频；默认 -120 关闭。
 
 ## 二、Props
 
@@ -165,5 +166,5 @@ dispose()
 
 - 核心：`core/spectrogram.test.ts` 8 例（色阶端点/LUT、电平/gamma/NaN、环形缓冲换行/容量/冻结拷贝）。
 - DSP：real 单边 ×2、complex 全 bin/fftShift、正负频率方向（`signalFrames.test.ts` / `signalDsp.test.ts`）。
-- 总单测：**152**（`npm test`）。
+- 总单测：**156**（`npm test`）。
 - 视觉：`npm run test:visual` 的 canvas2d/webgl2 双基线包含 real 与 complex 时频图。

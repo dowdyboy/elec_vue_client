@@ -26,6 +26,7 @@ npx vite build --config playground/vite.config.ts
 - `SpectrumChart`：模拟 512-bin dBFS 谱 + `LIVE`/`MAX` 双迹线、`v-model:paused`
 - `SpectrogramChart`（视觉回归页）：固定种子 real 128 行 × 512 bin 与 complex 64 行 × 1024 bin 时频瀑布，验证 WebGL2 纹理、Canvas2D 回退、带符号频率轴、色标/轴/游标
 - `SpectrumChart`/`SpectrogramChart` 同时覆盖 **real 单边 0~Fs/2** 与 **complex 完整复谱 -Fs/2~+Fs/2**；complex 数据含正负频率两个峰
+- Mock 配置页按专业源操作：实数/复数输出、CW/AM/FM/Pulse/Two-tone/Noise/Digital、AWGN/镜像，与分析模式独立
 - 运行时切换 `renderer`（auto / webgl2 / canvas2d）与 `theme`；切换 renderer 通过 `:key` 重建组件（后端在挂载时选择）
 - 英文 `labels`（轴标题/aria）与 `chartStyle` 可在此继续扩展
 - URL 参数：`?renderer=canvas2d` 强制 2D、`?renderer=webgl2` 强制 GL；`?nowebgl=1` 在 `main.ts` 里覆盖 `getContext('webgl2')` 返回 null，用于验证 `auto` 的 Canvas2D 回退

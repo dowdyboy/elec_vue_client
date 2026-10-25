@@ -147,6 +147,16 @@ spec.value?.appendData(fullNRow, {
 > 频率轴统一 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
 > Mock 配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
 
+### Mock 专业源（只影响演示后端）
+
+Mock 配置按专业源拆分：
+
+- `outputMode`：`real`（默认）单路实数输出，IQ 捕获 I=x、Q=0；`complex` 复 IQ 输出；
+- `waveform`：CW / AM / FM / Pulse / Two-tone / Noise / Digital（BPSK/QPSK/16QAM）；
+- 参数：载波、幅度、AWGN SNR、调制频率、AM 调制度、FM 频偏、脉冲周期/占空比、双音间隔；
+- `spectrumMode` 是**分析模式**，只决定单边/复谱 FFT，不改变源；Real 源做复谱分析自然左右对称，Complex 源做 real 分析只是 I 投影；
+- UI 的「输出模式/波形」在信号源区，「分析模式（FFT）」在处理区；真实源 IQ 图 Q=0 是正常现象。
+
 ### 时频瀑布
 
 ```vue
@@ -288,7 +298,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 152 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（含 real/complex 时频与频谱，见下节）。
+- 无浏览器级单测；核心数学/文案有 156 个单测。像素级视觉回归覆盖 Canvas2D/WebGL2 两条后端（含 real/complex 时频与频谱，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -326,4 +336,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.4.1'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.5.0'`（公共 API 变更时按语义化版本维护）。

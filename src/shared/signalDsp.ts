@@ -152,9 +152,11 @@ export interface SignalGenerator {
 }
 
 /**
- * 有状态信号生成器（相位/符号时钟/成型滤波历史跨帧连续）：
- * - sine：复载波 cos/sin + 高斯噪声
- * - BPSK/QPSK/16QAM：随机符号 → 升余弦成型基带 → 上变频到 freq；amplitude 作用于基带
+ * 有状态信号源（相位/符号时钟/成型滤波历史跨帧连续）：
+ * - outputMode=real：单路实数输出，IQ 表示为 I=x、Q=0（真实信号源/DAC）
+ * - outputMode=complex：复数 IQ 输出（矢量源/仿真），可叠加共轭镜像
+ * - waveform：cw / am / fm / pulse / twoTone / noise / digital
+ * - digital：BPSK/QPSK/16QAM 随机符号 → 升余弦成型 → 上变频
  * @param opts.rng 可注入确定性随机（默认 Math.random，便于单测）
  */
 export function createSignalGenerator(
@@ -167,41 +169,70 @@ export function createSignalGenerator(
     const v = rng()
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
   }
-  const S = Math.max(1, cfg.samplesPerSymbol | 0)
-  const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
+  const Fs = cfg.sampleRate > 0 ? cfg.sampleRate : 4096
   const amp = cfg.amplitude || 1
-  // IQ image / 负频分量：相对载波电平 dB，-120 视为关闭；0 dB 等价于把解析单音变成实单音
-  const imageGain = cfg.imageDb > -119.9 ? Math.pow(10, cfg.imageDb / 20) : 0
-  const imageAmp = amp * imageGain
-  const isSine = cfg.modType === 'sine'
-  const taps = isSine ? null : rcTaps(S, 0.35, 6)
+  const outputMode = cfg.outputMode ?? 'real'
+  const complexOut = outputMode === 'complex'
+  // 兼容旧配置：modType 非 sine 且未显式指定波形时按数字调制处理
+  const rawWaveform = cfg.waveform ?? (cfg.modType !== 'sine' ? 'digital' : 'cw')
+  const waveform = rawWaveform === 'cw' && cfg.modType !== 'sine' ? 'digital' : rawWaveform
+  const isDigital = waveform === 'digital'
+  const isNoise = waveform === 'noise'
+  const imageDb = cfg.imageDb ?? -120
+  // 镜像只对复数输出有意义；实信号输出本身已含正负共轭
+  const imageGain = complexOut && !isNoise && imageDb > -119.9 ? Math.pow(10, imageDb / 20) : 0
+  const modFreq = cfg.modFreq ?? 50
+  const modStep = (2 * Math.PI * modFreq) / Fs
+  const amDepth = Math.min(1, Math.max(0, cfg.amDepth ?? 0.5))
+  const fmDev = Math.max(0, cfg.fmDeviation ?? 200)
+  const pulsePeriod = Math.max(1e-6, cfg.pulsePeriod ?? 0.01)
+  const pulseDuty = Math.min(1, Math.max(0, cfg.pulseDuty ?? 0.5))
+  const toneSpacing = Math.max(0, cfg.toneSpacing ?? 100)
+  const carrierStep = (2 * Math.PI * cfg.freq) / Fs
+  const tone1Step = (2 * Math.PI * (cfg.freq - toneSpacing / 2)) / Fs
+  const tone2Step = (2 * Math.PI * (cfg.freq + toneSpacing / 2)) / Fs
+  const S = Math.max(1, cfg.samplesPerSymbol | 0)
+  const taps = isDigital ? rcTaps(S, 0.35, 6) : null
   const half = taps ? (taps.length - 1) / 2 : 0
-  // 成型脉冲的平均功率（归一化前）：Σh²/S。符号集已归一化到 E|a|²=1，
-  // 因此上变频后信号平均功率 = amp²·pulsePower。
+  // 成型脉冲的平均功率（归一化前）：Σh²/S
   let pulsePower = 1
   if (taps) {
     let energy = 0
     for (let i = 0; i < taps.length; i++) energy += taps[i]! * taps[i]!
     pulsePower = energy / S
   }
-  // 噪声口径统一：每路噪声方差 σ² = 信号总功率 / (2·10^(snr/10))，
-  // 使 E|n|²=2σ² 与信号功率之比恰好为 snr；镜像分量计入总功率。
+  // 各波形相对载波功率的系数（用于保持 SNR 口径）
+  let powerFactor = 1
+  if (waveform === 'am') powerFactor = 1 + (amDepth * amDepth) / 2
+  else if (waveform === 'pulse') powerFactor = pulseDuty
+  else if (waveform === 'twoTone') powerFactor = 0.5
+  else if (isDigital) powerFactor = pulsePower
+  // 复噪声每路方差 σ² = 复信号功率 / (2·SNR)，实输出只加 I 路同 σ；
+  // 两种输出的 SNR 口径一致。镜像信号计入总功率。
   const noiseSigma = Math.sqrt(
-    (amp * amp * pulsePower * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
+    (amp * amp * powerFactor * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
   )
   const SQRT1_2 = Math.SQRT1_2
+  const digitalModType = cfg.modType === 'sine' ? 'BPSK' : cfg.modType
 
   let phase = 0
+  let phase2 = 0
+  let modPhase = 0
   let sampleIndex = 0
   let baseM = 0
   const symI: number[] = []
   const symQ: number[] = []
 
+  function wrapPhase(p: number): number {
+    const twoPi = Math.PI * 2
+    let v = p % twoPi
+    if (v < 0) v += twoPi
+    return v
+  }
+
   function newSymbol(): [number, number] {
-    // 符号集统一归一化到 E|a|²=1：BPSK ±1、QPSK (±1±j)/√2、16QAM (±1,±3)/√10，
-    // 这样 amplitude 与 snr 在所有调制方式下含义一致（峰值/星座幅度允许不同）。
-    if (cfg.modType === 'BPSK') return rng() > 0.5 ? [1, 0] : [-1, 0]
-    if (cfg.modType === 'QPSK') {
+    if (digitalModType === 'BPSK') return rng() > 0.5 ? [1, 0] : [-1, 0]
+    if (digitalModType === 'QPSK') {
       const map: Array<[number, number]> = [
         [SQRT1_2, SQRT1_2],
         [-SQRT1_2, SQRT1_2],
@@ -210,7 +241,7 @@ export function createSignalGenerator(
       ]
       return map[Math.floor(rng() * 4)]!
     }
-    if (cfg.modType === '16QAM') {
+    if (digitalModType === '16QAM') {
       const inv = 1 / Math.sqrt(10)
       const lv = [-3, -1, 1, 3]
       return [lv[Math.floor(rng() * 4)]! * inv, lv[Math.floor(rng() * 4)]! * inv]
@@ -236,49 +267,93 @@ export function createSignalGenerator(
   return {
     next(n: number): Float32Array {
       const out = new Float32Array(n * 2)
-      if (isSine) {
-        for (let k = 0; k < n; k++) {
-          const c = Math.cos(phase)
-          const s = Math.sin(phase)
-          // 正频解析载波 + 共轭镜像（负频）
-          out[2 * k] = (amp + imageAmp) * c + gauss() * noiseSigma
-          out[2 * k + 1] = (amp - imageAmp) * s + gauss() * noiseSigma
-          phase += step
-          if (phase > Math.PI * 2) phase -= Math.PI * 2
+      if (isNoise) {
+        if (complexOut) {
+          for (let k = 0; k < n; k++) {
+            out[2 * k] = amp * SQRT1_2 * gauss()
+            out[2 * k + 1] = amp * SQRT1_2 * gauss()
+          }
+        } else {
+          for (let k = 0; k < n; k++) {
+            out[2 * k] = amp * gauss()
+            out[2 * k + 1] = 0
+          }
         }
+        sampleIndex += n
         return out
       }
+
       for (let k = 0; k < n; k++) {
         const t = sampleIndex + k
-        const mMin = Math.ceil((t - half) / S)
-        const mMax = Math.floor((t + half) / S)
-        ensureSymbol(mMax)
-        let bi = 0
-        let bq = 0
-        for (let m = mMin; m <= mMax; m++) {
-          const j = m - baseM
-          if (j < 0) continue
-          const h = taps![t - m * S + half]
-          if (!h) continue
-          bi += symI[j]! * h
-          bq += symQ[j]! * h
+        let zr = 0
+        let zi = 0
+        if (isDigital) {
+          const mMin = Math.ceil((t - half) / S)
+          const mMax = Math.floor((t + half) / S)
+          ensureSymbol(mMax)
+          let bi = 0
+          let bq = 0
+          for (let m = mMin; m <= mMax; m++) {
+            const j = m - baseM
+            if (j < 0) continue
+            const h = taps![t - m * S + half]
+            if (!h) continue
+            bi += symI[j]! * h
+            bq += symQ[j]! * h
+          }
+          const c = Math.cos(phase)
+          const s = Math.sin(phase)
+          zr = bi * c - bq * s
+          zi = bi * s + bq * c
+        } else if (waveform === 'twoTone') {
+          zr = 0.5 * (Math.cos(phase) + Math.cos(phase2))
+          zi = 0.5 * (Math.sin(phase) + Math.sin(phase2))
+        } else {
+          let env = 1
+          if (waveform === 'am') env = 1 + amDepth * Math.cos(modPhase)
+          else if (waveform === 'pulse') {
+            const phaseInPeriod = (t / Fs) % pulsePeriod
+            env = phaseInPeriod < pulsePeriod * pulseDuty ? 1 : 0
+          }
+          zr = env * Math.cos(phase)
+          zi = env * Math.sin(phase)
         }
-        const ci = Math.cos(phase)
-        const si = Math.sin(phase)
-        const posI = bi * ci - bq * si
-        const posQ = bi * si + bq * ci
-        // 共轭镜像：I 同相相加，Q 反相（等效负频边带）
-        out[2 * k] = amp * posI + imageAmp * posI + gauss() * noiseSigma
-        out[2 * k + 1] = amp * posQ - imageAmp * posQ + gauss() * noiseSigma
-        phase += step
-        if (phase > Math.PI * 2) phase -= Math.PI * 2
-        if (k % 256 === 0) trimSymbols(mMin)
+
+        if (complexOut) {
+          // 共轭镜像：I 同相相加、Q 反相；imageGain=1 时 Q 抵消（实基带）
+          if (imageGain > 0) {
+            zr *= 1 + imageGain
+            zi *= 1 - imageGain
+          }
+          out[2 * k] = amp * zr + gauss() * noiseSigma
+          out[2 * k + 1] = amp * zi + gauss() * noiseSigma
+        } else {
+          // 实数输出：Q 严格为 0（没有第二路 ADC）
+          out[2 * k] = amp * zr + gauss() * noiseSigma
+          out[2 * k + 1] = 0
+        }
+
+        // 相位推进：FM 用瞬时频率，其余固定载波；双音两路独立
+        if (waveform === 'fm') {
+          phase = wrapPhase(phase + carrierStep + ((2 * Math.PI * fmDev) / Fs) * Math.cos(modPhase))
+        } else if (waveform === 'twoTone') {
+          phase = wrapPhase(phase + tone1Step)
+          phase2 = wrapPhase(phase2 + tone2Step)
+        } else {
+          phase = wrapPhase(phase + carrierStep)
+        }
+        if (waveform === 'am' || waveform === 'fm') {
+          modPhase = wrapPhase(modPhase + modStep)
+        }
+        if (isDigital && k % 256 === 0) trimSymbols(Math.ceil((t - half) / S))
       }
       sampleIndex += n
       return out
     },
     reset(): void {
       phase = 0
+      phase2 = 0
+      modPhase = 0
       sampleIndex = 0
       baseM = 0
       symI.length = 0

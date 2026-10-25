@@ -182,14 +182,28 @@ export function createGenerator(cfg, opts = {}) {
     const v = rng()
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
   }
-  const S = Math.max(1, cfg.samplesPerSymbol | 0)
-  const step = (2 * Math.PI * cfg.freq) / cfg.sampleRate
+  const Fs = cfg.sampleRate > 0 ? cfg.sampleRate : 4096
   const amp = cfg.amplitude || 1
-  // IQ image / 负频分量：相对载波电平 dB，-120 视为关闭；0 dB 等价于解析单音变实单音
-  const imageGain = cfg.imageDb > -119.9 ? Math.pow(10, cfg.imageDb / 20) : 0
-  const imageAmp = amp * imageGain
-  const isSine = cfg.modType === 'sine'
-  const taps = isSine ? null : rcTaps(S, 0.35, 6)
+  const outputMode = cfg.outputMode ?? 'real'
+  const complexOut = outputMode === 'complex'
+  const rawWaveform = cfg.waveform ?? (cfg.modType !== 'sine' ? 'digital' : 'cw')
+  const waveform = rawWaveform === 'cw' && cfg.modType !== 'sine' ? 'digital' : rawWaveform
+  const isDigital = waveform === 'digital'
+  const isNoise = waveform === 'noise'
+  const imageDb = cfg.imageDb ?? -120
+  const imageGain = complexOut && !isNoise && imageDb > -119.9 ? Math.pow(10, imageDb / 20) : 0
+  const modFreq = cfg.modFreq ?? 50
+  const modStep = (2 * Math.PI * modFreq) / Fs
+  const amDepth = Math.min(1, Math.max(0, cfg.amDepth ?? 0.5))
+  const fmDev = Math.max(0, cfg.fmDeviation ?? 200)
+  const pulsePeriod = Math.max(1e-6, cfg.pulsePeriod ?? 0.01)
+  const pulseDuty = Math.min(1, Math.max(0, cfg.pulseDuty ?? 0.5))
+  const toneSpacing = Math.max(0, cfg.toneSpacing ?? 100)
+  const carrierStep = (2 * Math.PI * cfg.freq) / Fs
+  const tone1Step = (2 * Math.PI * (cfg.freq - toneSpacing / 2)) / Fs
+  const tone2Step = (2 * Math.PI * (cfg.freq + toneSpacing / 2)) / Fs
+  const S = Math.max(1, cfg.samplesPerSymbol | 0)
+  const taps = isDigital ? rcTaps(S, 0.35, 6) : null
   const half = taps ? (taps.length - 1) / 2 : 0
   let pulsePower = 1
   if (taps) {
@@ -197,20 +211,34 @@ export function createGenerator(cfg, opts = {}) {
     for (let i = 0; i < taps.length; i++) energy += taps[i] * taps[i]
     pulsePower = energy / S
   }
+  let powerFactor = 1
+  if (waveform === 'am') powerFactor = 1 + (amDepth * amDepth) / 2
+  else if (waveform === 'pulse') powerFactor = pulseDuty
+  else if (waveform === 'twoTone') powerFactor = 0.5
+  else if (isDigital) powerFactor = pulsePower
   const noiseSigma = Math.sqrt(
-    (amp * amp * pulsePower * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
+    (amp * amp * powerFactor * (1 + imageGain * imageGain)) / (2 * Math.pow(10, cfg.snr / 10))
   )
   const SQRT1_2 = Math.SQRT1_2
+  const digitalModType = cfg.modType === 'sine' ? 'BPSK' : cfg.modType
 
   let phase = 0
+  let phase2 = 0
+  let modPhase = 0
   let sampleIndex = 0
   let baseM = 0
   const symI = []
   const symQ = []
 
+  function wrapPhase(p) {
+    const twoPi = Math.PI * 2
+    let v = p % twoPi
+    if (v < 0) v += twoPi
+    return v
+  }
   function newSymbol() {
-    if (cfg.modType === 'BPSK') return rng() > 0.5 ? [1, 0] : [-1, 0]
-    if (cfg.modType === 'QPSK') {
+    if (digitalModType === 'BPSK') return rng() > 0.5 ? [1, 0] : [-1, 0]
+    if (digitalModType === 'QPSK') {
       const map = [
         [SQRT1_2, SQRT1_2],
         [-SQRT1_2, SQRT1_2],
@@ -219,7 +247,7 @@ export function createGenerator(cfg, opts = {}) {
       ]
       return map[Math.floor(rng() * 4)]
     }
-    if (cfg.modType === '16QAM') {
+    if (digitalModType === '16QAM') {
       const inv = 1 / Math.sqrt(10)
       const lv = [-3, -1, 1, 3]
       return [lv[Math.floor(rng() * 4)] * inv, lv[Math.floor(rng() * 4)] * inv]
@@ -245,47 +273,87 @@ export function createGenerator(cfg, opts = {}) {
   return {
     next(n) {
       const out = new Float32Array(n * 2)
-      if (isSine) {
-        for (let k = 0; k < n; k++) {
-          const c = Math.cos(phase)
-          const s = Math.sin(phase)
-          out[2 * k] = (amp + imageAmp) * c + gauss() * noiseSigma
-          out[2 * k + 1] = (amp - imageAmp) * s + gauss() * noiseSigma
-          phase += step
-          if (phase > Math.PI * 2) phase -= Math.PI * 2
+      if (isNoise) {
+        if (complexOut) {
+          for (let k = 0; k < n; k++) {
+            out[2 * k] = amp * SQRT1_2 * gauss()
+            out[2 * k + 1] = amp * SQRT1_2 * gauss()
+          }
+        } else {
+          for (let k = 0; k < n; k++) {
+            out[2 * k] = amp * gauss()
+            out[2 * k + 1] = 0
+          }
         }
+        sampleIndex += n
         return out
       }
       for (let k = 0; k < n; k++) {
         const t = sampleIndex + k
-        const mMin = Math.ceil((t - half) / S)
-        const mMax = Math.floor((t + half) / S)
-        ensureSymbol(mMax)
-        let bi = 0
-        let bq = 0
-        for (let m = mMin; m <= mMax; m++) {
-          const j = m - baseM
-          if (j < 0) continue
-          const h = taps[t - m * S + half]
-          if (!h) continue
-          bi += symI[j] * h
-          bq += symQ[j] * h
+        let zr = 0
+        let zi = 0
+        if (isDigital) {
+          const mMin = Math.ceil((t - half) / S)
+          const mMax = Math.floor((t + half) / S)
+          ensureSymbol(mMax)
+          let bi = 0
+          let bq = 0
+          for (let m = mMin; m <= mMax; m++) {
+            const j = m - baseM
+            if (j < 0) continue
+            const h = taps[t - m * S + half]
+            if (!h) continue
+            bi += symI[j] * h
+            bq += symQ[j] * h
+          }
+          const c = Math.cos(phase)
+          const s = Math.sin(phase)
+          zr = bi * c - bq * s
+          zi = bi * s + bq * c
+        } else if (waveform === 'twoTone') {
+          zr = 0.5 * (Math.cos(phase) + Math.cos(phase2))
+          zi = 0.5 * (Math.sin(phase) + Math.sin(phase2))
+        } else {
+          let env = 1
+          if (waveform === 'am') env = 1 + amDepth * Math.cos(modPhase)
+          else if (waveform === 'pulse') {
+            const phaseInPeriod = (t / Fs) % pulsePeriod
+            env = phaseInPeriod < pulsePeriod * pulseDuty ? 1 : 0
+          }
+          zr = env * Math.cos(phase)
+          zi = env * Math.sin(phase)
         }
-        const ci = Math.cos(phase)
-        const si = Math.sin(phase)
-        const posI = bi * ci - bq * si
-        const posQ = bi * si + bq * ci
-        out[2 * k] = amp * posI + imageAmp * posI + gauss() * noiseSigma
-        out[2 * k + 1] = amp * posQ - imageAmp * posQ + gauss() * noiseSigma
-        phase += step
-        if (phase > Math.PI * 2) phase -= Math.PI * 2
-        if (k % 256 === 0) trimSymbols(mMin)
+        if (complexOut) {
+          if (imageGain > 0) {
+            zr *= 1 + imageGain
+            zi *= 1 - imageGain
+          }
+          out[2 * k] = amp * zr + gauss() * noiseSigma
+          out[2 * k + 1] = amp * zi + gauss() * noiseSigma
+        } else {
+          out[2 * k] = amp * zr + gauss() * noiseSigma
+          out[2 * k + 1] = 0
+        }
+        if (waveform === 'fm') {
+          phase = wrapPhase(phase + carrierStep + ((2 * Math.PI * fmDev) / Fs) * Math.cos(modPhase))
+        } else if (waveform === 'twoTone') {
+          phase = wrapPhase(phase + tone1Step)
+          phase2 = wrapPhase(phase2 + tone2Step)
+        } else {
+          phase = wrapPhase(phase + carrierStep)
+        }
+        if (waveform === 'am' || waveform === 'fm') {
+          modPhase = wrapPhase(modPhase + modStep)
+        }
+        if (isDigital && k % 256 === 0) trimSymbols(Math.ceil((t - half) / S))
       }
       sampleIndex += n
       return out
     },
     reset() {
       phase = 0
+      phase2 = 0
+      modPhase = 0
       sampleIndex = 0
       baseM = 0
       symI.length = 0
@@ -369,6 +437,14 @@ export function defaultCfg() {
     snr: 20,
     amplitude: 1,
     modType: 'sine',
+    outputMode: 'real',
+    waveform: 'cw',
+    modFreq: 50,
+    amDepth: 0.5,
+    fmDeviation: 200,
+    pulsePeriod: 0.01,
+    pulseDuty: 0.5,
+    toneSpacing: 100,
     sampleRate: 4096,
     pointsPerFrame: 2048,
     samplesPerSymbol: 16,
@@ -400,6 +476,25 @@ export function sanitizePatch(patch) {
   const amp = num('amplitude')
   if (amp !== null && amp > 0 && amp <= 10) out.amplitude = amp
   if (['sine', 'BPSK', 'QPSK', '16QAM'].includes(patch.modType)) out.modType = patch.modType
+  if (patch.outputMode === 'real' || patch.outputMode === 'complex')
+    out.outputMode = patch.outputMode
+  if (['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'].includes(patch.waveform))
+    out.waveform = patch.waveform
+  const modFreq = num('modFreq')
+  if (modFreq !== null && modFreq > 0 && modFreq <= 1_000_000) out.modFreq = modFreq
+  const amDepth = num('amDepth')
+  if (amDepth !== null && amDepth >= 0 && amDepth <= 1) out.amDepth = amDepth
+  const fmDeviation = num('fmDeviation')
+  if (fmDeviation !== null && fmDeviation >= 0 && fmDeviation <= 1_000_000)
+    out.fmDeviation = fmDeviation
+  const pulsePeriod = num('pulsePeriod')
+  if (pulsePeriod !== null && pulsePeriod >= 1e-6 && pulsePeriod <= 10)
+    out.pulsePeriod = pulsePeriod
+  const pulseDuty = num('pulseDuty')
+  if (pulseDuty !== null && pulseDuty >= 0 && pulseDuty <= 1) out.pulseDuty = pulseDuty
+  const toneSpacing = num('toneSpacing')
+  if (toneSpacing !== null && toneSpacing >= 0 && toneSpacing <= 1_000_000)
+    out.toneSpacing = toneSpacing
   const sr = int('sampleRate')
   if (sr !== null && sr >= 256 && sr <= 4194304) out.sampleRate = sr
   const ppf = int('pointsPerFrame')
@@ -446,6 +541,8 @@ export function startServer(opts = {}) {
       type: 2,
       seq: s,
       sampleRate: cfg.sampleRate,
+      outputMode: cfg.outputMode,
+      waveform: cfg.waveform,
       buffer: Buffer.from(iq.buffer, iq.byteOffset, iq.byteLength),
       modType: cfg.modType
     })
@@ -461,6 +558,8 @@ export function startServer(opts = {}) {
         freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
         binHz: cfg.sampleRate / cfg.fftSize,
         fftShift: cfg.spectrumMode === 'complex',
+        outputMode: cfg.outputMode,
+        waveform: cfg.waveform,
         buffer: Buffer.from(specRow.buffer, specRow.byteOffset, specRow.byteLength),
         modType: cfg.modType
       })
@@ -478,6 +577,8 @@ export function startServer(opts = {}) {
         binHz: cfg.sampleRate / cfg.fftSize,
         fftShift: cfg.spectrumMode === 'complex',
         timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
+        outputMode: cfg.outputMode,
+        waveform: cfg.waveform,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType
       })
@@ -517,9 +618,7 @@ export function startServer(opts = {}) {
       console.log('[remote-mock] trigger once')
       tick(true)
     })
-    sock.on('disconnect', (reason) =>
-      console.log(`[remote-mock] disconnect ${sock.id} ${reason}`)
-    )
+    sock.on('disconnect', (reason) => console.log(`[remote-mock] disconnect ${sock.id} ${reason}`))
   })
 
   let timer = null
@@ -554,8 +653,7 @@ export function startServer(opts = {}) {
 
 // ── CLI（仅在直接运行时启动；被 import 时只导出纯函数，便于单测对比）──
 const isMain =
-  typeof process.argv[1] === 'string' &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
+  typeof process.argv[1] === 'string' && import.meta.url === pathToFileURL(process.argv[1]).href
 
 if (isMain) {
   const args = process.argv.slice(2)

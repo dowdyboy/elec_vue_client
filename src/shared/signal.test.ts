@@ -23,4 +23,20 @@ describe('信号配置：频谱模式', () => {
     expect(sanitizeConfigPatch({ imageDb: 0 }).value).toEqual({ imageDb: 0 })
     expect(sanitizeConfigPatch({ imageDb: -121 }).ok).toBe(false)
   })
+
+  it('专业源默认实数输出，outputMode/waveform/调制参数校验', () => {
+    const d = defaultAnalysisConfig()
+    expect(d.outputMode).toBe('real')
+    expect(d.waveform).toBe('cw')
+    expect(sanitizeConfigPatch({ outputMode: 'complex' }).value).toEqual({
+      outputMode: 'complex'
+    })
+    expect(sanitizeConfigPatch({ waveform: 'pulse' }).value).toEqual({ waveform: 'pulse' })
+    expect(sanitizeConfigPatch({ waveform: 'sawtooth' }).ok).toBe(false)
+    expect(sanitizeConfigPatch({ amDepth: 0.5, fmDeviation: 100 }).value).toEqual({
+      amDepth: 0.5,
+      fmDeviation: 100
+    })
+    expect(sanitizeConfigPatch({ pulseDuty: 1.2 }).ok).toBe(false)
+  })
 })

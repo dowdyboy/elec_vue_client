@@ -43,6 +43,8 @@ export function registerRemoteMockServer(): () => void {
       type: 2,
       seq: s,
       sampleRate: cfg.sampleRate,
+      outputMode: cfg.outputMode,
+      waveform: cfg.waveform,
       buffer: Buffer.from(iq.buffer, iq.byteOffset, iq.byteLength),
       modType: cfg.modType
     })
@@ -58,6 +60,8 @@ export function registerRemoteMockServer(): () => void {
         freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
         binHz: cfg.sampleRate / cfg.fftSize,
         fftShift: cfg.spectrumMode === 'complex',
+        outputMode: cfg.outputMode,
+        waveform: cfg.waveform,
         buffer: Buffer.from(specRow.buffer, specRow.byteOffset, specRow.byteLength),
         modType: cfg.modType
       })
@@ -75,6 +79,8 @@ export function registerRemoteMockServer(): () => void {
         binHz: cfg.sampleRate / cfg.fftSize,
         fftShift: cfg.spectrumMode === 'complex',
         timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
+        outputMode: cfg.outputMode,
+        waveform: cfg.waveform,
         buffer: Buffer.from(row.buffer, row.byteOffset, row.byteLength),
         modType: cfg.modType
       })

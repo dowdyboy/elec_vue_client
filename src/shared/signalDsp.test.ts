@@ -99,6 +99,7 @@ describe('magnitudeSpectrum（实/复谱）', () => {
       sampleRate: 4096,
       fftSize: 1024,
       snr: 100,
+      outputMode: 'complex',
       imageDb: -20
     }
     const gen = createSignalGenerator(cfg, { rng: lcg(9) })
@@ -113,6 +114,98 @@ describe('magnitudeSpectrum（实/复谱）', () => {
     const pos = full[512 + 128]!
     const neg = full[512 - 128]!
     expect(20 * Math.log10(pos / neg)).toBeCloseTo(20, 0)
+  })
+})
+
+describe('专业源：实数/复数输出与波形', () => {
+  const base: SignalAnalysisConfig = {
+    ...defaultAnalysisConfig(),
+    modType: 'sine',
+    freq: 512,
+    sampleRate: 4096,
+    pointsPerFrame: 1024,
+    fftSize: 1024,
+    snr: 100
+  }
+  function gen(over: Partial<SignalAnalysisConfig>, n = 1024): Float32Array {
+    return createSignalGenerator({ ...base, ...over }, { rng: lcg(21) }).next(n)
+  }
+  function fullSpectrum(iq: Float32Array): Float32Array {
+    const n = iq.length / 2
+    const re = new Float32Array(n)
+    const im = new Float32Array(n)
+    for (let k = 0; k < n; k++) {
+      re[k] = iq[2 * k]!
+      im[k] = iq[2 * k + 1]!
+    }
+    return magnitudeSpectrum(re, im, { full: true, fftShift: true })
+  }
+
+  it('real 输出 Q=0；complex 输出保留 Q；real CW 复谱对称', () => {
+    const real = gen({ outputMode: 'real', waveform: 'cw' })
+    const complex = gen({ outputMode: 'complex', waveform: 'cw' })
+    for (let k = 0; k < real.length / 2; k++) expect(real[2 * k + 1]).toBe(0)
+    let qEnergy = 0
+    for (let k = 0; k < complex.length / 2; k++) qEnergy += Math.abs(complex[2 * k + 1]!)
+    expect(qEnergy).toBeGreaterThan(1)
+
+    const realSpec = fullSpectrum(real)
+    const cplxSpec = fullSpectrum(complex)
+    const pos = realSpec[512 + 128]!
+    const neg = realSpec[512 - 128]!
+    expect(neg / pos).toBeGreaterThan(0.5)
+    const cPos = cplxSpec[512 + 128]!
+    const cNeg = cplxSpec[512 - 128]!
+    expect(cNeg / cPos).toBeLessThan(0.01)
+  })
+
+  it('AM/FM/Pulse/TwoTone/Noise/Digital 均能生成，关键特征正确', () => {
+    const am = gen({ outputMode: 'real', waveform: 'am', amDepth: 0.8, modFreq: 50 })
+    let amMin = Infinity
+    let amMax = -Infinity
+    for (let k = 0; k < 1024; k++) {
+      amMin = Math.min(amMin, am[2 * k]!)
+      amMax = Math.max(amMax, am[2 * k]!)
+    }
+    expect(amMax - amMin).toBeGreaterThan(0.5)
+
+    const fm = gen({ outputMode: 'real', waveform: 'fm', fmDeviation: 100, modFreq: 30 })
+    for (let k = 0; k < fm.length; k++) expect(Number.isFinite(fm[k]!)).toBe(true)
+    for (let k = 0; k < 1024; k++) expect(fm[2 * k + 1]).toBe(0)
+
+    const pulse = gen({ outputMode: 'real', waveform: 'pulse', pulsePeriod: 0.01, pulseDuty: 0.25 })
+    let zeros = 0
+    let nonZeros = 0
+    for (let k = 0; k < 1024; k++) Math.abs(pulse[2 * k]!) < 0.01 ? zeros++ : nonZeros++
+
+    expect(zeros).toBeGreaterThan(0)
+    expect(nonZeros).toBeGreaterThan(0)
+
+    const two = gen({
+      outputMode: 'complex',
+      waveform: 'twoTone',
+      toneSpacing: 256
+    })
+    const twoSpec = fullSpectrum(two)
+    let p1 = 0
+    let p2 = 0
+    for (let i = 1; i < twoSpec.length; i++) {
+      if (twoSpec[i]! > twoSpec[p1]!) p1 = i
+    }
+    for (let i = 1; i < twoSpec.length; i++) {
+      if (i !== p1 && twoSpec[i]! > twoSpec[p2]!) p2 = i
+    }
+    const peaks = [p1, p2].sort((a, b) => a - b)
+    expect(peaks[0]).toBe(512 + 96)
+    expect(peaks[1]).toBe(512 + 160)
+
+    const noise = gen({ outputMode: 'real', waveform: 'noise' })
+    for (let k = 0; k < 1024; k++) expect(noise[2 * k + 1]).toBe(0)
+
+    const digital = gen({ outputMode: 'complex', waveform: 'digital', modType: 'QPSK' })
+    let dq = 0
+    for (let k = 0; k < 1024; k++) dq += Math.abs(digital[2 * k + 1]!)
+    expect(dq).toBeGreaterThan(1)
   })
 })
 
@@ -138,7 +231,8 @@ describe('createSignalGenerator（有状态、跨帧连续）', () => {
       snr: 100, // 近无噪
       fftSize: 2048,
       pointsPerFrame: 2048,
-      window: 'hann'
+      window: 'hann',
+      outputMode: 'complex'
     }
     const spec = averagedSpectrum(cfg, 64)
     const binHz = cfg.sampleRate / cfg.fftSize // 2 Hz/bin

@@ -125,6 +125,7 @@ const exportDir = ref<string>(localStorage.getItem('sig-spectrum-export-dir') ??
 
 // ── 元数据 / 视口显示 ──
 const meta = ref<SpectrumMeta>({ dbScale: true })
+const sourceMode = ref<'real' | 'complex'>('real')
 const viewInfo = ref<SpectrumViewInfo | null>(null)
 const spanBins = ref(0) // 0=全带宽
 
@@ -229,6 +230,7 @@ function fmtHz(hz: number): string {
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
 sig.onSpectrum((data, frame) => {
+  if (frame.outputMode) sourceMode.value = frame.outputMode
   chartRef.value?.appendData(data, {
     sampleRate: frame.sampleRate,
     fftSize: frame.fftSize,
@@ -1039,6 +1041,9 @@ onMounted(() => {
         <NTag size="small" :bordered="false">采样率 {{ sampleRateTxt }}</NTag>
         <NTag size="small" :bordered="false">FFT {{ fftTxt }}</NTag>
         <NTag size="small" :bordered="false">RBW≈ {{ rbwTxt }}</NTag>
+        <NTag size="small" :bordered="false">
+          {{ sourceMode === 'complex' ? '复数 IQ 源' : '实数源（Q=0）' }}
+        </NTag>
         <NTag size="small" :bordered="false">
           {{ meta.spectrumMode === 'complex' ? '复谱 -Fs/2~+Fs/2' : '单边 0~Fs/2' }}
         </NTag>

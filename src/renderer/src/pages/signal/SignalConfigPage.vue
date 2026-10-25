@@ -55,6 +55,14 @@ const freq = ref(512)
 const snr = ref(20)
 const amplitude = ref(1)
 const modType = ref<SignalAnalysisConfig['modType']>('sine')
+const outputMode = ref<SignalAnalysisConfig['outputMode']>('real')
+const waveform = ref<SignalAnalysisConfig['waveform']>('cw')
+const modFreq = ref(50)
+const amDepth = ref(0.5)
+const fmDeviation = ref(200)
+const pulsePeriod = ref(0.01)
+const pulseDuty = ref(0.5)
+const toneSpacing = ref(100)
 const sampleRate = ref(4096)
 const pointsPerFrame = ref(2048)
 const samplesPerSymbol = ref(16)
@@ -81,6 +89,22 @@ const maxFreq = computed(() => Math.max(1, Math.floor(sampleRate.value / 2) - 1)
 watch(sampleRate, () => {
   if (freq.value > maxFreq.value) freq.value = maxFreq.value
 })
+watch(maxFreq, (m) => {
+  if (modFreq.value > m) modFreq.value = m
+  if (fmDeviation.value > m) fmDeviation.value = m
+  if (toneSpacing.value > m) toneSpacing.value = m
+})
+// 源操作一致性：数字波形使用 modType；模拟波形把 modType 归一到 sine（不参与生成）
+watch(waveform, (w) => {
+  if (w === 'digital') {
+    if (modType.value === 'sine') modType.value = 'BPSK'
+  } else if (modType.value !== 'sine') {
+    modType.value = 'sine'
+  }
+})
+watch(modType, (m) => {
+  if (m !== 'sine' && waveform.value !== 'digital') waveform.value = 'digital'
+})
 
 function saveLocal(): void {
   try {
@@ -91,6 +115,14 @@ function saveLocal(): void {
       freq: freq.value,
       snr: snr.value,
       modType: modType.value,
+      outputMode: outputMode.value,
+      waveform: waveform.value,
+      modFreq: modFreq.value,
+      amDepth: amDepth.value,
+      fmDeviation: fmDeviation.value,
+      pulsePeriod: pulsePeriod.value,
+      pulseDuty: pulseDuty.value,
+      toneSpacing: toneSpacing.value,
       sampleRate: sampleRate.value,
       pointsPerFrame: pointsPerFrame.value,
       samplesPerSymbol: samplesPerSymbol.value,
@@ -100,7 +132,7 @@ function saveLocal(): void {
       dbScale: dbScale.value,
       overlap: overlap.value,
       spectrumMode: spectrumMode.value,
-      imageDb: imageOn.value ? imageDb.value : -120
+      imageDb: outputMode.value === 'complex' && imageOn.value ? imageDb.value : -120
     }
     localStorage.setItem(LS_KEY, JSON.stringify(payload))
   } catch {
@@ -132,6 +164,15 @@ function loadLocal(): void {
     if (typeof p.snr === 'number') snr.value = p.snr
     if (typeof p.amplitude === 'number') amplitude.value = p.amplitude
     if (p.modType) modType.value = p.modType as SignalAnalysisConfig['modType']
+    if (p.outputMode === 'real' || p.outputMode === 'complex') outputMode.value = p.outputMode
+    if (p.waveform) waveform.value = p.waveform as SignalAnalysisConfig['waveform']
+    if (typeof p.modFreq === 'number') modFreq.value = p.modFreq
+    if (typeof p.amDepth === 'number') amDepth.value = p.amDepth
+    if (typeof p.fmDeviation === 'number') fmDeviation.value = p.fmDeviation
+    if (typeof p.pulsePeriod === 'number') pulsePeriod.value = p.pulsePeriod
+    if (typeof p.pulseDuty === 'number') pulseDuty.value = p.pulseDuty
+    if (typeof p.toneSpacing === 'number') toneSpacing.value = p.toneSpacing
+    if (!p.waveform) waveform.value = modType.value === 'sine' ? 'cw' : 'digital'
     if (typeof p.sampleRate === 'number') sampleRate.value = p.sampleRate
     if (typeof p.pointsPerFrame === 'number') pointsPerFrame.value = p.pointsPerFrame
     if (typeof p.samplesPerSymbol === 'number') samplesPerSymbol.value = p.samplesPerSymbol
@@ -188,6 +229,15 @@ async function refreshStatus(syncForm = true): Promise<void> {
         if (typeof c.snr === 'number') snr.value = c.snr
         if (typeof c.amplitude === 'number') amplitude.value = c.amplitude
         if (c.modType) modType.value = c.modType
+        if (c.outputMode) outputMode.value = c.outputMode
+        if (c.waveform) waveform.value = c.waveform
+        if (typeof c.modFreq === 'number') modFreq.value = c.modFreq
+        if (typeof c.amDepth === 'number') amDepth.value = c.amDepth
+        if (typeof c.fmDeviation === 'number') fmDeviation.value = c.fmDeviation
+        if (typeof c.pulsePeriod === 'number') pulsePeriod.value = c.pulsePeriod
+        if (typeof c.pulseDuty === 'number') pulseDuty.value = c.pulseDuty
+        if (typeof c.toneSpacing === 'number') toneSpacing.value = c.toneSpacing
+        if (!c.waveform) waveform.value = modType.value === 'sine' ? 'cw' : 'digital'
         if (typeof c.sampleRate === 'number') sampleRate.value = c.sampleRate
         if (typeof c.pointsPerFrame === 'number') pointsPerFrame.value = c.pointsPerFrame
         if (typeof c.samplesPerSymbol === 'number') samplesPerSymbol.value = c.samplesPerSymbol
@@ -219,6 +269,14 @@ function currentConfigPatch(): Partial<SignalAnalysisConfig> {
     snr: snr.value,
     amplitude: amplitude.value,
     modType: modType.value,
+    outputMode: outputMode.value,
+    waveform: waveform.value,
+    modFreq: modFreq.value,
+    amDepth: amDepth.value,
+    fmDeviation: fmDeviation.value,
+    pulsePeriod: pulsePeriod.value,
+    pulseDuty: pulseDuty.value,
+    toneSpacing: toneSpacing.value,
     sampleRate: sampleRate.value,
     pointsPerFrame: pointsPerFrame.value,
     samplesPerSymbol: samplesPerSymbol.value,
@@ -228,7 +286,7 @@ function currentConfigPatch(): Partial<SignalAnalysisConfig> {
     dbScale: dbScale.value,
     overlap: overlap.value,
     spectrumMode: spectrumMode.value,
-    imageDb: imageOn.value ? imageDb.value : -120
+    imageDb: outputMode.value === 'complex' && imageOn.value ? imageDb.value : -120
   }
 }
 
@@ -428,6 +486,14 @@ onMounted(async () => {
       <NForm label-placement="left" :label-width="110">
         <NGrid :cols="2" :x-gap="24" :y-gap="12">
           <NGi :span="2">
+            <div style="color: #888; font-size: 12px; line-height: 1.6">
+              源输出域与分析域独立：<b>实数输出</b>为单路真实波形（IQ 捕获
+              Q=0），复谱分析自然左右对称；
+              <b>复数 IQ 输出</b>保留独立
+              I/Q，可做镜像/矢量调制。<b>分析模式（FFT）</b>只决定频谱怎么算，不改变源。
+            </div>
+          </NGi>
+          <NGi :span="2">
             <NFormItem label="运行模式">
               <NRadioGroup v-model:value="modeSelect">
                 <NRadio value="local">本地计算（演示）</NRadio>
@@ -463,11 +529,39 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi>
-            <NFormItem label="调制方式">
+            <NFormItem label="输出模式">
+              <NSelect
+                v-model:value="outputMode"
+                :options="[
+                  { label: '实数输出（真实信号源，Q=0）', value: 'real' },
+                  { label: '复数 IQ 输出（矢量/仿真）', value: 'complex' }
+                ]"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi>
+            <NFormItem label="波形/调制">
+              <NSelect
+                v-model:value="waveform"
+                :options="[
+                  { label: 'CW 连续波', value: 'cw' },
+                  { label: 'AM 调幅', value: 'am' },
+                  { label: 'FM 调频', value: 'fm' },
+                  { label: 'Pulse 脉冲', value: 'pulse' },
+                  { label: 'Two-tone 双音', value: 'twoTone' },
+                  { label: 'Noise 噪声', value: 'noise' },
+                  { label: 'Digital 数字调制', value: 'digital' }
+                ]"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'digital'">
+            <NFormItem label="数字调制">
               <NSelect
                 v-model:value="modType"
                 :options="[
-                  { label: 'Sine', value: 'sine' },
                   { label: 'BPSK', value: 'BPSK' },
                   { label: 'QPSK', value: 'QPSK' },
                   { label: '16QAM', value: '16QAM' }
@@ -477,18 +571,76 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi>
-            <NFormItem label="频率 (Hz)">
-              <NSlider v-model:value="freq" :min="1" :max="maxFreq" />
+            <NFormItem label="载波频率 (Hz)">
+              <NSlider v-if="waveform !== 'noise'" v-model:value="freq" :min="1" :max="maxFreq" />
+              <span v-else style="color: #888; font-size: 12px">噪声源无载波</span>
             </NFormItem>
           </NGi>
           <NGi>
-            <NFormItem label="信噪比 (dB)">
+            <NFormItem :label="waveform === 'noise' ? '噪声幅度 (RMS)' : '输出幅度'">
+              <NSlider v-model:value="amplitude" :min="0.1" :max="5" :step="0.1" />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform !== 'noise'">
+            <NFormItem label="AWGN SNR (dB)">
               <NSlider v-model:value="snr" :min="0" :max="60" />
             </NFormItem>
           </NGi>
-          <NGi>
-            <NFormItem label="幅度">
-              <NSlider v-model:value="amplitude" :min="0.1" :max="5" :step="0.1" />
+          <NGi v-if="waveform === 'am'">
+            <NFormItem label="AM 调制度">
+              <NSlider v-model:value="amDepth" :min="0" :max="1" :step="0.05" />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'am' || waveform === 'fm'">
+            <NFormItem label="调制频率 (Hz)">
+              <NInputNumber v-model:value="modFreq" :min="1" :max="maxFreq" style="width: 100%" />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'fm'">
+            <NFormItem label="FM 峰值频偏 (Hz)">
+              <NInputNumber
+                v-model:value="fmDeviation"
+                :min="0"
+                :max="maxFreq"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'pulse'">
+            <NFormItem label="脉冲周期 (s)">
+              <NInputNumber
+                v-model:value="pulsePeriod"
+                :min="0.001"
+                :max="1"
+                :step="0.001"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'pulse'">
+            <NFormItem label="脉冲占空比">
+              <NSlider v-model:value="pulseDuty" :min="0.01" :max="1" :step="0.01" />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'twoTone'">
+            <NFormItem label="双音间隔 (Hz)">
+              <NInputNumber
+                v-model:value="toneSpacing"
+                :min="1"
+                :max="maxFreq"
+                style="width: 100%"
+              />
+            </NFormItem>
+          </NGi>
+          <NGi v-if="waveform === 'digital'">
+            <NFormItem label="每符号采样数">
+              <NInputNumber
+                v-model:value="samplesPerSymbol"
+                :min="1"
+                :max="64"
+                :step="1"
+                style="width: 100%"
+              />
             </NFormItem>
           </NGi>
           <NGi>
@@ -507,17 +659,6 @@ onMounted(async () => {
                 :min="256"
                 :max="8192"
                 :step="256"
-                style="width: 100%"
-              />
-            </NFormItem>
-          </NGi>
-          <NGi>
-            <NFormItem label="每符号采样数">
-              <NInputNumber
-                v-model:value="samplesPerSymbol"
-                :min="1"
-                :max="64"
-                :step="1"
                 style="width: 100%"
               />
             </NFormItem>
@@ -557,18 +698,18 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi>
-            <NFormItem label="频谱模式">
+            <NFormItem label="分析模式（FFT）">
               <NSelect
                 v-model:value="spectrumMode"
                 :options="[
-                  { label: '单边实信号 0~Fs/2', value: 'real' },
-                  { label: '复谱 -Fs/2~+Fs/2', value: 'complex' }
+                  { label: '单边 0~Fs/2（实信号分析）', value: 'real' },
+                  { label: '复谱 -Fs/2~+Fs/2（带符号）', value: 'complex' }
                 ]"
                 style="width: 100%"
               />
             </NFormItem>
           </NGi>
-          <NGi :span="2">
+          <NGi v-if="outputMode === 'complex' && waveform !== 'noise'" :span="2">
             <NFormItem label="负频/镜像（相对载波）">
               <NSwitch v-model:value="imageOn" />
               <NSelect
@@ -589,10 +730,10 @@ onMounted(async () => {
             </NFormItem>
           </NGi>
           <NGi :span="2">
-            <NFormItem label="启用推送">
+            <NFormItem label="输出/推送">
               <NSwitch v-model:value="enabled" />
               <span style="margin-left: 12px; color: #888; font-size: 12px">
-                关闭后定时器不再自动推送，但仍可用「触发单帧」手动推一帧
+                关闭后停止自动推送（源输出仍可由「触发单帧」产生）；真实信号源对应 RF OFF
               </span>
             </NFormItem>
           </NGi>
@@ -642,7 +783,28 @@ onMounted(async () => {
         <NDescriptionsItem label="远端地址">{{
           curRemoteUrl || effectiveRemoteUrl
         }}</NDescriptionsItem>
-        <NDescriptionsItem label="调制方式">{{ effConfig?.modType ?? '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="输出模式">{{
+          effConfig?.outputMode === 'complex' ? '复数 IQ' : '实数（Q=0）'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="波形">{{ effConfig?.waveform ?? '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="数字调制">{{
+          effConfig?.waveform === 'digital' ? effConfig?.modType : '-'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="调制频率">{{
+          effConfig?.modFreq !== undefined ? `${effConfig.modFreq} Hz` : '-'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="AM 调制度">{{
+          effConfig?.amDepth !== undefined ? effConfig.amDepth : '-'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="FM 频偏">{{
+          effConfig?.fmDeviation !== undefined ? `${effConfig.fmDeviation} Hz` : '-'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="脉冲">{{
+          effConfig ? `${effConfig.pulsePeriod ?? '-'} s / ${effConfig.pulseDuty ?? '-'}` : '-'
+        }}</NDescriptionsItem>
+        <NDescriptionsItem label="双音间隔">{{
+          effConfig?.toneSpacing !== undefined ? `${effConfig.toneSpacing} Hz` : '-'
+        }}</NDescriptionsItem>
         <NDescriptionsItem label="频率">{{ effConfig?.freq ?? '-' }} Hz</NDescriptionsItem>
         <NDescriptionsItem label="信噪比">{{ effConfig?.snr ?? '-' }} dB</NDescriptionsItem>
         <NDescriptionsItem label="幅度">{{ effConfig?.amplitude ?? '-' }}</NDescriptionsItem>
@@ -656,7 +818,7 @@ onMounted(async () => {
         <NDescriptionsItem label="FFT 大小">{{ effConfig?.fftSize ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="窗函数">{{ effConfig?.window ?? '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="重叠">{{ effConfig?.overlap ?? '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="频谱模式">{{
+        <NDescriptionsItem label="分析模式">{{
           effConfig?.spectrumMode === 'complex' ? '复谱（带符号）' : '实信号单边'
         }}</NDescriptionsItem>
         <NDescriptionsItem label="负频/镜像">{{
@@ -665,7 +827,7 @@ onMounted(async () => {
         <NDescriptionsItem label="dB 缩放">{{
           effConfig?.dbScale ? '是' : '否'
         }}</NDescriptionsItem>
-        <NDescriptionsItem label="启用推送">{{
+        <NDescriptionsItem label="输出/推送">{{
           effConfig?.enabled ? '是' : '否'
         }}</NDescriptionsItem>
       </NDescriptions>

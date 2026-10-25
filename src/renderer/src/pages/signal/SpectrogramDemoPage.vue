@@ -21,6 +21,7 @@ const lastMeta = ref({
   sampleRate: 0,
   timeStepSec: 0,
   mode: 'real' as 'real' | 'complex',
+  outputMode: 'real' as 'real' | 'complex',
   freqStartHz: 0
 })
 
@@ -47,6 +48,7 @@ sig.onSpectrogram((row, frame) => {
       sampleRate: st.sampleRate ?? 0,
       timeStepSec: st.timeStepSec ?? 0,
       mode: st.spectrumMode ?? 'real',
+      outputMode: frame.outputMode ?? lastMeta.value.outputMode,
       freqStartHz: st.freqStartHz ?? 0
     }
 })
@@ -112,6 +114,7 @@ function onExportCsv(): void {
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
         {{ lastMeta.rows }} 行 / {{ lastMeta.cols }} bin ·
+        {{ lastMeta.outputMode === 'complex' ? '复数 IQ 源' : '实数源（Q=0）' }} ·
         {{ lastMeta.mode === 'complex' ? '复谱 -Fs/2~+Fs/2' : '单边 0~Fs/2' }} · FFT
         {{ lastMeta.fftSize || '-' }} · Fs {{ lastMeta.sampleRate || '-' }} · Δt
         {{ lastMeta.timeStepSec ? lastMeta.timeStepSec.toExponential(3) + ' s' : '-' }}

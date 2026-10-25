@@ -127,6 +127,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
         seq,
         data: iq,
         sampleRate: cfg.sampleRate,
+        outputMode: cfg.outputMode,
+        waveform: cfg.waveform,
         modType: cfg.modType
       })
       // 频谱（跨帧凑满 fftSize；窗增益已在 computeSpectrumRow 内补偿）
@@ -143,6 +145,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
           binHz: cfg.sampleRate / cfg.fftSize,
           fftShift: cfg.spectrumMode === 'complex',
+          outputMode: cfg.outputMode,
+          waveform: cfg.waveform,
           modType: cfg.modType
         })
       }
@@ -161,6 +165,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           binHz: cfg.sampleRate / cfg.fftSize,
           fftShift: cfg.spectrumMode === 'complex',
           timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
+          outputMode: cfg.outputMode,
+          waveform: cfg.waveform,
           modType: cfg.modType
         })
       }
@@ -341,6 +347,17 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
             : p.spectrum_mode === 'complex' || p.spectrum_mode === 'real'
               ? p.spectrum_mode
               : undefined
+        const outputMode =
+          p.outputMode === 'complex' || p.outputMode === 'real'
+            ? p.outputMode
+            : p.output_mode === 'complex' || p.output_mode === 'real'
+              ? p.output_mode
+              : undefined
+        const waveform =
+          typeof p.waveform === 'string' &&
+          ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'].includes(p.waveform)
+            ? (p.waveform as import('../../shared/signal').SourceWaveform)
+            : undefined
         const freqStartHz =
           typeof p.freqStartHz === 'number'
             ? p.freqStartHz
@@ -428,6 +445,8 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           dbScale,
           timeStepSec,
           spectrumMode,
+          outputMode,
+          waveform,
           freqStartHz,
           binHz,
           fftShift,
@@ -561,6 +580,8 @@ export function registerSignalAnalysisServer(): () => void {
         binHz: f.binHz,
         fftShift: f.fftShift,
         timeStepSec: f.timeStepSec,
+        outputMode: f.outputMode,
+        waveform: f.waveform,
         modType: f.modType,
         buffer: buf
       })

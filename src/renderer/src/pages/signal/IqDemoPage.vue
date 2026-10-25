@@ -10,6 +10,7 @@ import {
   NCheckbox,
   NSlider,
   NColorPicker,
+  NTag,
   useMessage
 } from 'naive-ui'
 import { IqChart, iqAdapters, type ExportPayload, type Theme } from '@components/signal'
@@ -38,6 +39,7 @@ const envelopeOn = ref(false)
 const persistenceVal = ref(0)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
+const sourceMode = ref<'real' | 'complex'>('real')
 
 // ── 全部对外属性演示 ──
 const modeKey = ref<'line' | 'dots'>('line')
@@ -169,6 +171,7 @@ function getAdapter(): (raw: unknown) => unknown {
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
 sig.onIq((iq, frame) => {
+  if (frame.outputMode) sourceMode.value = frame.outputMode
   // 采样率优先取服务端帧元数据（与配置页保持一致）；用户手动改过则锁定，点「自动」恢复
   if (typeof frame.sampleRate === 'number' && frame.sampleRate > 0) {
     lastFrameRate = frame.sampleRate
@@ -266,6 +269,9 @@ watch(adapterKey, (v) => {
         <NButton size="tiny" :type="rateTouched ? 'default' : 'primary'" @click="onSyncRate"
           >自动</NButton
         >
+        <NTag size="small" :bordered="false">
+          {{ sourceMode === 'complex' ? '复数 IQ 源' : '实数源（Q=0）' }}
+        </NTag>
         <span>窗宽</span>
         <NInputNumber
           v-model:value="spanSamples"

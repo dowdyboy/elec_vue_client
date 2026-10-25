@@ -2,12 +2,17 @@
 
 > 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**IQ/频谱/时频已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建）；**星座为演示级骨架**。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
-> 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）统一使用 `shared/signalDsp.ts` 的有状态生成器与 `shared/signalFrames.ts` 的帧构造：
-> sine 复载波；BPSK/QPSK/16QAM 符号集归一化到 E|a|²=1，经**升余弦成型**（β=0.35）后上变频（默认载波 512 Hz > 符号率 256 Bd，主瓣完整居中）——频谱为典型带限谱形，而非矩形脉冲的 sinc²。
-> 噪声每路方差统一为「信号功率 / (2·10^(snr/10))」，**同一 SNR 设置下各调制方式实测一致**（旧实现调制信号乘 0.3，BPSK 会比 sine 高约 10 dB）。
-> 频谱行按**窗相干增益补偿**（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时由 `SpectrumAnalyzer` 跨帧凑满窗再算，不再零填充（旧实现会低 20–75 dB）。
-> 独立脚本是纯 JS 同步副本（供终端直接运行），`src/shared/remoteScriptParity.test.ts` 会对比行计算，防止三套 Mock 再次漂移。
-> 复谱演示：Mock 配置新增 `imageDb`（-120 到 0 dB），在 `-freq` 叠加共轭镜像；`-120` 关闭，`0 dB` 约等于把解析复单音变成实单音。`imageDb` 是相对载波电平（-20 dB = 负频峰低 20 dB），只有 0 dB 正负等幅；0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化，复调制请关闭镜像或使用独立负频。默认 `-120`，不改变原有单边/解析信号行为。
+> 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）按「专业源」模型重构：**源输出域**与**分析域**分离。
+>
+> **源输出域** `outputMode`：`real`（默认）= 单路实数输出，IQ 捕获 I=x、Q=0，对应真实信号源/DAC；`complex` = 复数 IQ 输出，I/Q 独立，对应矢量源/仿真。
+>
+> **波形** `waveform`：CW / AM / FM / Pulse / Two-tone / Noise / Digital（BPSK/QPSK/16QAM）；参数含调制频率、AM 调制度、FM 频偏、脉冲周期/占空比、双音间隔、AWGN SNR。数字调制符号集归一化到 E|a|²=1，经升余弦成型（β=0.35）后上变频；Real 输出取实部，Complex 输出保留 I/Q。
+>
+> **分析域** `spectrumMode`：`real` 单边 0–Fs/2 / `complex` 完整带符号复谱；它只决定 FFT 怎么算，不改变源。Real 源用复谱分析会自然得到左右对称谱；Complex 源用 real 分析只是 I 投影。
+>
+> 噪声按输出域保持 SNR：complex 每路 σ²=信号功率/(2·SNR)，real 只加 I 路同 σ；镜像/损伤只对 complex 有效。`imageDb` 为相对载波电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅；0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化）。
+>
+> 频谱行按窗相干增益补偿（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时跨帧凑满窗再算。独立脚本是纯 JS 同步副本，`remoteScriptParity` 会对比行计算/生成器/波形，防止三套 Mock 漂移。
 
 ## 一、快速拷贝
 
@@ -133,7 +138,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 152 例（含 real/complex 频谱/瀑布）
+npm run typecheck && npm run lint && npm test   # 当前 156 例（含 real/complex 频谱/瀑布）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

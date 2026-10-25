@@ -64,4 +64,24 @@ describe('独立脚本 Mock 与共享实现保持一致', () => {
       for (let i = 0; i < a.length; i++) expect(b[i]).toBeCloseTo(a[i]!, 6)
     }
   })
+
+  it('专业源波形与输出模式逐样本一致', () => {
+    for (const outputMode of ['real', 'complex'] as const) {
+      for (const waveform of ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'] as const) {
+        const cfg: SignalAnalysisConfig = {
+          ...defaultAnalysisConfig(),
+          outputMode,
+          waveform,
+          modType: waveform === 'digital' ? 'QPSK' : 'sine',
+          imageDb: -20,
+          snr: 30,
+          pointsPerFrame: 512
+        }
+        const a = createSignalGenerator(cfg, { rng: lcg(7) }).next(512)
+        const b = scriptCreateGenerator(cfg, { rng: lcg(7) }).next(512)
+        expect(b.length).toBe(a.length)
+        for (let i = 0; i < a.length; i++) expect(b[i]).toBeCloseTo(a[i]!, 6)
+      }
+    }
+  })
 })
