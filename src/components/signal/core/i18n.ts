@@ -97,6 +97,9 @@ export const zhCN = {
   'constellation.peak': '峰值',
   'constellation.autoFit': '自适应',
   'constellation.fitTitle': '双击或点击「自适应」恢复全量程',
+  'constellation.evm': 'EVM',
+  'constellation.mer': 'MER',
+  'constellation.symbolsShort': '{n} 符号',
   'constellation.webglUnsupported': '当前环境不支持 WebGL2/Canvas2D，星座图无法渲染',
   'constellation.exportEmpty': '没有可导出的点'
 } as const
@@ -194,6 +197,9 @@ export const enUS: Record<ChartMessageKey, string> = {
   'constellation.peak': 'Peak',
   'constellation.autoFit': 'Auto fit',
   'constellation.fitTitle': 'Double-click or press Auto fit to restore full scale',
+  'constellation.evm': 'EVM',
+  'constellation.mer': 'MER',
+  'constellation.symbolsShort': '{n} symbols',
   'constellation.webglUnsupported': 'WebGL2/Canvas2D unavailable; constellation cannot render',
   'constellation.exportEmpty': 'No points to export'
 }

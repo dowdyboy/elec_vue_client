@@ -1,60 +1,56 @@
-# SIG-04 - 星座图（ConstellationChart）
+﻿# SIG-04 - 星座图 / 星座分析仪
 
 > `src/components/signal/ConstellationChart.vue`
 >
-> 状态：**已完成库化**（WebGL2 + Canvas2D 降级、I/Q 轴/网格、自动/手动量程、缩放平移、i18n、PNG/CSV、像素回归）。
+> 状态：**已完成库化，支持纯显示与星座分析仪双模式**。WebGL2 + Canvas2D、i18n、主题、PNG/CSV、像素回归。
 
-星座图把 IQ 流的 I/Q 样本作为散点画在复平面上。它适合观察 QPSK/QAM 的簇、噪声、幅度/相位不平衡、IQ 镜像和调制器损伤；**不替代符号同步/判决/EVM 分析**。
+## 一、两种使用方式
 
-## 一、快速使用
+### 1. 纯显示（默认，不传 `analysis`）
+
+调用方自己准备基带/判决点 IQ，组件只负责画点、轴、量程、统计、主题和导出：
+
+```vue
+<ConstellationChart ref="const" :height="420" />
+```
+
+```ts
+// 已经是基带点或任意待显示点，原样绘制
+const.value?.appendData({ i, q })
+```
+
+此时组件**不做**载波下变频、符号同步、EVM，不要求调用方提供高级参数。
+
+### 2. 星座分析仪（显式传 `analysis`）
+
+调用方给原始复数 IQ；组件内部做中心频率下变频、残余载波估计、符号定时、判决点和 EVM/MER：
 
 ```vue
 <ConstellationChart
   ref="const"
-  theme="dark"
-  :point-size="2"
-  :alpha="0.7"
-  :max-points="200000"
-  :renderer="'auto'"
-  :symbol-strobe="true"
-  :samples-per-symbol="16"
-  :height="420"
+  :analysis="{
+    modulation: 'QPSK',
+    sampleRate: 8192,
+    centerFrequencyHz: 512,
+    samplesPerSymbol: 16,
+    autoCarrier: true,
+    autoSymbolTiming: true
+  }"
+  :height="480"
 />
-
-<!-- 流式 IQ：交织 Float32Array 或 { i, q } -->
-<script setup lang="ts">
-const const = ref()
-onIq((iq, frame) =>
-  const.value?.appendData(iq, {
-    sampleRate: frame.sampleRate,
-    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0,
-    samplesPerSymbol: frame.samplesPerSymbol
-  })
-)
-</script>
 ```
 
 ```ts
-const const = ref<InstanceType<typeof ConstellationChart>>()
-const.appendData(iq, {
-  sampleRate: 8192,
-  carrierHz: 512,
-  samplesPerSymbol: 16
-}) // 带载波复数 IQ：下变频 + 判决点抽点
-const.setData(iq)
-const.clear()
-const.resetView()              // 双击/自适应
-const.getStats()               // I/Q 极值、RMS、功率、峰值
-const.getView()                // 当前 I/Q 范围
-const.exportPNG()
-const.exportCSV()
+const.value?.appendData(rawIq) // 原始复数 IQ，可带载波
+const.value?.getAnalysisStats()
+// { measured, modulation, symbolRateHz, samplesPerSymbol, carrierOffsetHz,
+//   symbolTimingOffset, symbolCount, evmRms, evmPercent, merDb,
+//   magnitudeErrorRms, phaseErrorRmsDeg, iqGainImbalanceDb, iqPhaseImbalanceDeg }
 ```
 
-> **带载波 IQ 必须先下变频**：Mock 的复数 QPSK 在 `+freq` 载波上，直接画原始 I/Q 会得到旋转圆盘。传 `carrierHz` + `sampleRate` 后，组件内部按帧连续乘 `e^{-j2πf n/Fs}`，再存入星座缓冲。
->
-> **高 SNR 仍会看到过渡轨迹**：`symbolStrobe=false` 时画的是全部采样，RRC 脉冲成型的符号切换路径会形成网格/圆弧；`symbolStrobe=true` + `samplesPerSymbol` 按符号周期抽点，只显示判决点。抽点不改变源数据。
+`analysis` 缺省即纯显示；不会强制调用方使用任何高级功能。
 
-## 二、输入与适配器
+## 二、输入与兼容性
 
 支持：
 
@@ -63,65 +59,75 @@ const.exportCSV()
 - `adapter` 返回 `ConstellationNormalized`；
 - 未提供 adapter 或返回 `null` 时，按 `constellationAdapters`（与 IQ 共用）尝试 `jsonInterleaved` / `arrayBuffer` / `base64`。
 
-```ts
-const adapter = (raw: unknown) => {
-  const v = raw as { i: number[]; q: number[] }
-  return { i: Float32Array.from(v.i), q: Float32Array.from(v.q) }
-}
-```
+**兼容旧便捷参数**：
+
+- `carrierHz` / `sampleRate` / `symbolStrobe` / `samplesPerSymbol` 仍可用；
+- 它们提供的是“显示前预处理”的便捷路径；
+- 一旦传入 `analysis`，分析仪路径优先，旧参数被忽略；
+- `appendData` 的 meta 可作为分析仪参数的缺省回退。
 
 非法数据在入口清洗为 0，不产生 NaN；adapter 异常会 `error` + `errorDetail({code:'adapter'})`。
 
-**基带 / 带载波**：
+## 三、`analysis` 配置
 
-- 默认按**基带 IQ**处理；`carrierHz` 缺省/0 时不做旋转；
-- `sampleRate` + `carrierHz` 可来自 props，也可由每次 `appendData` 的 meta 覆盖；
-- 载波/采样率变化会重置 NCO 相位；清空/重新 `setData` 也会重置；
-- 相位跨帧连续，长时间流不会在帧边界出现相位跳变。
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `modulation` | `'QPSK'` | BPSK / QPSK / 16QAM 判决参考 |
+| `sampleRate` | props/meta | 原始 IQ 采样率；必须 >0 |
+| `centerFrequencyHz` | 0 | 分析仪中心频率（下变频） |
+| `frequencyOffsetHz` | 0 | 已知残余频偏（Hz） |
+| `phaseOffsetDeg` | 0 | 已知相位偏移 |
+| `symbolRateHz` | — | 符号率；与 `samplesPerSymbol` 二选一 |
+| `samplesPerSymbol` | props/meta | 每符号采样数 |
+| `autoCarrier` | false | 用判决点 z^M 自相关估计残余频偏 |
+| `autoSymbolTiming` | false | 搜索最小 EVM 的定时相位 |
+| `estimatorSymbols` | 4096 | 参与 EVM/不平衡统计的最近符号数 |
 
-## 三、坐标与量程
+## 四、分析流程
 
-- **正方形绘图区**：星座图始终使用正方形 I/Q 视口，保证单位长度一致，不会在宽画布上被拉成椭圆，也不会把 QPSK 四簇压到中心；
-- **自动量程**：以 `(0,0)` 为中心，按 `max(|I|,|Q|)` + 12% 余量，并向外吸附到 1/2/5×10^k 刻度档位；扩张即时，收窄带 **20% 滞回 + 180 帧驻留**，随机 QPSK/QAM 峰值不会让网格逐帧切档；
-- **手动量程**：`viewport: { xMin,xMax,yMin,yMax }`；若范围不是正方形，内部按较大跨度等比扩展（保持中心）；
-- **自适应**：`resetView()` / 双击 / `setViewport({ autoScale: true })`；
-- **缩放/平移**：滚轮以光标为锚点缩放，拖拽平移；交互后自动切到手动量程，`viewportChange` 事件回传；
-- **抽点绘制**：`maxRenderPoints` 默认 WebGL 150k、Canvas2D 30k；只影响绘制，不丢缓冲。
+```text
+原始复数 IQ
+  → 中心频率 NCO 下变频
+  → 可选残余载波估计（判决点 z^M 自相关）
+  → 可选符号定时相位搜索（最小 EVM）
+  → 判决点抽取
+  → EVM/MER、幅度/相位误差、IQ 增益/相位不平衡
+```
 
-## 四、Props
+- **载波恢复**：首帧用标称中心频率粗抽判决点，再用判决点估计残余频偏；RRC 过渡点不会直接拉偏估计；
+- **符号定时**：在 `[0, samplesPerSymbol)` 内搜索整数采样偏移，取 EVM 最小；
+- **相位旋转**：EVM 计算自动尝试 BPSK 2 个 / QPSK·16QAM 4 个参考相位；
+- **统计窗口**：最近 `estimatorSymbols` 个判决点，滚动更新。
+
+## 五、Props / API
+
+除 `analysis` 外：
 
 | 属性 | 默认 | 说明 |
 | --- | --- | --- |
-| `pointSize` | `2` | 点大小（CSS px；GL 内部按 DPR 换算） |
-| `alpha` | `0.7` | 点透明度 0~1 |
-| `axis` | `true` | I/Q 坐标轴与刻度槽 |
-| `grid` | `true` | 网格 |
-| `axisLabels` | `true` | I/Q 轴标题 |
-| `showInfo` | `true` | 右上角点数/后端角标 |
-| `maxPoints` | `500000` | 缓冲上限；超出淘汰最老点 |
-| `maxRenderPoints` | 见上 | 单帧绘制点数上限 |
-| `renderer` | `'auto'` | `auto` / `webgl2` / `canvas2d` |
-| `theme` | `'auto'` | light / dark / auto / spectrum |
-| `chartStyle` | — | 颜色覆盖（`traceColor` 为点颜色，`grid/text/border/plotBg/zeroLine` 等复用通用字段） |
-| `labels` | — | `i/q/aria` 等文案覆盖 |
+| `pointSize` | `2` | 点大小 |
+| `alpha` | `0.7` | 点透明度 |
+| `axis` / `grid` / `axisLabels` | `true` | I/Q 轴、网格、轴标题 |
+| `showInfo` | `true` | 点数/后端/EVM 角标 |
+| `maxPoints` | `500000` | 缓冲上限 |
+| `maxRenderPoints` | WebGL 150k / Canvas2D 30k | 绘制抽点 |
+| `theme` | `'auto'` | auto / dark / light / spectrum |
+| `chartStyle` / `labels` | — | 配色/文案覆盖 |
 | `viewport` | — | 手动 I/Q 量程 |
-| `sampleRate` | — | 默认采样率；`appendData` meta 可覆盖 |
-| `carrierHz` | — | 默认源载波；提供后内部下变频到基带（0/缺省=基带） |
-| `symbolStrobe` | `false` | 只画判决点：按符号周期抽点，过滤 RRC 过渡轨迹 |
-| `samplesPerSymbol` | — | 每符号采样数（抽点用；meta 可覆盖） |
 | `exportHandler` | — | 接管 PNG/CSV 持久化 |
-| `adapter` / `data` | — | 数据输入 |
 
-通用 props（`width/height/fpsLimit/locale/messages/renderer`）与其它组件一致。
+API：
 
-## 主题与配色
+- `appendData(iq, meta?)` / `setData(iq, meta?)` / `clear()`
+- `getStats()`：I/Q 极值、RMS、功率、峰值
+- `getAnalysisStats()`：EVM/MER、误差、频偏、定时、符号数（纯显示返回 `null`）
+- `getView()` / `setViewport()` / `resetView()` / `fit()`
+- `exportPNG()` / `exportPNGAsync()` / `exportCSV()`
+- `getBackend()`
 
-- `theme`：`auto`（跟随系统）/ `dark` / `light` / `spectrum`（黑底黄迹）；
-- `chartStyle.traceColor` 覆盖点颜色，`grid/text/border/plotBg/zeroLine/crosshair` 等复用通用字段；
-- 主题切换只重绘，不清空缓冲/量程；
-- Demo 顶部提供 `auto/dark/light/spectrum` 下拉，与 IQ/频谱页一致。
+事件：`viewportChange`、`exported`、`error`、`errorDetail`。
 
-## 五、交互与 API
+## 六、交互、主题与降级
 
 | 操作 | 行为 |
 | --- | --- |
@@ -129,44 +135,24 @@ const adapter = (raw: unknown) => {
 | 拖拽 | 平移复平面 |
 | 双击 / `0` | 恢复自动量程 |
 | `+` / `-` | 中心缩放 |
-| `getView()` | `{xMin,xMax,yMin,yMax,autoScale}` |
-| `appendData(iq, { sampleRate, carrierHz, samplesPerSymbol })` | 追加原始/带载波 IQ；带载波时先下变频，可选判决点抽点 |
-| `setData(iq, meta)` | 清空后写入，重置 NCO 相位 |
-| `setViewport(v)` | 手动范围；`{autoScale:true}` 恢复自动 |
-| `getStats()` | `{points,renderPoints,iMin,iMax,qMin,qMax,iRms,qRms,power,powerDbfs,peak}` |
-| `exportPNG/Async` | 组合主画布 + 轴层 + 背景 |
-| `exportCSV` | `index,i,q` 全缓冲 |
 
-事件：`viewportChange`、`exported`、`error`、`errorDetail`。
+- 正方形 I/Q 视口，单位长度一致；
+- 自动量程扩张即时，收窄带 20% 滞回 + 180 帧驻留；
+- `theme`：auto / dark / light / spectrum；主题切换只重绘，不清缓冲/量程；
+- 默认 WebGL2 Points，Canvas2D 散点自动降级；轴/网格/游标在独立 2D 覆盖层。
 
-## 六、渲染与降级
+## 七、限制
 
-- 默认 `renderer='auto'`：优先 WebGL2 `POINTS`；不可用回退 Canvas2D 散点；
-- 强制 `renderer='webgl2'` 失败时 emit `error`/`errorDetail` 并显示占位；
-- 轴/网格/游标在独立 2D 覆盖层绘制，主画布只画点；
-- WebGL 开启 `preserveDrawingBuffer`，保证 `exportPNG` 能合成当前帧；
-- 视觉回归覆盖 canvas2d/webgl2 双后端（1200×2000 页面，含 QPSK 四簇）。
-
-## 七、限制与后续
-
-- 输入是**原始 IQ**，包含符号过渡轨迹；要显示判决点需宿主做符号同步/最佳采样点抽取（组件提供抽点，不做定时恢复）；
-- **Real 输出 IQ 的 Q 恒为 0**：QPSK/QAM 星座会退化成一条 I 轴线；观察星座请在 Mock 配置切到「复数 IQ 输出」；
-- 暂未提供 EVM/幅度误差/相位误差/IQ 不平衡等**参考星座**测量；
-- 暂未提供密度热力图（density）和 2D 直方图；当前为点云 + alpha；
-- 星座的“中心/量程”是显示域，不改变原始 IQ 数值。
+- 载波恢复估计的是**残余频偏**，要求 `centerFrequencyHz` 大致正确；大频偏请先设置中心频率；
+- 自动定时只搜索整数采样相位，不做连续定时跟踪/Gardner 环；
+- 16QAM 的自动载波使用 4 次方近似，复杂损伤场景建议关闭 `autoCarrier` 手动给频偏；
+- 不负责解调比特、信道解码、协议解析；
+- 输入原始 IQ 时若 `analysis` 的 `sampleRate/symbolRate` 不正确，EVM 不可信；
+- 纯显示模式下组件不会猜测基带/载波，调用方传入什么就画什么。
 
 ## 八、测试
 
-`src/components/signal/core/constellation.test.ts`（13）：
-
-- 环形缓冲追加/淘汰/`setMaxPoints`；
-- 对称自动量程/全零回退；
-- 自动量程扩张即时、收窄滞回+驻留、边界不翻转；
-- 带载波 IQ 下变频到基带；跨帧 NCO 相位连续；
-- 符号抽点数量/跨帧相位连续；
-- 宽/高画布的等比扩展；
-- 抽点数量与不修改原缓冲；
-- I/Q 极值/RMS/功率/峰值；
-- 刻度格式。
-
-总测试：`npm test` 当前 **171** 例；视觉回归 `npm run test:visual` 双后端。
+- `core/constellation.test.ts`（13）：缓冲、量程、抽点、去载波、符号抽点、统计；
+- `core/constellationAnalysis.test.ts`（7）：EVM、载波估计、定时、分析仪、配置校验；
+- 总测试：`npm test` 当前 **178** 例；
+- 视觉回归：`npm run test:visual` Canvas2D/WebGL2 双后端，1200×2000 页面。

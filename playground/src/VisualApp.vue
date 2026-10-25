@@ -36,12 +36,9 @@ onMounted(() => {
   }
   iq.value?.appendData(iqData, { sampleRate: 1_000_000 })
 
-  // 星座：载波 QPSK 复信号（+512 Hz），组件用 carrierHz 下变频后应显示四簇；
-  // 同时验证轴/网格/WebGL 与 Canvas2D 散点
+  // 星座：纯显示路径——调用方给基带 QPSK 四簇，组件不做载波/符号/EVM
   const constN = 4096
   const constSps = 16
-  const constFs = 8192
-  const constFc = 512
   const constData = new Float32Array(constN * 2)
   const levels = [-0.7, 0.7]
   let bi = 0
@@ -51,14 +48,10 @@ onMounted(() => {
       bi = levels[(rand() * 2) | 0]!
       bq = levels[(rand() * 2) | 0]!
     }
-    const ph = (2 * Math.PI * constFc * k) / constFs
-    constData[2 * k] = bi * Math.cos(ph) - bq * Math.sin(ph) + (rand() - 0.5) * 0.05
-    constData[2 * k + 1] = bi * Math.sin(ph) + bq * Math.cos(ph) + (rand() - 0.5) * 0.05
+    constData[2 * k] = bi + (rand() - 0.5) * 0.05
+    constData[2 * k + 1] = bq + (rand() - 0.5) * 0.05
   }
-  constellation.value?.appendData(constData, {
-    sampleRate: constFs,
-    carrierHz: constFc
-  })
+  constellation.value?.appendData(constData)
 
   const bins = 512
   const specData = new Float32Array(bins)

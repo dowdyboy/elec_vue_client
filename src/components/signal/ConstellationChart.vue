@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * ConstellationChart（星座图，可复用）
- * - 输入：交织 Float32 IQ 或 {i,q}；adapter 与 IQ 组件共用
- * - 带载波 IQ 可传 carrierHz/sampleRate：按帧连续 NCO 下变频到基带
- * - symbolStrobe + samplesPerSymbol：按符号周期抽点，只显示判决点
+ * ConstellationChart（星座图 / 星座分析仪，可复用）
+ * - 默认纯显示：不传 analysis 时只接收/绘制调用方给的 IQ 点
+ * - 可选分析仪：传 analysis 后对原始 IQ 做中心频率下变频、残余载波估计、
+ *   符号定时、判决点和 EVM/MER（不强制调用方使用）
+ * - 兼容旧便捷路径：carrierHz/sampleRate/symbolStrobe/samplesPerSymbol
  * - 渲染：WebGL2 POINTS 优先，Canvas2D 自动降级；轴/网格/游标在独立 2D 覆盖层
- * - 正方形 I/Q 映射（不会被宽画布拉成椭圆），自动/手动量程、滚轮缩放、拖拽平移
+ * - 正方形 I/Q 映射，自动/手动量程、滚轮缩放、拖拽平移
  * - 统计：I/Q 极值/RMS、功率、峰值；PNG/CSV 导出；theme/chartStyle 主题配色
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -34,7 +35,9 @@ import {
   type ConstellationRange,
   type SampledConstellation
 } from './core/constellation'
+import { ConstellationAnalyzer, resolveAnalysisConfig } from './core/constellationAnalysis'
 import type {
+  ConstellationAnalysisStats,
   ConstellationAppendMeta,
   ConstellationProps,
   ConstellationStats,
@@ -84,6 +87,9 @@ const backendLabel = computed(() =>
 
 const buffer = new ConstellationBuffer(props.maxPoints)
 const stableAuto = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 180 })
+const analysisStats = ref<ConstellationAnalysisStats | null>(null)
+let analyzer: ConstellationAnalyzer | null = null
+let analyzerKey = ''
 let renderer: PointsRenderer | null = null
 let canvasRenderer: ConstellationCanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
@@ -520,6 +526,33 @@ function sanitizePair(i: Float32Array, q: Float32Array): { i: Float32Array; q: F
   return { i: ci, q: cq }
 }
 
+/** 仅在显式 analysis 配置下构造分析仪；纯显示路径不调用 */
+function ensureAnalyzer(meta?: ConstellationAppendMeta): ConstellationAnalyzer | null {
+  if (!props.analysis) return null
+  const resolved = resolveAnalysisConfig(props.analysis, {
+    sampleRate: meta?.sampleRate ?? props.sampleRate,
+    carrierHz: meta?.carrierHz ?? props.carrierHz,
+    samplesPerSymbol: meta?.samplesPerSymbol ?? props.samplesPerSymbol
+  })
+  if (!resolved.valid) {
+    if (analysisStats.value) analysisStats.value = null
+    reportError('data', resolved.error ?? '星座分析配置无效')
+    return null
+  }
+  const key = JSON.stringify({ cfg: props.analysis, opt: resolved.options })
+  if (analyzer && analyzerKey === key) return analyzer
+  if (analyzerKey !== key) {
+    buffer.clear()
+    pointCount.value = 0
+    sampleCache = null
+    resetAutoRange()
+  }
+  analyzer = new ConstellationAnalyzer(resolved.options)
+  analyzerKey = key
+  analysisStats.value = null
+  return analyzer
+}
+
 function appendData(raw: unknown, meta?: ConstellationAppendMeta): void {
   const p = normalize(raw)
   if (!p) {
@@ -527,6 +560,17 @@ function appendData(raw: unknown, meta?: ConstellationAppendMeta): void {
     return
   }
   const clean = sanitizePair(p.i, p.q)
+  const an = ensureAnalyzer(meta)
+  if (props.analysis) {
+    if (!an) return
+    const result = an.process(clean.i, clean.q)
+    analysisStats.value = result.stats
+    if (result.symbols.i.length > 0) buffer.append(result.symbols.i, result.symbols.q)
+    pointCount.value = buffer.length
+    sampleCache = null
+    schedule()
+    return
+  }
   const base = derotate(clean, meta)
   const sps = Number(meta?.samplesPerSymbol ?? props.samplesPerSymbol ?? 0)
   if (props.symbolStrobe && sps > 1) {
@@ -569,12 +613,19 @@ function derotate(
   return { i: out.i, q: out.q }
 }
 
+function resetAnalysis(): void {
+  analyzer = null
+  analyzerKey = ''
+  analysisStats.value = null
+}
+
 function setData(raw: unknown, meta?: ConstellationAppendMeta): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
   derotPhase = 0
   strobePhase = 0
+  resetAnalysis()
   resetAutoRange()
   appendData(raw, meta)
 }
@@ -587,6 +638,7 @@ function clear(): void {
   derotCarrier = 0
   derotRate = 0
   strobePhase = 0
+  resetAnalysis()
   resetAutoRange()
   schedule()
 }
@@ -841,11 +893,25 @@ watch([() => props.carrierHz, () => props.sampleRate], () => {
   derotPhase = 0
   derotCarrier = 0
   derotRate = 0
+  resetAnalysis()
   schedule()
 })
 watch([() => props.symbolStrobe, () => props.samplesPerSymbol], () => {
   strobePhase = 0
+  resetAnalysis()
 })
+watch(
+  () => JSON.stringify(props.analysis ?? null),
+  (a, b) => {
+    if (a === b) return
+    resetAnalysis()
+    buffer.clear()
+    pointCount.value = 0
+    sampleCache = null
+    resetAutoRange()
+    schedule()
+  }
+)
 watch(
   () => props.viewport,
   (v) => {
@@ -890,6 +956,7 @@ defineExpose({
   clear,
   getLength: () => buffer.length,
   getStats,
+  getAnalysisStats: () => (analysisStats.value ? { ...analysisStats.value } : null),
   getView,
   setViewport,
   resetView,
@@ -933,6 +1000,11 @@ defineExpose({
     <div v-if="props.showInfo !== false" class="sig-tag">
       {{ tr('constellation.points', { n: pointCount }) }} · {{ backendLabel }}
     </div>
+    <div v-if="props.showInfo !== false && analysisStats?.measured" class="sig-analysis-tag">
+      {{ tr('constellation.evm') }} {{ analysisStats.evmPercent.toFixed(2) }}% ·
+      {{ tr('constellation.mer') }} {{ analysisStats.merDb.toFixed(1) }} dB ·
+      {{ tr('constellation.symbolsShort', { n: analysisStats.symbolCount }) }}
+    </div>
     <div v-if="unsupported" class="sig-unsupported">
       {{ tr('constellation.webglUnsupported') }}
     </div>
@@ -972,6 +1044,17 @@ defineExpose({
 .sig-tag {
   position: absolute;
   right: 10px;
+  top: 8px;
+  font-size: 11px;
+  color: var(--sig-text);
+  background: color-mix(in srgb, var(--sig-bg) 80%, transparent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  pointer-events: none;
+}
+.sig-analysis-tag {
+  position: absolute;
+  left: 58px;
   top: 8px;
   font-size: 11px;
   color: var(--sig-text);

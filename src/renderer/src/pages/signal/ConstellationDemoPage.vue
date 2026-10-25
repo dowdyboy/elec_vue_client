@@ -14,7 +14,13 @@ import {
   useMessage
 } from 'naive-ui'
 import ConstellationChart from '@components/signal/ConstellationChart.vue'
-import type { ConstellationStats, Theme } from '@components/signal'
+import type {
+  ConstellationAnalysisConfig,
+  ConstellationAnalysisStats,
+  ConstellationModulation,
+  ConstellationStats,
+  Theme
+} from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
 
 const message = useMessage()
@@ -28,12 +34,34 @@ const showGrid = ref(true)
 const hasData = ref(false)
 const points = ref(0)
 const stats = ref<ConstellationStats | null>(null)
+const analysisStats = ref<ConstellationAnalysisStats | null>(null)
 const backend = ref('-')
 const sourceMode = ref<'real' | 'complex'>('real')
 const sourceWaveform = ref('')
-const symbolStrobe = ref(true)
+const analysisOn = ref(true)
+const analysisMod = ref<ConstellationModulation>('QPSK')
+const autoCarrier = ref(true)
+const autoSymbolTiming = ref(true)
 const samplesPerSymbol = ref(16)
-const effectiveStrobe = computed(() => symbolStrobe.value && sourceWaveform.value === 'digital')
+const sampleRateHz = ref(0)
+const carrierHz = ref(0)
+const analysisConfig = computed<ConstellationAnalysisConfig | undefined>(() => {
+  if (
+    !analysisOn.value ||
+    sourceWaveform.value !== 'digital' ||
+    sourceMode.value !== 'complex' ||
+    sampleRateHz.value <= 0
+  )
+    return undefined
+  return {
+    modulation: analysisMod.value,
+    sampleRate: sampleRateHz.value,
+    centerFrequencyHz: carrierHz.value,
+    samplesPerSymbol: samplesPerSymbol.value,
+    autoCarrier: autoCarrier.value,
+    autoSymbolTiming: autoSymbolTiming.value
+  }
+})
 const oneDimensional = computed(() => hasData.value && !!stats.value && stats.value.qRms < 1e-9)
 let lastStatsAt = 0
 
@@ -44,11 +72,10 @@ sig.onIq((iq, frame) => {
   if (frame.waveform) sourceWaveform.value = frame.waveform
   if (typeof frame.samplesPerSymbol === 'number' && frame.samplesPerSymbol > 0)
     samplesPerSymbol.value = frame.samplesPerSymbol
-  chartRef.value?.appendData(iq, {
-    sampleRate: frame.sampleRate,
-    carrierHz: frame.outputMode === 'complex' ? frame.carrierHz : 0,
-    samplesPerSymbol: frame.samplesPerSymbol
-  })
+  if (typeof frame.sampleRate === 'number' && frame.sampleRate > 0)
+    sampleRateHz.value = frame.sampleRate
+  if (typeof frame.carrierHz === 'number' && frame.carrierHz > 0) carrierHz.value = frame.carrierHz
+  chartRef.value?.appendData(iq)
   hasData.value = true
   points.value = chartRef.value?.getLength() ?? points.value
   const now = performance.now()
@@ -56,6 +83,7 @@ sig.onIq((iq, frame) => {
     lastStatsAt = now
     const st = chartRef.value?.getStats()
     if (st) stats.value = st
+    analysisStats.value = chartRef.value?.getAnalysisStats() ?? null
     backend.value = chartRef.value?.getBackend() ?? '-'
   }
 })
@@ -92,20 +120,13 @@ onUnmounted(() => {
   lastStatsAt = 0
 })
 
-watch(symbolStrobe, () => {
+// 分析仪配置切换（纯显示/调制/自动估计）时清空旧点云，避免两套语义混在一起
+watch(analysisConfig, () => {
   chartRef.value?.clear()
   hasData.value = false
   points.value = 0
   stats.value = null
-})
-
-// 首帧 waveform 元数据到达后才确定是否抽点；清掉此前可能混入的原始采样
-watch(effectiveStrobe, (v) => {
-  if (!v) return
-  chartRef.value?.clear()
-  hasData.value = false
-  points.value = 0
-  stats.value = null
+  analysisStats.value = null
 })
 </script>
 
@@ -145,12 +166,28 @@ watch(effectiveStrobe, (v) => {
         <NSwitch v-model:value="showAxis" size="small" />
         <span>网格</span>
         <NSwitch v-model:value="showGrid" size="small" />
-        <span>符号抽点</span>
+        <span>分析仪</span>
         <NSwitch
-          v-model:value="symbolStrobe"
+          v-model:value="analysisOn"
           size="small"
-          :disabled="sourceWaveform !== 'digital'"
+          :disabled="sourceWaveform !== 'digital' || sourceMode !== 'complex'"
         />
+        <span>调制</span>
+        <NSelect
+          v-model:value="analysisMod"
+          size="small"
+          :disabled="!analysisConfig"
+          :options="[
+            { label: 'BPSK', value: 'BPSK' },
+            { label: 'QPSK', value: 'QPSK' },
+            { label: '16QAM', value: '16QAM' }
+          ]"
+          style="width: 92px"
+        />
+        <span>自动载波</span>
+        <NSwitch v-model:value="autoCarrier" size="small" :disabled="!analysisConfig" />
+        <span>自动定时</span>
+        <NSwitch v-model:value="autoSymbolTiming" size="small" :disabled="!analysisConfig" />
         <NButton size="small" @click="onResetView">自适应</NButton>
         <NButton size="small" @click="onExportPNG">导出 PNG</NButton>
         <NButton size="small" @click="onExportCSV">导出 CSV</NButton>
@@ -161,12 +198,15 @@ watch(effectiveStrobe, (v) => {
           {{ sourceMode === 'complex' ? '复数 IQ' : '实数源（Q=0）' }}
         </NTag>
         <NTag size="small" :bordered="false">
-          {{ effectiveStrobe ? '符号判决点' : '全部采样' }}
+          {{ analysisConfig ? `${analysisMod} 分析仪` : '纯显示' }}
+        </NTag>
+        <NTag v-if="analysisConfig" size="small" :bordered="false">
+          {{ carrierHz }} Hz · {{ samplesPerSymbol }} sps
         </NTag>
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
-        高 SNR 只去噪声，不会去掉 RRC 符号过渡轨迹；开启「符号抽点」按
-        {{ samplesPerSymbol }} 点/符号只显示判决点。滚轮缩放、拖拽平移、双击恢复自动量程。
+        纯显示：IQ 点原样绘制，不做载波/符号/EVM；分析仪：中心频率下变频 + 可选自动载波/定时 +
+        判决点/EVM。高 SNR 不会去掉 RRC 过渡轨迹，分析仪只画判决点。
       </div>
       <NAlert
         v-if="oneDimensional"
@@ -202,8 +242,7 @@ watch(effectiveStrobe, (v) => {
           :alpha="alpha"
           :axis="showAxis"
           :grid="showGrid"
-          :symbol-strobe="effectiveStrobe"
-          :samples-per-symbol="samplesPerSymbol"
+          :analysis="analysisConfig"
           :height="480"
         />
         <NEmpty
@@ -220,6 +259,37 @@ watch(effectiveStrobe, (v) => {
           "
         />
       </div>
+    </NCard>
+
+    <NCard v-if="analysisStats?.measured" title="星座分析" style="margin-top: 16px" size="small">
+      <NDescriptions :column="4" size="small" label-placement="left">
+        <NDescriptionsItem label="EVM"
+          >{{ analysisStats.evmPercent.toFixed(2) }} %</NDescriptionsItem
+        >
+        <NDescriptionsItem label="MER">{{ analysisStats.merDb.toFixed(2) }} dB</NDescriptionsItem>
+        <NDescriptionsItem label="幅度误差">
+          {{ (analysisStats.magnitudeErrorRms * 100).toFixed(2) }} %
+        </NDescriptionsItem>
+        <NDescriptionsItem label="相位误差">
+          {{ analysisStats.phaseErrorRmsDeg.toFixed(2) }}°
+        </NDescriptionsItem>
+        <NDescriptionsItem label="IQ 增益不平衡">
+          {{ analysisStats.iqGainImbalanceDb.toFixed(2) }} dB
+        </NDescriptionsItem>
+        <NDescriptionsItem label="IQ 相位不平衡">
+          {{ analysisStats.iqPhaseImbalanceDeg.toFixed(2) }}°
+        </NDescriptionsItem>
+        <NDescriptionsItem label="载波残差">
+          {{ analysisStats.carrierOffsetHz.toFixed(2) }} Hz
+        </NDescriptionsItem>
+        <NDescriptionsItem label="定时相位">
+          {{ analysisStats.symbolTimingOffset.toFixed(3) }} sps
+        </NDescriptionsItem>
+        <NDescriptionsItem label="符号率">
+          {{ analysisStats.symbolRateHz.toFixed(2) }} Bd
+        </NDescriptionsItem>
+        <NDescriptionsItem label="统计符号">{{ analysisStats.symbolCount }}</NDescriptionsItem>
+      </NDescriptions>
     </NCard>
 
     <NCard v-if="stats" title="统计" style="margin-top: 16px" size="small">

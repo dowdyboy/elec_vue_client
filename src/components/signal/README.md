@@ -157,35 +157,46 @@ Mock 配置按专业源拆分：
 - `spectrumMode` 是**分析模式**，只决定单边/复谱 FFT，不改变源；Real 源做复谱分析自然左右对称，Complex 源做 real 分析只是 I 投影；
 - UI 的「输出模式/波形」在信号源区，「分析模式（FFT）」在处理区；真实源 IQ 图 Q=0 是正常现象。
 
-### 星座图
+### 星座图 / 星座分析仪
+
+纯显示（默认，不传 `analysis`）：
+
+```vue
+<ConstellationChart ref="const" theme="dark" :point-size="2" :height="420" />
+```
+
+```ts
+const.value?.appendData({ i, q }) // 调用方给什么就画什么
+const.value?.getStats()
+```
+
+可选分析仪（传 `analysis` 才启用）：
 
 ```vue
 <ConstellationChart
   ref="const"
-  theme="dark"
-  :point-size="2"
-  :alpha="0.7"
-  :symbol-strobe="true"
-  :samples-per-symbol="16"
-  :height="420"
+  :analysis="{
+    modulation: 'QPSK',
+    sampleRate: 8192,
+    centerFrequencyHz: 512,
+    samplesPerSymbol: 16,
+    autoCarrier: true,
+    autoSymbolTiming: true
+  }"
+  :height="480"
 />
 ```
 
 ```ts
-const.value?.appendData(iq, {
-  sampleRate: 8192,
-  carrierHz: 512,
-  samplesPerSymbol: 16
-}) // 带载波 IQ：下变频 + 判决点抽点
-const.value?.resetView()
-const.value?.getStats()
+const.value?.appendData(rawIq)
+const.value?.getAnalysisStats() // EVM/MER/误差/IQ 不平衡/频偏/定时
 ```
 
+- 纯显示不强制载波/符号/EVM 参数；组件只画点、轴、量程、统计；
+- 分析仪模式内部做 NCO 下变频、残余载波估计、符号定时、判决点与 EVM/MER；
+- 旧 `carrierHz/symbolStrobe/samplesPerSymbol` 便捷路径仍兼容；
 - 正方形 I/Q 视口 + 自动/手动量程，滚轮缩放/拖拽平移/双击复位；
-- 带载波 IQ 传 `carrierHz/sampleRate`，组件按帧连续乘 `e^{-j2πf n/Fs}` 到基带；
-- `symbolStrobe` + `samplesPerSymbol` 只画符号判决点；关闭时画全部采样，会看到 RRC 过渡轨迹；
-- WebGL2 Points 优先，Canvas2D 散点自动降级；
-- 轴/网格/十字游标、PNG/CSV、`viewportChange`/`exported` 事件；
+- WebGL2 Points 优先，Canvas2D 散点自动降级；主题/i18n/PNG/CSV 同其它组件；
 - 详细 API/限制见 [SIG-04](../../../docs/SIG-04-星座图.md)。
 
 ### 时频瀑布
@@ -329,7 +340,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 171 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 178 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -367,4 +378,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '1.7.1'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '1.8.0'`（公共 API 变更时按语义化版本维护）。

@@ -605,6 +605,34 @@ export interface SpectrogramVisibleData {
 // ── 星座 ──
 export type ConstellationNormalized = IqData | Float32Array
 export type ConstellationAdapter = (raw: RawInput) => ConstellationNormalized | null
+export type ConstellationModulation = 'BPSK' | 'QPSK' | '16QAM'
+/**
+ * 星座分析仪配置（可选）：
+ * - 不传 analysis：组件保持纯显示，只画调用方给的点，不做 NCO/符号同步/EVM
+ * - 传入：组件对原始 IQ 做中心频率下变频、载波恢复、符号定时、判决点和 EVM/MER
+ * - 所有字段都有安全默认；只传 analysis:{} 也能按 QPSK 默认分析
+ */
+export interface ConstellationAnalysisConfig {
+  modulation?: ConstellationModulation
+  /** 原始 IQ 采样率；缺省回退 props.sampleRate */
+  sampleRate?: number
+  /** 分析仪中心频率（下变频）；缺省 0=基带 */
+  centerFrequencyHz?: number
+  /** 已知残余频偏（Hz）；autoCarrier 会叠加估计值 */
+  frequencyOffsetHz?: number
+  /** 已知相位偏移（deg） */
+  phaseOffsetDeg?: number
+  /** 符号率；与 samplesPerSymbol 二选一 */
+  symbolRateHz?: number
+  /** 每符号采样数；缺省回退 props.samplesPerSymbol，再缺省 1 */
+  samplesPerSymbol?: number
+  /** 自动估计残余载波频偏（BPSK/QPSK 有效；16QAM 用 4 次方近似） */
+  autoCarrier?: boolean
+  /** 自动搜索符号定时相位（按 EVM 最小） */
+  autoSymbolTiming?: boolean
+  /** 用于估计的符号数（默认 512） */
+  estimatorSymbols?: number
+}
 /** 追加帧元数据：带载波 IQ 时用于数字下变频；缺省视为基带 */
 export interface ConstellationAppendMeta {
   sampleRate?: number
@@ -616,6 +644,11 @@ export interface ConstellationAppendMeta {
 export interface ConstellationProps extends ChartBaseProps {
   pointSize?: number
   alpha?: number
+  /**
+   * 星座分析仪配置。缺省=纯显示路径：
+   * appendData 的 IQ 被原样展示，不启用载波/符号/EVM 分析。
+   */
+  analysis?: ConstellationAnalysisConfig
   /** 默认源采样率（appendData meta 可覆盖） */
   sampleRate?: number
   /** 默认载波频率 Hz：用于把带载波 IQ 下变频到基带；0/缺省=按基带处理 */
@@ -671,6 +704,30 @@ export interface ConstellationStats {
   powerDbfs: number
   /** 最大 |I+jQ| */
   peak: number
+}
+
+export interface ConstellationAnalysisStats {
+  /** 是否已产生过有效判决点 */
+  measured: boolean
+  modulation: ConstellationModulation
+  /** 当前符号率/每符号采样数（分析仪设置） */
+  symbolRateHz: number
+  samplesPerSymbol: number
+  /** 自动估计/手动叠加后的残余频偏 */
+  carrierOffsetHz: number
+  /** 自动搜索/手动的定时相位（采样点） */
+  symbolTimingOffset: number
+  /** 参与统计的符号数（最近一段） */
+  symbolCount: number
+  /** 归一化 EVM（0..1） */
+  evmRms: number
+  evmPercent: number
+  /** MER = -20log10(EVM)，EVM=0 时 Inf 限制为 120dB */
+  merDb: number
+  magnitudeErrorRms: number
+  phaseErrorRmsDeg: number
+  iqGainImbalanceDb: number
+  iqPhaseImbalanceDeg: number
 }
 
 // ── 内部 ──
