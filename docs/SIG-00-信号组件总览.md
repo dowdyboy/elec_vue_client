@@ -1,4 +1,4 @@
-# SIG-00 - 信号组件总览（可复用高性能）
+﻿# SIG-00 - 信号组件总览（可复用高性能）
 
 > 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**4 个组件均已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建、像素回归）。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频/星座默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
@@ -138,7 +138,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 165 例（含 real/complex 频谱/瀑布/星座）
+npm run typecheck && npm run lint && npm test   # 当前 167 例（含 real/complex 频谱/瀑布/星座）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

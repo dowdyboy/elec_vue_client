@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  ConstellationAutoRange,
   ConstellationBuffer,
   autoConstellationRange,
   computeConstellationStats,
@@ -51,6 +52,37 @@ describe('autoConstellationRange / equalizeRange', () => {
     const r2 = equalizeRange({ min: -2, max: 2 }, { min: -1, max: 1 }, 0.5)
     expect(r2.x.max - r2.x.min).toBeCloseTo(4)
     expect(r2.y.max - r2.y.min).toBeCloseTo(8)
+  })
+})
+
+describe('ConstellationAutoRange（自动量程稳定性）', () => {
+  it('扩张即时，收窄需滞回+驻留，边界附近不逐帧翻转', () => {
+    const ar = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 3 })
+    const a = ar.resolve({ min: -1, max: 1 })
+    expect(a).toEqual({ min: -1, max: 1 })
+    const b = ar.resolve({ min: -3, max: 3 })
+    expect(b).toEqual({ min: -3, max: 3 })
+    let changes = 0
+    let prev = b
+    for (let i = 0; i < 30; i++) {
+      const r = ar.resolve({ min: -2.9, max: 2.9 })
+      if (r.min !== prev.min || r.max !== prev.max) changes++
+      prev = r
+    }
+    expect(changes).toBe(0)
+  })
+
+  it('持续变小超过驻留后收窄；reset 后重新吸附', () => {
+    const ar = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 3 })
+    ar.resolve({ min: -3, max: 3 })
+    let r = ar.resolve({ min: -1, max: 1 })
+    expect(r.max).toBe(3) // 第一帧仍驻留
+    r = ar.resolve({ min: -1, max: 1 })
+    expect(r.max).toBe(3)
+    r = ar.resolve({ min: -1, max: 1 })
+    expect(r.max).toBe(1)
+    ar.reset()
+    expect(ar.resolve({ min: -0.5, max: 0.5 })).toEqual({ min: -0.5, max: 0.5 })
   })
 })
 

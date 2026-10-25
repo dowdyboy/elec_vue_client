@@ -20,6 +20,7 @@ import { useGlChart } from './composables/useGlChart'
 import { translate, type ChartMessageKey } from './core/i18n'
 import { niceTicks } from './core/axis'
 import {
+  ConstellationAutoRange,
   ConstellationBuffer,
   autoConstellationRange,
   computeConstellationStats,
@@ -77,6 +78,7 @@ const backendLabel = computed(() =>
 )
 
 const buffer = new ConstellationBuffer(props.maxPoints)
+const stableAuto = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 180 })
 let renderer: PointsRenderer | null = null
 let canvasRenderer: ConstellationCanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
@@ -127,9 +129,15 @@ function allViewport(v: ConstellationProps['viewport']): boolean {
 function autoRange(): ConstellationRange {
   if (autoCache.version === buffer.version) return autoCache.range
   const sample = sampleConstellation(buffer.i, buffer.q, buffer.length, 40_000)
-  const range = autoConstellationRange(sample.i, sample.q, sample.count)
+  const raw = autoConstellationRange(sample.i, sample.q, sample.count)
+  const range = stableAuto.resolve(raw)
   autoCache = { version: buffer.version, range }
   return range
+}
+
+function resetAutoRange(): void {
+  stableAuto.reset()
+  autoCache = { version: -1, range: { min: -1, max: 1 } }
 }
 
 function resolveView(plotAspect: number): ConstellationViewInfo {
@@ -520,6 +528,7 @@ function setData(raw: unknown): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
+  resetAutoRange()
   appendData(raw)
 }
 
@@ -527,6 +536,7 @@ function clear(): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
+  resetAutoRange()
   schedule()
 }
 
@@ -545,6 +555,7 @@ function getView(): ConstellationViewInfo {
 function setViewport(v: ConstellationProps['viewport']): void {
   if (!v || v.autoScale === true || !allViewport(v)) {
     view.auto = true
+    resetAutoRange()
   } else {
     view.auto = false
     view.xMin = v.xMin as number
@@ -557,6 +568,7 @@ function setViewport(v: ConstellationProps['viewport']): void {
 
 function resetView(): void {
   view.auto = true
+  resetAutoRange()
   schedule()
   emit('viewportChange', getView())
 }
@@ -770,6 +782,7 @@ watch(
     buffer.setMaxPoints(v)
     pointCount.value = buffer.length
     sampleCache = null
+    resetAutoRange()
     schedule()
   }
 )
@@ -778,6 +791,7 @@ watch(
   (v) => {
     if (!v || v.autoScale === true || !allViewport(v)) {
       view.auto = true
+      resetAutoRange()
     } else {
       view.auto = false
       view.xMin = v.xMin as number

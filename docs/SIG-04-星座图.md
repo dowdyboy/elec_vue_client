@@ -59,7 +59,7 @@ const adapter = (raw: unknown) => {
 ## 三、坐标与量程
 
 - **正方形绘图区**：星座图始终使用正方形 I/Q 视口，保证单位长度一致，不会在宽画布上被拉成椭圆，也不会把 QPSK 四簇压到中心；
-- **自动量程**：以 `(0,0)` 为中心，按 `max(|I|,|Q|)` + 12% 余量，并向外吸附到 1/2/5×10^k 刻度档位；
+- **自动量程**：以 `(0,0)` 为中心，按 `max(|I|,|Q|)` + 12% 余量，并向外吸附到 1/2/5×10^k 刻度档位；扩张即时，收窄带 **20% 滞回 + 180 帧驻留**，随机 QPSK/QAM 峰值不会让网格逐帧切档；
 - **手动量程**：`viewport: { xMin,xMax,yMin,yMax }`；若范围不是正方形，内部按较大跨度等比扩展（保持中心）；
 - **自适应**：`resetView()` / 双击 / `setViewport({ autoScale: true })`；
 - **缩放/平移**：滚轮以光标为锚点缩放，拖拽平移；交互后自动切到手动量程，`viewportChange` 事件回传；
@@ -114,19 +114,21 @@ const adapter = (raw: unknown) => {
 ## 七、限制与后续
 
 - 输入是**原始 IQ**，包含符号过渡轨迹；要显示判决点需宿主做符号同步/最佳采样点抽取（组件提供抽点，不做定时恢复）；
+- **Real 输出 IQ 的 Q 恒为 0**：QPSK/QAM 星座会退化成一条 I 轴线；观察星座请在 Mock 配置切到「复数 IQ 输出」；
 - 暂未提供 EVM/幅度误差/相位误差/IQ 不平衡等**参考星座**测量；
 - 暂未提供密度热力图（density）和 2D 直方图；当前为点云 + alpha；
 - 星座的“中心/量程”是显示域，不改变原始 IQ 数值。
 
 ## 八、测试
 
-`src/components/signal/core/constellation.test.ts`（7）：
+`src/components/signal/core/constellation.test.ts`（9）：
 
 - 环形缓冲追加/淘汰/`setMaxPoints`；
 - 对称自动量程/全零回退；
+- 自动量程扩张即时、收窄滞回+驻留、边界不翻转；
 - 宽/高画布的等比扩展；
 - 抽点数量与不修改原缓冲；
 - I/Q 极值/RMS/功率/峰值；
 - 刻度格式。
 
-总测试：`npm test` 当前 **165** 例；视觉回归 `npm run test:visual` 双后端。
+总测试：`npm test` 当前 **167** 例；视觉回归 `npm run test:visual` 双后端。

@@ -112,6 +112,62 @@ export function autoConstellationRange(
   return { min: -m, max: m }
 }
 
+export interface ConstellationAutoRangeOptions {
+  /** 收窄滞回比例（默认 0.2；候选跨度小于当前跨度 80% 才考虑收窄） */
+  hysteresis?: number
+  /** 收窄驻留帧数（默认 180；随机调制峰值边界不来回切档） */
+  holdFrames?: number
+}
+
+/**
+ * 星座自动量程稳定器：
+ * - 扩张即时（不裁切）
+ * - 收窄必须连续满足滞回 + 驻留；随机 QAM/QPSK 极值在档位边界附近不会逐帧翻转
+ * - 自身不做逐帧缓动，显示范围只在换档时离散变化
+ */
+export class ConstellationAutoRange {
+  private cur: ConstellationRange | null = null
+  private streak = 0
+  private readonly hysteresis: number
+  private readonly holdFrames: number
+
+  constructor(opts: ConstellationAutoRangeOptions = {}) {
+    this.hysteresis = Math.min(0.8, Math.max(0, opts.hysteresis ?? 0.2))
+    this.holdFrames = Math.max(1, Math.round(opts.holdFrames ?? 180))
+  }
+
+  reset(): void {
+    this.cur = null
+    this.streak = 0
+  }
+
+  resolve(target: ConstellationRange): ConstellationRange {
+    if (!(target.max > target.min) || !isFinite(target.min) || !isFinite(target.max)) {
+      return this.cur ? { ...this.cur } : { min: -1, max: 1 }
+    }
+    if (!this.cur) {
+      this.cur = { ...target }
+      this.streak = 0
+      return { ...this.cur }
+    }
+    const curSpan = this.cur.max - this.cur.min
+    const targetSpan = target.max - target.min
+    if (targetSpan > curSpan) {
+      this.cur = { ...target }
+      this.streak = 0
+    } else if (targetSpan <= curSpan * (1 - this.hysteresis)) {
+      this.streak++
+      if (this.streak >= this.holdFrames) {
+        this.cur = { ...target }
+        this.streak = 0
+      }
+    } else {
+      this.streak = 0
+    }
+    return { ...this.cur }
+  }
+}
+
 /**
  * 让 I/Q 的单位长度在屏幕上一致：
  * 绘图区越宽，x 范围同比放宽（或 y 范围放宽），避免星座被拉成椭圆。

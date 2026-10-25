@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import {
+  NAlert,
   NButton,
   NCard,
   NDescriptions,
@@ -28,11 +29,14 @@ const hasData = ref(false)
 const points = ref(0)
 const stats = ref<ConstellationStats | null>(null)
 const backend = ref('-')
+const sourceMode = ref<'real' | 'complex'>('real')
+const oneDimensional = computed(() => hasData.value && !!stats.value && stats.value.qRms < 1e-9)
 let lastStatsAt = 0
 
 const sig = useSignalAnalysis({ autoSubscribe: true })
 
-sig.onIq((iq) => {
+sig.onIq((iq, frame) => {
+  if (frame.outputMode) sourceMode.value = frame.outputMode
   chartRef.value?.appendData(iq)
   hasData.value = true
   points.value = chartRef.value?.getLength() ?? points.value
@@ -108,11 +112,23 @@ onUnmounted(() => {
         <NButton size="small" @click="onClear">清空</NButton>
         <NTag size="small" :bordered="false">{{ backend }}</NTag>
         <NTag size="small" :bordered="false">{{ points }} 点</NTag>
+        <NTag size="small" :bordered="false">
+          {{ sourceMode === 'complex' ? '复数 IQ' : '实数源（Q=0）' }}
+        </NTag>
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
         滚轮缩放、拖拽平移、双击恢复自动量程；QPSK 的原始 IQ
         含符号过渡轨迹，若只想看判决点，需要在宿主侧做符号同步/抽点。
       </div>
+      <NAlert
+        v-if="oneDimensional"
+        type="warning"
+        title="当前只有 I 路（Q≈0）"
+        style="margin-top: 8px"
+      >
+        Mock 当前是「实数输出」，IQ 捕获 Q=0，星座会退化成一条 I 轴线。要看 QPSK/QAM
+        星座，请到「Mock 配置」把输出模式改为「复数 IQ 输出」。
+      </NAlert>
       <div
         v-if="!hasData && !sig.remoteError.value"
         style="color: #18a058; font-size: 12px; margin-top: 6px"
