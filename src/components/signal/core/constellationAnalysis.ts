@@ -118,7 +118,7 @@ export function referencePoints(mod: ConstellationModulation): RefPoint[] {
   ]
 }
 
-/** 由 z^M 相邻自相关估计载波/残余频偏（仅作粗估计；分析仪内部改用判决点相位斜率） */
+/** 由 z^M 相邻自相关估计载波/残余频偏（独立粗估工具；分析仪内部使用 EVM 搜索） */
 export function estimateCarrierOffset(
   i: Float32Array,
   q: Float32Array,
@@ -366,7 +366,7 @@ function rotateIQ(
 /**
  * 有状态星座分析仪：
  * - center/frequencyOffset 通过 NCO 连续下变频
- * - autoCarrier 在首帧用 z^M 自相关估计残余频偏
+ * - autoCarrier 在首帧用判决点 EVM 搜索估计残余频偏
  * - autoSymbolTiming 首帧搜索最小 EVM 定时相位
  * - 指标在最近 estimatorSymbols 个判决点上计算
  */
@@ -431,7 +431,7 @@ export class ConstellationAnalyzer {
     const center = opt.centerFrequencyHz
     if (opt.autoCarrier && !this.carrierEstimated) {
       // 第一遍：用标称中心频率 + 手动频偏粗抽判决点，再用判决点估计残余频偏。
-      // RRC 过渡点的相位不是理想 QPSK，直接用全采样 z^M 估计会被拉偏。
+      // RRC 过渡点的相位不是理想 QPSK，直接用全采样 z^M 估计会被拉偏；改用判决点 EVM 搜索。
       const probe = derotateIQ(i, q, center + opt.frequencyOffsetHz, opt.sampleRate, 0)
       const probePhased = rotateIQ(probe.i, probe.q, (opt.phaseOffsetDeg * Math.PI) / 180)
       const probeTiming = opt.autoSymbolTiming

@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频 / 星座）集成指南
+# 信号组件（IQ / 频谱 / 时频 / 星座）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -27,8 +27,8 @@ node scripts/copy-signal.mjs ../my-host-app
 import { IqChart, SpectrumChart, SpectrogramChart, ConstellationChart, iqAdapters } from '@/components/signal'
 ```
 
-> 公共入口会引入 4 个组件；只打包 IQ/频谱/时频时可直接深路径导入
-> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue`，由打包器做 tree-shaking。
+> 公共入口会引入 4 个组件；只打包部分组件时可直接深路径导入
+> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue`，由打包器做 tree-shaking。
 
 ### 方式 B：全局注册
 
