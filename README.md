@@ -54,6 +54,7 @@ IQ 时域/频谱/时频/星座 4 个组件已按“可被其他上位机集成�
 - int16/float64/平面/字节序适配器，程序化 API（follow/paused、标记、区间测量、峰值、统计/可见数据、星座统计/导出）
 - **real 单边 0~Fs/2 与 complex 带符号复谱 -Fs/2~+Fs/2** 双模式（`spectrumMode`/`freqStartHz`/`binHz`/`fftShift`）
 - Mock 专业源：`outputMode` real/complex、CW/AM/FM/Pulse/Two-tone/Noise/Digital、AWGN 与 IQ 镜像；源输出域与分析域独立
+- 4 组 `*DisplayOnly` 最小显示预设：IQ/频谱/时频/星座可只当普通显示组件使用
 - 星座图：默认纯显示；可选星座分析仪（NCO/残余载波/符号定时/EVM/MER/IQ 不平衡），正方形 I/Q 视口、自动/手动量程、统计与 PNG/CSV
 - 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停

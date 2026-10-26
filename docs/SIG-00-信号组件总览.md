@@ -3,6 +3,8 @@
 > 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**4 个组件均已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建、像素回归）。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频/星座默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
 > 所有组件都保留**最简使用路径**：IQ 不启用触发、频谱只累计/显示迹线、时频只追加 dB 行、星座纯显示；触发、OBW/ACPR/迹线保持、EVM/载波/符号恢复等高级分析必须由调用方显式开启。组件不会因为没有传高级参数而拒绝工作。
+>
+> 公共入口提供 `iqDisplayOnly` / `spectrumDisplayOnly` / `spectrogramDisplayOnly` / `constellationDisplayOnly` 四组最小显示预设；`v-bind` 后仍可覆盖单项。2.0 起星座旧 `carrierHz/symbolStrobe` 隐式预处理路径已移除，唯一预处理入口是 `analysis`。
 
 > 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）按「专业源」模型重构：**源输出域**与**分析域**分离。
 >
@@ -140,7 +142,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 179 例（含 real/complex 频谱/瀑布/星座）
+npm run typecheck && npm run lint && npm test   # 当前 180 例（含 real/complex 频谱/瀑布/星座）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

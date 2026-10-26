@@ -614,7 +614,7 @@ export type ConstellationModulation = 'BPSK' | 'QPSK' | '16QAM'
  */
 export interface ConstellationAnalysisConfig {
   modulation?: ConstellationModulation
-  /** 原始 IQ 采样率；缺省回退 props.sampleRate */
+  /** 原始 IQ 采样率；必填 */
   sampleRate?: number
   /** 分析仪中心频率（下变频）；缺省 0=基带 */
   centerFrequencyHz?: number
@@ -624,22 +624,14 @@ export interface ConstellationAnalysisConfig {
   phaseOffsetDeg?: number
   /** 符号率；与 samplesPerSymbol 二选一 */
   symbolRateHz?: number
-  /** 每符号采样数；缺省回退 props.samplesPerSymbol，再缺省 1 */
+  /** 每符号采样数；与 symbolRateHz 二选一 */
   samplesPerSymbol?: number
   /** 自动估计残余载波频偏（BPSK/QPSK/16QAM：判决点 EVM 搜索；需中心频率大致对准） */
   autoCarrier?: boolean
   /** 自动搜索符号定时相位（按 EVM 最小） */
   autoSymbolTiming?: boolean
-  /** 用于估计的符号数（默认 512） */
+  /** 用于估计的符号数（默认 4096） */
   estimatorSymbols?: number
-}
-/** 追加帧元数据：带载波 IQ 时用于数字下变频；缺省视为基带 */
-export interface ConstellationAppendMeta {
-  sampleRate?: number
-  /** 源载波频率 Hz；提供后 appendData 内部先乘 e^{-j2πf n/Fs} 再去画 */
-  carrierHz?: number
-  /** 每符号采样点数：symbolStrobe 开启时用于抽判决点 */
-  samplesPerSymbol?: number
 }
 export interface ConstellationProps extends ChartBaseProps {
   pointSize?: number
@@ -649,14 +641,6 @@ export interface ConstellationProps extends ChartBaseProps {
    * appendData 的 IQ 被原样展示，不启用载波/符号/EVM 分析。
    */
   analysis?: ConstellationAnalysisConfig
-  /** 默认源采样率（appendData meta 可覆盖） */
-  sampleRate?: number
-  /** 默认载波频率 Hz：用于把带载波 IQ 下变频到基带；0/缺省=按基带处理 */
-  carrierHz?: number
-  /** 只画判决点：按 samplesPerSymbol 抽点，过滤 RRC 符号过渡轨迹（默认 false） */
-  symbolStrobe?: boolean
-  /** 每符号采样点数（symbolStrobe 开启时；appendData meta 可覆盖） */
-  samplesPerSymbol?: number
   /** 外观覆盖项，优先级：chartStyle > 主题预置 */
   chartStyle?: ChartStyle
   /** 可覆盖的界面文案（I/Q 轴标题等） */

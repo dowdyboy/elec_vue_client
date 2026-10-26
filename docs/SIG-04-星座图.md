@@ -1,8 +1,10 @@
-﻿# SIG-04 - 星座图 / 星座分析仪
+# SIG-04 - 星座图 / 星座分析仪
 
 > `src/components/signal/ConstellationChart.vue`
 >
 > 状态：**已完成库化，支持纯显示与星座分析仪双模式**。WebGL2 + Canvas2D、i18n、主题、PNG/CSV、像素回归。
+>
+> 最小显示：`import { constellationDisplayOnly }` 后 `v-bind="constellationDisplayOnly"`；不传 `analysis` 即不做载波/符号/EVM。
 
 ## 一、两种使用方式
 
@@ -50,7 +52,7 @@ const.value?.getAnalysisStats()
 
 `analysis` 缺省即纯显示；不会强制调用方使用任何高级功能。
 
-## 二、输入与兼容性
+## 二、输入
 
 支持：
 
@@ -59,12 +61,12 @@ const.value?.getAnalysisStats()
 - `adapter` 返回 `ConstellationNormalized`；
 - 未提供 adapter 或返回 `null` 时，按 `constellationAdapters`（与 IQ 共用）尝试 `jsonInterleaved` / `arrayBuffer` / `base64`。
 
-**兼容旧便捷参数**：
+**路径只有两条**：
 
-- `carrierHz` / `sampleRate` / `symbolStrobe` / `samplesPerSymbol` 仍可用；
-- 它们提供的是“显示前预处理”的便捷路径；
-- 一旦传入 `analysis`，分析仪路径优先，旧参数被忽略；
-- `appendData` 的 meta 可作为分析仪参数的缺省回退。
+- `analysis` 缺省：`appendData` 的点原样显示，不读取源载波/符号率，不做下变频/抽点/EVM；
+- 传 `analysis`：`appendData` 视为原始 IQ，按 `analysis` 的中心频率、采样率、符号率处理。
+
+旧版 `carrierHz` / `symbolStrobe` / `samplesPerSymbol` 便捷参数已在 **2.0.0 移除**；请统一用 `analysis`。
 
 非法数据在入口清洗为 0，不产生 NaN；adapter 异常会 `error` + `errorDetail({code:'adapter'})`。
 
@@ -73,12 +75,12 @@ const.value?.getAnalysisStats()
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `modulation` | `'QPSK'` | BPSK / QPSK / 16QAM 判决参考 |
-| `sampleRate` | props/meta | 原始 IQ 采样率；必须 >0 |
+| `sampleRate` | — | 原始 IQ 采样率；**必填且 >0** |
 | `centerFrequencyHz` | 0 | 分析仪中心频率（下变频） |
 | `frequencyOffsetHz` | 0 | 已知残余频偏（Hz） |
 | `phaseOffsetDeg` | 0 | 已知相位偏移 |
 | `symbolRateHz` | — | 符号率；与 `samplesPerSymbol` 二选一 |
-| `samplesPerSymbol` | props/meta | 每符号采样数 |
+| `samplesPerSymbol` | — | 每符号采样数；与 `symbolRateHz` 二选一 |
 | `autoCarrier` | false | 用判决点 EVM 搜索估计残余频偏（BPSK/QPSK/16QAM 通用） |
 | `autoSymbolTiming` | false | 搜索最小 EVM 的定时相位 |
 | `estimatorSymbols` | 4096 | 参与 EVM/不平衡统计的最近符号数 |
@@ -154,5 +156,6 @@ API：
 
 - `core/constellation.test.ts`（13）：缓冲、量程、抽点、去载波、符号抽点、统计；
 - `core/constellationAnalysis.test.ts`（8）：EVM、载波估计、定时、分析仪、配置校验；
-- 总测试：`npm test` 当前 **179** 例；
+- `core/presets.test.ts`（1）：四组最小显示预设；
+- 总测试：`npm test` 当前 **180** 例；
 - 视觉回归：`npm run test:visual` Canvas2D/WebGL2 双后端，1200×2000 页面。

@@ -4,7 +4,6 @@
  * - 默认纯显示：不传 analysis 时只接收/绘制调用方给的 IQ 点
  * - 可选分析仪：传 analysis 后对原始 IQ 做中心频率下变频、残余载波估计、
  *   符号定时、判决点和 EVM/MER（不强制调用方使用）
- * - 兼容旧便捷路径：carrierHz/sampleRate/symbolStrobe/samplesPerSymbol
  * - 渲染：WebGL2 POINTS 优先，Canvas2D 自动降级；轴/网格/游标在独立 2D 覆盖层
  * - 正方形 I/Q 映射，自动/手动量程、滚轮缩放、拖拽平移
  * - 统计：I/Q 极值/RMS、功率、峰值；PNG/CSV 导出；theme/chartStyle 主题配色
@@ -27,18 +26,15 @@ import {
   ConstellationBuffer,
   autoConstellationRange,
   computeConstellationStats,
-  derotateIQ,
   equalizeRange,
   formatConstellationTick,
   sampleConstellation,
-  strobeIQ,
   type ConstellationRange,
   type SampledConstellation
 } from './core/constellation'
 import { ConstellationAnalyzer, resolveAnalysisConfig } from './core/constellationAnalysis'
 import type {
   ConstellationAnalysisStats,
-  ConstellationAppendMeta,
   ConstellationProps,
   ConstellationStats,
   ConstellationViewInfo,
@@ -93,10 +89,6 @@ let analyzerKey = ''
 let renderer: PointsRenderer | null = null
 let canvasRenderer: ConstellationCanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
-let derotPhase = 0
-let derotCarrier = 0
-let derotRate = 0
-let strobePhase = 0
 
 interface ViewState {
   auto: boolean
@@ -527,13 +519,9 @@ function sanitizePair(i: Float32Array, q: Float32Array): { i: Float32Array; q: F
 }
 
 /** 仅在显式 analysis 配置下构造分析仪；纯显示路径不调用 */
-function ensureAnalyzer(meta?: ConstellationAppendMeta): ConstellationAnalyzer | null {
+function ensureAnalyzer(): ConstellationAnalyzer | null {
   if (!props.analysis) return null
-  const resolved = resolveAnalysisConfig(props.analysis, {
-    sampleRate: meta?.sampleRate ?? props.sampleRate,
-    carrierHz: meta?.carrierHz ?? props.carrierHz,
-    samplesPerSymbol: meta?.samplesPerSymbol ?? props.samplesPerSymbol
-  })
+  const resolved = resolveAnalysisConfig(props.analysis, {})
   if (!resolved.valid) {
     if (analysisStats.value) analysisStats.value = null
     reportError('data', resolved.error ?? '星座分析配置无效')
@@ -553,64 +541,26 @@ function ensureAnalyzer(meta?: ConstellationAppendMeta): ConstellationAnalyzer |
   return analyzer
 }
 
-function appendData(raw: unknown, meta?: ConstellationAppendMeta): void {
+function appendData(raw: unknown): void {
   const p = normalize(raw)
   if (!p) {
     reportError('adapter', tr('common.adapterNull'))
     return
   }
   const clean = sanitizePair(p.i, p.q)
-  const an = ensureAnalyzer(meta)
   if (props.analysis) {
+    const an = ensureAnalyzer()
     if (!an) return
     const result = an.process(clean.i, clean.q)
     analysisStats.value = result.stats
     if (result.symbols.i.length > 0) buffer.append(result.symbols.i, result.symbols.q)
-    pointCount.value = buffer.length
-    sampleCache = null
-    schedule()
-    return
-  }
-  const base = derotate(clean, meta)
-  const sps = Number(meta?.samplesPerSymbol ?? props.samplesPerSymbol ?? 0)
-  if (props.symbolStrobe && sps > 1) {
-    const st = strobeIQ(base.i, base.q, sps, strobePhase)
-    strobePhase = st.phase
-    buffer.append(st.i, st.q)
   } else {
-    strobePhase = 0
-    buffer.append(base.i, base.q)
+    // 纯显示：输入原样进入点缓冲，不做任何载波/符号处理
+    buffer.append(clean.i, clean.q)
   }
   pointCount.value = buffer.length
   sampleCache = null
   schedule()
-}
-
-/**
- * 带载波复数 IQ → 基带：乘 e^{-j2π f n/Fs}
- * - carrierHz 缺省/0 时按基带处理
- * - 相位跨帧连续；载波/采样率变化时重置相位
- */
-function derotate(
-  p: { i: Float32Array; q: Float32Array },
-  meta?: ConstellationAppendMeta
-): { i: Float32Array; q: Float32Array } {
-  const carrier = Number(meta?.carrierHz ?? props.carrierHz ?? 0)
-  const rate = Number(meta?.sampleRate ?? props.sampleRate ?? 0)
-  if (!(rate > 0) || !Number.isFinite(carrier) || Math.abs(carrier) < 1e-12) {
-    derotCarrier = 0
-    derotRate = 0
-    derotPhase = 0
-    return p
-  }
-  if (carrier !== derotCarrier || rate !== derotRate) {
-    derotCarrier = carrier
-    derotRate = rate
-    derotPhase = 0
-  }
-  const out = derotateIQ(p.i, p.q, carrier, rate, derotPhase)
-  derotPhase = out.phase
-  return { i: out.i, q: out.q }
 }
 
 function resetAnalysis(): void {
@@ -619,25 +569,19 @@ function resetAnalysis(): void {
   analysisStats.value = null
 }
 
-function setData(raw: unknown, meta?: ConstellationAppendMeta): void {
+function setData(raw: unknown): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
-  derotPhase = 0
-  strobePhase = 0
   resetAnalysis()
   resetAutoRange()
-  appendData(raw, meta)
+  appendData(raw)
 }
 
 function clear(): void {
   buffer.clear()
   pointCount.value = 0
   sampleCache = null
-  derotPhase = 0
-  derotCarrier = 0
-  derotRate = 0
-  strobePhase = 0
   resetAnalysis()
   resetAutoRange()
   schedule()
@@ -889,17 +833,6 @@ watch(
     schedule()
   }
 )
-watch([() => props.carrierHz, () => props.sampleRate], () => {
-  derotPhase = 0
-  derotCarrier = 0
-  derotRate = 0
-  resetAnalysis()
-  schedule()
-})
-watch([() => props.symbolStrobe, () => props.samplesPerSymbol], () => {
-  strobePhase = 0
-  resetAnalysis()
-})
 watch(
   () => JSON.stringify(props.analysis ?? null),
   (a, b) => {

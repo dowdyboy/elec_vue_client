@@ -1,6 +1,8 @@
 # SIG-02 - 频谱仪（SpectrumChart）
 
 > `src/components/signal/SpectrumChart.vue` 拷贝即用
+>
+> 最小显示：`import { spectrumDisplayOnly }` 后 `v-bind="spectrumDisplayOnly"`，固定量程并关闭信息栏/图例/菜单/峰值表/标记表/VBW/余辉；之后再覆盖单项即可。
 
 ## 一、快速使用
 
