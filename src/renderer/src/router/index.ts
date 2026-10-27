@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 路由配置：每个特性一个页面
  * meta.hidden 为 true 的页面不出现在侧边栏菜单（如子窗口演示页）
  * meta.group 用于侧边栏子菜单分组（如 "Electron 教学" / "TypeScript 惯用法"）
@@ -289,7 +289,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../pages/ts/TsElectronBridgePage.vue'),
     meta: { title: '与 Electron 结合', icon: '🔗', group: 'TypeScript 惯用法' }
   },
-  // ── 信号分析板块（垂直领域，4 组件 + Mock 配置，Mock 服务端自产数）──
+  // ── 信号分析板块（垂直领域，6 组件 + Mock 配置，Mock 服务端自产数）──
   {
     path: '/signal',
     name: 'signal-config',
@@ -319,6 +319,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'signal-constellation',
     component: () => import('../pages/signal/ConstellationDemoPage.vue'),
     meta: { title: '星座图', icon: '✨', group: '信号分析' }
+  },
+  {
+    path: '/signal/power-time',
+    name: 'signal-power-time',
+    component: () => import('../pages/signal/PowerTimeDemoPage.vue'),
+    meta: { title: '功率-时间', icon: '⚡', group: '信号分析' }
   },
   {
     // 子窗口演示页：仅通过主进程创建子窗口时加载，不在菜单显示

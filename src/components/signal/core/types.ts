@@ -602,6 +602,108 @@ export interface SpectrogramVisibleData {
   binHz?: number
 }
 
+// ── 功率-时间 / 零扫宽 ──
+export interface PowerTimeAnalysisConfig {
+  enabled?: boolean
+  /** 脉冲门限（dB，和输入单位一致） */
+  thresholdDb?: number
+  /** 滞回（dB） */
+  hysteresisDb?: number
+  /** 最小脉宽（秒）；0 表示不过滤 */
+  minWidthSec?: number
+  /** 最多保留的脉冲数，默认 512 */
+  maxPulses?: number
+}
+
+export interface PowerTimeNormalized {
+  values: Float32Array
+  timeStepSec?: number
+  sampleRate?: number
+  startTimeSec?: number
+}
+export type PowerTimeAdapter = (raw: RawInput) => PowerTimeNormalized | null
+
+export interface PowerTimeProps extends ChartBaseProps {
+  data?: RawInput | PowerTimeNormalized
+  adapter?: PowerTimeAdapter
+  /** 功率单位（仅显示层，如 dBm/dBFS） */
+  unit?: string
+  /** 采样率 Hz；优先级低于 timeStepSec */
+  sampleRate?: number
+  /** 每点时间步长秒；缺省 1/sampleRate，再缺省 1 */
+  timeStepSec?: number
+  /** 第一个点的绝对时间秒 */
+  startTimeSec?: number
+  /** 自动 Y 量程（默认 true；false 时用 yMin/yMax） */
+  autoScale?: boolean
+  yMin?: number
+  yMax?: number
+  mode?: 'line' | 'dots'
+  lineWidth?: number
+  showInfo?: boolean
+  follow?: boolean
+  /** 时间窗显示点数（默认 4096） */
+  span?: number
+  /** 环形缓冲上限（默认 500k） */
+  maxPoints?: number
+  /** 仅显示用的门限线（dB）；不触发脉冲分析 */
+  thresholdDb?: number
+  /** 可选脉冲分析；不传即纯显示 */
+  analysis?: PowerTimeAnalysisConfig
+  /** 坐标轴/网格（默认开启） */
+  axis?: boolean
+  xAxis?: boolean
+  grid?: boolean
+  axisLabels?: boolean
+  chartStyle?: ChartStyle
+  labels?: ChartLabels
+}
+
+// ── 信号质量面板（纯指标显示） ──
+export interface SignalQualityMetrics {
+  evmPercent?: number
+  merDb?: number
+  snrDb?: number
+  carrierOffsetHz?: number
+  symbolRateErrorPpm?: number
+  paprDb?: number
+  iqGainImbalanceDb?: number
+  iqPhaseImbalanceDeg?: number
+  powerDbm?: number
+  peakPowerDbm?: number
+  frequencyHz?: number
+  pulseWidthSec?: number
+  dutyCycle?: number
+}
+
+export interface SignalQualityThresholds {
+  evmPercentMax?: number
+  merDbMin?: number
+  snrDbMin?: number
+  carrierOffsetHzMax?: number
+  symbolRateErrorPpmMax?: number
+  paprDbMax?: number
+  iqGainImbalanceDbMax?: number
+  iqPhaseImbalanceDegMax?: number
+  powerDbmMin?: number
+  powerDbmMax?: number
+}
+
+export type SignalQualityState = 'pass' | 'fail' | 'warn' | 'unknown'
+
+export interface SignalQualityPanelProps {
+  metrics?: SignalQualityMetrics
+  thresholds?: SignalQualityThresholds
+  title?: string
+  /** 紧凑模式：更小卡片间距 */
+  compact?: boolean
+  /** 是否显示总体 Pass/Fail */
+  showPassFail?: boolean
+  labels?: ChartLabels
+  locale?: ChartLocale
+  messages?: ChartMessages
+}
+
 // ── 星座 ──
 export type ConstellationNormalized = IqData | Float32Array
 export type ConstellationAdapter = (raw: RawInput) => ConstellationNormalized | null

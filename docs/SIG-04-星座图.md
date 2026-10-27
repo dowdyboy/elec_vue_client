@@ -72,18 +72,18 @@ const.value?.getAnalysisStats()
 
 ## 三、`analysis` 配置
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `modulation` | `'QPSK'` | BPSK / QPSK / 16QAM 判决参考 |
-| `sampleRate` | — | 原始 IQ 采样率；**必填且 >0** |
-| `centerFrequencyHz` | 0 | 分析仪中心频率（下变频） |
-| `frequencyOffsetHz` | 0 | 已知残余频偏（Hz） |
-| `phaseOffsetDeg` | 0 | 已知相位偏移 |
-| `symbolRateHz` | — | 符号率；与 `samplesPerSymbol` 二选一 |
-| `samplesPerSymbol` | — | 每符号采样数；与 `symbolRateHz` 二选一 |
-| `autoCarrier` | false | 用判决点 EVM 搜索估计残余频偏（BPSK/QPSK/16QAM 通用） |
-| `autoSymbolTiming` | false | 搜索最小 EVM 的定时相位 |
-| `estimatorSymbols` | 4096 | 参与 EVM/不平衡统计的最近符号数 |
+| 字段                | 默认     | 说明                                                  |
+| ------------------- | -------- | ----------------------------------------------------- |
+| `modulation`        | `'QPSK'` | BPSK / QPSK / 16QAM 判决参考                          |
+| `sampleRate`        | —        | 原始 IQ 采样率；**必填且 >0**                         |
+| `centerFrequencyHz` | 0        | 分析仪中心频率（下变频）                              |
+| `frequencyOffsetHz` | 0        | 已知残余频偏（Hz）                                    |
+| `phaseOffsetDeg`    | 0        | 已知相位偏移                                          |
+| `symbolRateHz`      | —        | 符号率；与 `samplesPerSymbol` 二选一                  |
+| `samplesPerSymbol`  | —        | 每符号采样数；与 `symbolRateHz` 二选一                |
+| `autoCarrier`       | false    | 用判决点 EVM 搜索估计残余频偏（BPSK/QPSK/16QAM 通用） |
+| `autoSymbolTiming`  | false    | 搜索最小 EVM 的定时相位                               |
+| `estimatorSymbols`  | 4096     | 参与 EVM/不平衡统计的最近符号数                       |
 
 ## 四、分析流程
 
@@ -105,18 +105,18 @@ const.value?.getAnalysisStats()
 
 除 `analysis` 外：
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `pointSize` | `2` | 点大小 |
-| `alpha` | `0.7` | 点透明度 |
-| `axis` / `grid` / `axisLabels` | `true` | I/Q 轴、网格、轴标题 |
-| `showInfo` | `true` | 点数/后端/EVM 角标 |
-| `maxPoints` | `500000` | 缓冲上限 |
-| `maxRenderPoints` | WebGL 150k / Canvas2D 30k | 绘制抽点 |
-| `theme` | `'auto'` | auto / dark / light / spectrum |
-| `chartStyle` / `labels` | — | 配色/文案覆盖 |
-| `viewport` | — | 手动 I/Q 量程 |
-| `exportHandler` | — | 接管 PNG/CSV 持久化 |
+| 属性                           | 默认                      | 说明                           |
+| ------------------------------ | ------------------------- | ------------------------------ |
+| `pointSize`                    | `2`                       | 点大小                         |
+| `alpha`                        | `0.7`                     | 点透明度                       |
+| `axis` / `grid` / `axisLabels` | `true`                    | I/Q 轴、网格、轴标题           |
+| `showInfo`                     | `true`                    | 点数/后端/EVM 角标             |
+| `maxPoints`                    | `500000`                  | 缓冲上限                       |
+| `maxRenderPoints`              | WebGL 150k / Canvas2D 30k | 绘制抽点                       |
+| `theme`                        | `'auto'`                  | auto / dark / light / spectrum |
+| `chartStyle` / `labels`        | —                         | 配色/文案覆盖                  |
+| `viewport`                     | —                         | 手动 I/Q 量程                  |
+| `exportHandler`                | —                         | 接管 PNG/CSV 持久化            |
 
 API：
 
@@ -131,12 +131,12 @@ API：
 
 ## 六、交互、主题与降级
 
-| 操作 | 行为 |
-| --- | --- |
-| 滚轮 | 以光标为中心缩放 I/Q，切手动 |
-| 拖拽 | 平移复平面 |
-| 双击 / `0` | 恢复自动量程 |
-| `+` / `-` | 中心缩放 |
+| 操作       | 行为                         |
+| ---------- | ---------------------------- |
+| 滚轮       | 以光标为中心缩放 I/Q，切手动 |
+| 拖拽       | 平移复平面                   |
+| 双击 / `0` | 恢复自动量程                 |
+| `+` / `-`  | 中心缩放                     |
 
 - 正方形 I/Q 视口，单位长度一致；
 - 自动量程扩张即时，收窄带 20% 滞回 + 180 帧驻留；
@@ -156,6 +156,6 @@ API：
 
 - `core/constellation.test.ts`（13）：缓冲、量程、抽点、去载波、符号抽点、统计；
 - `core/constellationAnalysis.test.ts`（8）：EVM、载波估计、定时、分析仪、配置校验；
-- `core/presets.test.ts`（1）：四组最小显示预设；
-- 总测试：`npm test` 当前 **180** 例；
+- `core/presets.test.ts`（1）：五组最小显示预设；
+- 总测试：`npm test` 当前 **188** 例；
 - 视觉回归：`npm run test:visual` Canvas2D/WebGL2 双后端，1200×2000 页面。

@@ -1,10 +1,10 @@
-﻿# SIG-00 - 信号组件总览（可复用高性能）
+# SIG-00 - 信号组件总览（可复用高性能）
 
-> 定位：垂直领域 4 组件（IQ/频谱/时频/星座）。**4 个组件均已完成库化**（公共入口、适配器、i18n、Canvas2D 降级、包构建、像素回归）。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频/星座默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
+> 定位：垂直领域 6 组件（IQ/频谱/时频/星座/功率-时间/信号质量）。**6 个组件均已完成库化**（公共入口、适配器、i18n、包构建；IQ/频谱/时频/星座含像素回归，功率-时间/信号质量先以核心单测 + Demo 覆盖）。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频/星座默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
-> 所有组件都保留**最简使用路径**：IQ 不启用触发、频谱只累计/显示迹线、时频只追加 dB 行、星座纯显示；触发、OBW/ACPR/迹线保持、EVM/载波/符号恢复等高级分析必须由调用方显式开启。组件不会因为没有传高级参数而拒绝工作。
+> 所有组件都保留**最简使用路径**：IQ 不启用触发、频谱只累计/显示迹线、时频只追加 dB 行、星座纯显示、功率-时间不启用脉冲分析、信号质量面板只显示指标；触发、OBW/ACPR/迹线保持、EVM/载波/符号恢复等高级分析必须由调用方显式开启。组件不会因为没有传高级参数而拒绝工作。
 >
-> 公共入口提供 `iqDisplayOnly` / `spectrumDisplayOnly` / `spectrogramDisplayOnly` / `constellationDisplayOnly` 四组最小显示预设；`v-bind` 后仍可覆盖单项。2.0 起星座旧 `carrierHz/symbolStrobe` 隐式预处理路径已移除，唯一预处理入口是 `analysis`。
+> 公共入口提供 `iqDisplayOnly` / `spectrumDisplayOnly` / `spectrogramDisplayOnly` / `constellationDisplayOnly` / `powerTimeDisplayOnly` 五组最小显示预设；`v-bind` 后仍可覆盖单项。2.0 起星座旧 `carrierHz/symbolStrobe` 隐式预处理路径已移除，唯一预处理入口是 `analysis`。
 
 > 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）按「专业源」模型重构：**源输出域**与**分析域**分离。
 >
@@ -123,14 +123,16 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 离屏时 IntersectionObserver 暂停重绘；根节点可聚焦（键盘）并支持触摸双指 X 缩放。
 像素级视觉回归见 `playground/visual.html` + `scripts/visual-regression.cjs`（canvas2d/webgl2 双基线）。
 
-## 四、四组件一览
+## 四、六组件一览
 
 | 组件                 | 输入（经 adapter）                                                                                                | 内部计算                                                                                                                                                                                                           | 渲染                                                                                                                                                                                                                                                                                                                  |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IqChart`            | `{i,q}` 或交织 `Float32Array`                                                                                     | 环形缓冲 + minmax 抽稀（按索引排序）；V/div 档位自适应 + 完全暂停语义；触发对齐（auto/normal/single）+ 余辉（persistence）；坐标轴/十字光标/多标记/框选缩放/图例显隐/右键菜单/时间轴（sampleRate）/导出（PNG+CSV） | WebGL2 折线（I/Q 双迹线，`envelope` 时叠加包络第三迹线）+ Canvas2D 轴层；Canvas2D 降级为普通折线/散点                                                                                                                                                                                                                 |
 | `SpectrumChart`      | 服务端算好的幅度谱 `Float32Array`（real N/2 / complex N；含 `spectrumMode/freqStartHz/binHz/fftShift`+dB 元数据） | 多迹线累计（实时/平均(功率·对数)/最大保持/最小保持，偏移/A−B 运算/内存参考线）+ 检波器（正峰/负峰/采样/RMS/平均）+ 自动/手动纵轴 + VBW 视频滤波 + 单位换算 + 频率/校准偏移                                         | 频谱仪：WebGL2 折线（深缩放样本点）+ Canvas2D 轴层；Canvas2D 降级为折线/散点；多迹线图例（Alt+点击设活动迹线）、标记/标记表/标记→中心·参考、峰值搜索/峰值表、区间功率/噪声标记、OBW/N dB/信道功率/ACPR、限制线 PASS/FAIL、余辉、冻结、参考线拖拽、框选缩放、图内参数栏、导出（PNG+CSV/全迹线）、real/complex 带符号轴 |
 | `SpectrogramChart`   | 服务端算好的 dB 行 `Float32Array`（real N/2 / complex N；含频率轴元数据）                                         | 行累计瀑布（最新行在顶部，历史向下滚动；行长/模式变化自动重置）                                                                                                                                                    | WebGL2 R8 纹理 + LUT 着色（Canvas2D LUT 降级）；轴/色标/游标/频率缩放/冻结/PNG/CSV；real/complex 带符号轴                                                                                                                                                                                                             |
-| `ConstellationChart` | `{i,q}` 或交织 `Float32Array`                                                                                     | **默认纯显示**；可选 `analysis` 启用星座分析仪：中心频率 NCO、残余载波估计、符号定时、判决点、EVM/MER、幅度/相位误差、IQ 不平衡；环形缓冲 500k、正方形 I/Q 视口、自动/手动量程、PNG/CSV | WebGL2 Points + Canvas2D 轴层；Canvas2D 散点降级；I/Q 轴/网格/十字游标/自动量程；`renderer` 可强制后端 |
+| `ConstellationChart` | `{i,q}` 或交织 `Float32Array`                                                                                     | **默认纯显示**；可选 `analysis` 启用星座分析仪：中心频率 NCO、残余载波估计、符号定时、判决点、EVM/MER、幅度/相位误差、IQ 不平衡；环形缓冲 500k、正方形 I/Q 视口、自动/手动量程、PNG/CSV                            | WebGL2 Points + Canvas2D 轴层；Canvas2D 散点降级；I/Q 轴/网格/十字游标/自动量程；`renderer` 可强制后端                                                                                                                                                                                                                |
+| `PowerTimeChart`     | 功率/dB 序列 `Float32Array` 或 `{values,timeStepSec}`                                                             | 默认纯显示；可选 `analysis` 做门限+滞回+最小脉宽检测，输出脉宽/周期/占空比/PAPR；环形缓冲、自动/手动量程、时间轴                                                                                                   | WebGL2 折线 + Canvas2D 轴层；Canvas2D 降级；门限线/脉冲带叠加；PNG/CSV                                                                                                                                                                                                                                                |
+| `SignalQualityPanel` | 调用方/分析仪给的指标对象（EVM/MER/SNR/CFO/符号率/PAPR/IQ 不平衡/功率）                                           | 不做 DSP；按阈值方向给出 pass/fail/unknown，总体状态                                                                                                                                                               | 纯 DOM 卡片；主题跟随明暗；可嵌入任意面板                                                                                                                                                                                                                                                                             |
 
 ## 五、性能要点
 
@@ -142,7 +144,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 180 例（含 real/complex 频谱/瀑布/星座）
+npm run typecheck && npm run lint && npm test   # 当前 188 例（含 real/complex 频谱/瀑布/星座/功率）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
 ```

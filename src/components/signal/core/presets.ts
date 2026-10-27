@@ -6,6 +6,7 @@
  * - 频谱：不自动量程、不显示信息栏/图例/峰值表/标记表、不跑 VBW/余辉/限制线
  * - 时频：不自动电平、不显示参数栏/右键菜单
  * - 星座：不传 analysis，组件只画点
+ * - 功率-时间：不启用脉冲分析、不显示信息栏
  *
  * 用法：
  *   import { spectrumDisplayOnly } from '@components/signal'
@@ -13,7 +14,13 @@
  *
  * 需要高级能力时，只需在预设之后覆盖对应 prop（后者优先）。
  */
-import type { ConstellationProps, IqProps, SpectrogramProps, SpectrumProps } from './types'
+import type {
+  ConstellationProps,
+  IqProps,
+  PowerTimeProps,
+  SpectrogramProps,
+  SpectrumProps
+} from './types'
 
 export const iqDisplayOnly = {
   mode: 'line',
@@ -68,3 +75,13 @@ export const constellationDisplayOnly = {
   grid: true,
   axisLabels: true
 } satisfies Partial<ConstellationProps>
+
+export const powerTimeDisplayOnly = {
+  showInfo: false,
+  autoScale: true,
+  follow: true,
+  axis: true,
+  xAxis: true,
+  grid: true,
+  axisLabels: true
+} satisfies Partial<PowerTimeProps>

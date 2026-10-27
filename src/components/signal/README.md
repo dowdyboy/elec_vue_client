@@ -1,4 +1,4 @@
-# 信号组件（IQ / 频谱 / 时频 / 星座）集成指南
+﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -24,11 +24,19 @@ node scripts/copy-signal.mjs ../my-host-app
 宿主中：
 
 ```ts
-import { IqChart, SpectrumChart, SpectrogramChart, ConstellationChart, iqAdapters } from '@/components/signal'
+import {
+  IqChart,
+  SpectrumChart,
+  SpectrogramChart,
+  ConstellationChart,
+  PowerTimeChart,
+  SignalQualityPanel,
+  iqAdapters
+} from '@/components/signal'
 ```
 
-> 公共入口会引入 4 个组件；只打包部分组件时可直接深路径导入
-> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue`，由打包器做 tree-shaking。
+> 公共入口会引入 6 个组件；只打包部分组件时可直接深路径导入
+> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue` / `PowerTimeChart.vue` / `SignalQualityPanel.vue`，由打包器做 tree-shaking。
 
 ### 方式 B：全局注册
 
@@ -57,14 +65,16 @@ import 'elec-signal-charts/style.css'
 
 ### 最小显示预设
 
-公共入口导出四组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
+公共入口导出五组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
 
 ```ts
 import {
   IqChart,
   SpectrumChart,
+  PowerTimeChart,
   iqDisplayOnly,
-  spectrumDisplayOnly
+  spectrumDisplayOnly,
+  powerTimeDisplayOnly
 } from '@/components/signal'
 
 // 不启用触发/包络/右键菜单
@@ -72,12 +82,16 @@ import {
 
 // 不自动量程、不显示信息栏/图例/峰值表，不跑 VBW/余辉/限制线
 <SpectrumChart v-bind="spectrumDisplayOnly" :data="row" />
+
+// 不启用脉冲分析
+<PowerTimeChart v-bind="powerTimeDisplayOnly" :data="powerDb" />
 ```
 
 - `iqDisplayOnly`：触发关闭、包络关闭、右键菜单关闭；
 - `spectrumDisplayOnly`：固定量程、关闭信息栏/图例/菜单/峰值表/标记表、VBW=0、余辉=0；
 - `spectrogramDisplayOnly`：固定电平、关闭参数栏/右键菜单；
 - `constellationDisplayOnly`：不传 `analysis`，只画点；
+- `powerTimeDisplayOnly`：不启用脉冲分析、不显示信息栏；
 - 预设之后可继续覆盖任意 prop，后者优先。
 
 ### 尺寸（重点）
@@ -224,6 +238,39 @@ const.value?.getAnalysisStats() // EVM/MER/误差/IQ 不平衡/频偏/定时
 - WebGL2 Points 优先，Canvas2D 散点自动降级；主题/i18n/PNG/CSV 同其它组件；
 - 详细 API/限制见 [SIG-04](../../../docs/SIG-04-星座图.md)。
 
+### 功率-时间 / Zero Span
+
+```vue
+<PowerTimeChart ref="pt" :height="320" :unit="'dBm'" :sample-rate="10000" />
+```
+
+```ts
+pt.value?.appendData(powerDb) // 已经算好的功率序列
+pt.value?.getStats()
+```
+
+可选脉冲分析：
+
+```vue
+<PowerTimeChart
+  :analysis="{ enabled: true, thresholdDb: -42, hysteresisDb: 4, minWidthSec: 1e-4 }"
+/>
+```
+
+- 默认只画功率，不检测脉冲；
+- 有 `analysis` 时叠加门限/脉冲带，输出脉宽/周期/占空比/PAPR；
+- 详细 API 见 [SIG-05](../../../docs/SIG-05-功率时间.md)。
+
+### 信号质量面板
+
+```vue
+<SignalQualityPanel :metrics="analysisStats" :thresholds="{ evmPercentMax: 5, merDbMin: 25 }" />
+```
+
+- 只显示调用方/分析仪给的指标，不做 DSP；
+- 有阈值才判 Pass/Fail，无阈值显示 N/A；
+- 详细指标/阈值见 [SIG-06](../../../docs/SIG-06-信号质量面板.md)。
+
 ### 时频瀑布
 
 ```vue
@@ -365,7 +412,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 180 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 188 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -403,4 +450,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.0.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.1.0'`（公共 API 变更时按语义化版本维护）。

@@ -16,9 +16,22 @@ import IqChart from './IqChart.vue'
 import SpectrumChart from './SpectrumChart.vue'
 import SpectrogramChart from './SpectrogramChart.vue'
 import ConstellationChart from './ConstellationChart.vue'
+import PowerTimeChart from './PowerTimeChart.vue'
+import SignalQualityPanel from './SignalQualityPanel.vue'
 
-export { IqChart, SpectrumChart, SpectrogramChart, ConstellationChart }
+export {
+  IqChart,
+  SpectrumChart,
+  SpectrogramChart,
+  ConstellationChart,
+  PowerTimeChart,
+  SignalQualityPanel
+}
 export * from './core/types'
+export type { PowerPulse, PulseAnalysis, PowerStats } from './core/power'
+export type { QualityItem, QualityMetricKey } from './core/quality'
+export { evaluateSignalQuality } from './core/quality'
+export { analyzePowerPulses, computePowerStats, cleanPowerValues } from './core/power'
 export {
   iqAdapters,
   spectrumAdapters,
@@ -44,11 +57,12 @@ export {
   iqDisplayOnly,
   spectrumDisplayOnly,
   spectrogramDisplayOnly,
-  constellationDisplayOnly
+  constellationDisplayOnly,
+  powerTimeDisplayOnly
 } from './core/presets'
 
 /** 组件库版本（宿主可用于诊断/兼容判断；语义化版本按公共 API 变更维护） */
-export const SIGNAL_CHARTS_VERSION = '2.0.0'
+export const SIGNAL_CHARTS_VERSION = '2.1.0'
 
 /** Vue 插件：app.use(SignalCharts) 后可用 <IqChart>/<SpectrumChart>/... */
 export const SignalCharts: Plugin = {
@@ -57,6 +71,8 @@ export const SignalCharts: Plugin = {
     app.component('SpectrumChart', SpectrumChart)
     app.component('SpectrogramChart', SpectrogramChart)
     app.component('ConstellationChart', ConstellationChart)
+    app.component('PowerTimeChart', PowerTimeChart)
+    app.component('SignalQualityPanel', SignalQualityPanel)
   }
 }
 
