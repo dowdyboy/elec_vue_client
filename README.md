@@ -48,24 +48,25 @@
 
 ## 信号分析组件
 
-IQ 时域/频谱/时频/星座/功率-时间/信号质量 6 个组件已按“可被其他上位机集成”的目标库化：
+IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图 7 个组件已按“可被其他上位机集成”的目标库化：
 
 - WebGL2 + Canvas2D 自动降级、`renderer` 可强制后端
 - int16/float64/平面/字节序适配器，程序化 API（follow/paused、标记、区间测量、峰值、统计/可见数据、星座统计/导出）
 - **real 单边 0~~Fs/2 与 complex 带符号复谱 -Fs/2~~+Fs/2** 双模式（`spectrumMode`/`freqStartHz`/`binHz`/`fftShift`）
 - Mock 专业源：`outputMode` real/complex、CW/AM/FM/Pulse/Two-tone/Noise/Digital、AWGN 与 IQ 镜像；源输出域与分析域独立
-- 5 组 `*DisplayOnly` 最小显示预设：IQ/频谱/时频/星座/功率-时间可只当普通显示组件使用
+- 6 组 `*DisplayOnly` 最小显示预设：IQ/频谱/时频/星座/功率-时间/眼图可只当普通显示组件使用
 - 星座图：默认纯显示；可选星座分析仪（NCO/残余载波/符号定时/EVM/MER/IQ 不平衡），正方形 I/Q 视口、自动/手动量程、统计与 PNG/CSV
 - 功率-时间 / Zero Span：纯显示功率序列；可选门限+滞回脉冲分析（脉宽/周期/占空比/PAPR）
 - 信号质量面板：纯指标显示与阈值 Pass/Fail，不计算 DSP
+- 眼图：叠加调用方切好的轨迹，测量眼高/眼宽/抖动；不做时钟恢复
 - 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例
 - 像素级视觉回归（Canvas2D/WebGL2 双基线，覆盖 IQ/频谱/时频/星座）
 
-文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
+文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 6 个组件均已完成库化；IQ/频谱/时频/星座含 Canvas2D 降级与像素回归，功率-时间/信号质量以核心单测 + Demo 覆盖。
+> 7 个组件均已完成库化；IQ/频谱/时频/星座含 Canvas2D 降级与像素回归，功率-时间/信号质量/眼图以核心单测 + Demo 覆盖。
 
 ## 快速开始
 

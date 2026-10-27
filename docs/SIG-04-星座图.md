@@ -1,4 +1,4 @@
-# SIG-04 - 星座图 / 星座分析仪
+﻿# SIG-04 - 星座图 / 星座分析仪
 
 > `src/components/signal/ConstellationChart.vue`
 >
@@ -156,6 +156,6 @@ API：
 
 - `core/constellation.test.ts`（13）：缓冲、量程、抽点、去载波、符号抽点、统计；
 - `core/constellationAnalysis.test.ts`（8）：EVM、载波估计、定时、分析仪、配置校验；
-- `core/presets.test.ts`（1）：五组最小显示预设；
-- 总测试：`npm test` 当前 **188** 例；
+- `core/presets.test.ts`（1）：六组最小显示预设；
+- 总测试：`npm test` 当前 **191** 例；
 - 视觉回归：`npm run test:visual` Canvas2D/WebGL2 双后端，1200×2000 页面。

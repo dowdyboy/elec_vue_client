@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量）集成指南
+# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -31,12 +31,13 @@ import {
   ConstellationChart,
   PowerTimeChart,
   SignalQualityPanel,
+  EyeDiagramChart,
   iqAdapters
 } from '@/components/signal'
 ```
 
-> 公共入口会引入 6 个组件；只打包部分组件时可直接深路径导入
-> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue` / `PowerTimeChart.vue` / `SignalQualityPanel.vue`，由打包器做 tree-shaking。
+> 公共入口会引入 7 个组件；只打包部分组件时可直接深路径导入
+> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue` / `PowerTimeChart.vue` / `SignalQualityPanel.vue` / `EyeDiagramChart.vue`，由打包器做 tree-shaking。
 
 ### 方式 B：全局注册
 
@@ -65,16 +66,18 @@ import 'elec-signal-charts/style.css'
 
 ### 最小显示预设
 
-公共入口导出五组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
+公共入口导出六组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
 
 ```ts
 import {
   IqChart,
   SpectrumChart,
   PowerTimeChart,
+  EyeDiagramChart,
   iqDisplayOnly,
   spectrumDisplayOnly,
-  powerTimeDisplayOnly
+  powerTimeDisplayOnly,
+  eyeDisplayOnly
 } from '@/components/signal'
 
 // 不启用触发/包络/右键菜单
@@ -85,6 +88,9 @@ import {
 
 // 不启用脉冲分析
 <PowerTimeChart v-bind="powerTimeDisplayOnly" :data="powerDb" />
+
+// 只叠加眼图轨迹，不显示指标角标
+<EyeDiagramChart v-bind="eyeDisplayOnly" :data="traces" />
 ```
 
 - `iqDisplayOnly`：触发关闭、包络关闭、右键菜单关闭；
@@ -92,6 +98,7 @@ import {
 - `spectrogramDisplayOnly`：固定电平、关闭参数栏/右键菜单；
 - `constellationDisplayOnly`：不传 `analysis`，只画点；
 - `powerTimeDisplayOnly`：不启用脉冲分析、不显示信息栏；
+- `eyeDisplayOnly`：只叠加轨迹、不显示指标角标；
 - 预设之后可继续覆盖任意 prop，后者优先。
 
 ### 尺寸（重点）
@@ -271,6 +278,22 @@ pt.value?.getStats()
 - 有阈值才判 Pass/Fail，无阈值显示 N/A；
 - 详细指标/阈值见 [SIG-06](../../../docs/SIG-06-信号质量面板.md)。
 
+### 眼图
+
+```vue
+<EyeDiagramChart ref="eye" :height="420" :span-symbols="2" :samples-per-symbol="32" />
+```
+
+```ts
+eye.value?.appendData(trace) // Float32Array，调用方切好的 2UI 轨迹
+eye.value?.appendTraces(traces)
+eye.value?.getStats() // 眼高/眼宽/抖动
+```
+
+- 只叠加调用方切好的轨迹，不做时钟恢复/均衡；
+- Canvas2D 叠加，适合数百条轨迹；
+- 详细 API 见 [SIG-07](../../../docs/SIG-07-眼图.md)。
+
 ### 时频瀑布
 
 ```vue
@@ -412,7 +435,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 188 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 191 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -450,4 +473,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.1.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.2.0'`（公共 API 变更时按语义化版本维护）。

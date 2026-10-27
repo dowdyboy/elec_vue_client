@@ -7,6 +7,7 @@
  * - 时频：不自动电平、不显示参数栏/右键菜单
  * - 星座：不传 analysis，组件只画点
  * - 功率-时间：不启用脉冲分析、不显示信息栏
+ * - 眼图：不显示信息栏，保留轴/网格
  *
  * 用法：
  *   import { spectrumDisplayOnly } from '@components/signal'
@@ -16,6 +17,7 @@
  */
 import type {
   ConstellationProps,
+  EyeDiagramProps,
   IqProps,
   PowerTimeProps,
   SpectrogramProps,
@@ -85,3 +87,13 @@ export const powerTimeDisplayOnly = {
   grid: true,
   axisLabels: true
 } satisfies Partial<PowerTimeProps>
+
+export const eyeDisplayOnly = {
+  showInfo: false,
+  autoScale: true,
+  axis: true,
+  xAxis: true,
+  grid: true,
+  axisLabels: true,
+  alpha: 0.55
+} satisfies Partial<EyeDiagramProps>

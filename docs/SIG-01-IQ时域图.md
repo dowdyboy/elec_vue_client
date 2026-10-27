@@ -1,4 +1,4 @@
-# SIG-01 - IQ 时域图
+﻿# SIG-01 - IQ 时域图
 
 > `src/components/signal/IqChart.vue` 拷贝即用
 >
@@ -173,14 +173,14 @@ interface ChartStyle {
 - 可移植性：`renderer='auto'` 在 WebGL2 不可用时回退 Canvas2D（余辉用 Canvas 覆盖模拟）；`renderer='webgl2'` 强制且失败时 emit `error/errorDetail` + 占位提示
 - 批量/触控/无障碍：离屏暂停重绘；根节点 `tabindex=0`、`role=application`、`aria-label`（可由 `labels.aria` 覆盖）；触摸双指 X 缩放
 
-**单元测试**：`npm test`（vitest，当前 188 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
+**单元测试**：`npm test`（vitest，当前 191 例）——覆盖 `axis`（niceStep/niceTicks/snapRangeNice 档位量化，9）、
 `yauto`（Y 轴量程状态机：即时扩张防裁剪/慢速收敛/档位量化静止/换档滞回与收窄驻留/snap 直接吸附/reset，13）、
 `pyramid`（整树重建随机区间/增量追加/bucketChannel 与旧实现逐值一致/扩容重建/queryStats/包络 env 通道/compactShift 环形淘汰增量，9）、
 `trigger`（findEdge 边沿检测/triggerWindow 钳制/triggerRightNeed·pending 提升门控/auto·normal pending 与 promote·single 状态机与 reset，18）、
 `spectrum`（迹线累计/自动量程/峰值/缩放窗口/ACPR/平均与保持/稳健极值/snap 不漂移，57）、
 `constellation`（缓冲淘汰/对称自动量程/等比扩展/抽点/统计/刻度格式/自动量程滞回驻留/去载波相位连续/符号抽点，13）、
 `constellationAnalysis`（EVM/载波估计/符号定时/分析仪/配置校验，8）、`presets`（最小显示预设，1）、
-`power`（功率环形缓冲/脉冲宽度周期占空比/最小脉宽/清洗，4）、`quality`（Pass/Fail 阈值/无阈值未判定，4）、
+`power`（功率环形缓冲/脉冲宽度周期占空比/最小脉宽/清洗，4）、`quality`（Pass/Fail 阈值/无阈值未判定，4）、`eye`（轨迹缓冲/眼高眼宽/清洗，3）、
 `adapters`（对齐/类型守卫/int16·float64/字节序/平面/工厂/频谱 uint8，11）、`i18n`（中英/覆盖/插值，5）、
 `spectrogram`（色阶/LUT/电平/环形缓冲/冻结拷贝，8）、
 `shared/signal`（默认 real / spectrumMode / imageDb / 专业源参数校验，4）、

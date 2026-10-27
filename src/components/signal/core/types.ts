@@ -704,6 +704,38 @@ export interface SignalQualityPanelProps {
   messages?: ChartMessages
 }
 
+// ── 眼图 ──
+export interface EyeInput {
+  traces: Float32Array[]
+  spanSymbols?: number
+  samplesPerSymbol?: number
+}
+export type EyeAdapter = (raw: RawInput) => Float32Array[] | EyeInput | null
+
+export interface EyeDiagramProps extends ChartBaseProps {
+  data?: RawInput | Float32Array[] | EyeInput
+  adapter?: EyeAdapter
+  /** 眼图横向 UI 数，默认 2 */
+  spanSymbols?: number
+  /** 每符号采样数（仅用于 UI 标注/抖动换算） */
+  samplesPerSymbol?: number
+  /** 最多保留轨迹数，默认 500 */
+  maxTraces?: number
+  /** 轨迹透明度 0~1 */
+  alpha?: number
+  lineWidth?: number
+  autoScale?: boolean
+  yMin?: number
+  yMax?: number
+  showInfo?: boolean
+  axis?: boolean
+  xAxis?: boolean
+  grid?: boolean
+  axisLabels?: boolean
+  chartStyle?: ChartStyle
+  labels?: ChartLabels
+}
+
 // ── 星座 ──
 export type ConstellationNormalized = IqData | Float32Array
 export type ConstellationAdapter = (raw: RawInput) => ConstellationNormalized | null

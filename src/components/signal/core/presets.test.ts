@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   constellationDisplayOnly,
+  eyeDisplayOnly,
   iqDisplayOnly,
   powerTimeDisplayOnly,
   spectrogramDisplayOnly,
@@ -39,5 +40,9 @@ describe('最小显示预设', () => {
     expect(powerTimeDisplayOnly.axis).toBe(true)
     expect(powerTimeDisplayOnly.grid).toBe(true)
     expect('analysis' in powerTimeDisplayOnly).toBe(false)
+
+    expect(eyeDisplayOnly.showInfo).toBe(false)
+    expect(eyeDisplayOnly.axis).toBe(true)
+    expect(eyeDisplayOnly.grid).toBe(true)
   })
 })
