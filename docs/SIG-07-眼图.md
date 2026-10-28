@@ -67,9 +67,9 @@ chart.setData(traces)          // 替换
 }
 ```
 
-- `height`：中心采样点 p5~p95 的张开量；
+- `height`：张开最大处 p5~p95 的张开量；
 - `opening`：眼高 / 全幅度；
-- `width`：中心附近 p5~p95 张开 ≥25% 眼高的连续区间占比；
+- `width`：该位置附近 p5~p95 张开 ≥25% 眼高的连续区间占比；
 - `jitter`：首次过中点时间的 RMS / 轨迹长度；
 - `jitterUi`：按 `spanSymbols` 换算的 UI 值。
 

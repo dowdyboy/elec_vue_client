@@ -28,8 +28,9 @@ function emptyData(): ApdCcdfData {
 
 function ccdfLevel(x: Float32Array, y: Float32Array, pct: number): number {
   if (x.length === 0) return 0
+  // x 升序、CCDF 递减；从高功率端向下找第一个“超限概率 >= pct”的电平
   for (let i = x.length - 1; i >= 0; i--) {
-    if (y[i]! <= pct) return x[i]!
+    if (y[i]! >= pct) return x[i]!
   }
   return x[0]!
 }

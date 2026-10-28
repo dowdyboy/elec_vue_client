@@ -74,8 +74,8 @@ function percentile(sorted: number[], p: number): number {
 
 /**
  * 眼高/眼宽/抖动估计：
- * - 眼高：中心采样点各轨迹值的 p5~p95
- * - 眼宽：各采样位置 p5~p95 张开 >= 25% 眼高的连续区间
+ * - 眼高：张开最大的采样位置 p5~p95
+ * - 眼宽：该位置附近 p5~p95 张开 >= 25% 眼高的连续区间
  * - 抖动：每条轨迹首次穿过中点的时间差 RMS
  */
 export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeStats {
@@ -120,21 +120,11 @@ export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeSta
   }
   const amplitude = Math.max(1e-12, max - min)
   const mid = (min + max) / 2
-  const center = Math.floor((maxLen - 1) / 2)
-  const centerValues: number[] = []
-  for (const t of traces) {
-    const idx = Math.min(t.length - 1, center)
-    centerValues.push(t[idx]!)
-  }
-  centerValues.sort((a, b) => a - b)
-  const lo = percentile(centerValues, 0.05)
-  const hi = percentile(centerValues, 0.95)
-  const height = Math.max(0, hi - lo)
-  const opening = Math.min(1, height / amplitude)
 
-  // 各采样位置的眼张开
+  // 各采样位置的眼张开；取张开最大的位置作为眼图中心
   const sep = new Float32Array(maxLen)
   const vals: number[] = []
+  let bestIndex = 0
   for (let x = 0; x < maxLen; x++) {
     vals.length = 0
     for (const t of traces) {
@@ -142,13 +132,18 @@ export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeSta
     }
     vals.sort((a, b) => a - b)
     sep[x] = percentile(vals, 0.95) - percentile(vals, 0.05)
+    if (sep[x]! > sep[bestIndex]!) bestIndex = x
   }
+  const height = Math.max(0, sep[bestIndex]!)
+  const opening = Math.min(1, height / amplitude)
   const threshold = Math.max(1e-12, height * 0.25)
-  let left = center
-  while (left > 0 && sep[left - 1]! >= threshold) left--
-  let right = center
-  while (right < maxLen - 1 && sep[right + 1]! >= threshold) right++
-  const width = Math.max(0, right - left + 1) / maxLen
+  let left = bestIndex
+  let right = bestIndex
+  if (height > 0) {
+    while (left > 0 && sep[left - 1]! >= threshold) left--
+    while (right < maxLen - 1 && sep[right + 1]! >= threshold) right++
+  }
+  const width = height > 0 ? (right - left + 1) / maxLen : 0
 
   // 首次过中点，计算抖动
   const crossings: number[] = []

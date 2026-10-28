@@ -10,6 +10,7 @@ describe('APD/CCDF 核心', () => {
     expect(r.paprDb).toBeCloseTo(10, 6)
     expect(Array.from(r.apd.y)).toEqual([25, 0, 50, 25])
     expect(Array.from(r.ccdf.y)).toEqual([100, 75, 75, 25])
+    expect(r.p01Db).toBeGreaterThanOrEqual(r.p1Db)
   })
 
   it('线性功率输入自动转 dB', () => {

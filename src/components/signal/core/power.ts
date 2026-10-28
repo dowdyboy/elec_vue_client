@@ -60,10 +60,12 @@ export class PowerBuffer {
     const next = Math.max(2, Math.floor(maxPoints))
     if (next === this.max) return
     const keep = Math.min(this.length, next)
+    const dropped = this.length - keep
     const out = new Float32Array(next)
     if (keep > 0) out.set(this.values.subarray(this.length - keep, this.length))
     this.values = out
     this.length = keep
+    this.offset += dropped
     this.max = next
   }
 

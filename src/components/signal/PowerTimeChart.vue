@@ -446,11 +446,21 @@ function setupContext(): void {
     ctx2d = canvas.getContext('2d')
   }
   if (gl) {
-    lineRenderer = createLineRenderer(canvas, gl)
-    backend.value = 'webgl2'
+    try {
+      lineRenderer = createLineRenderer(canvas, gl)
+      backend.value = 'webgl2'
+    } catch (e) {
+      backend.value = 'none'
+      reportError('webgl', e instanceof Error ? e.message : tr('powerTime.webglUnsupported'))
+    }
   } else if (ctx2d) {
-    lineRenderer = createCanvasLineRenderer(canvas)
-    backend.value = 'canvas2d'
+    try {
+      lineRenderer = createCanvasLineRenderer(canvas)
+      backend.value = 'canvas2d'
+    } catch (e) {
+      backend.value = 'none'
+      reportError('webgl', e instanceof Error ? e.message : tr('powerTime.webglUnsupported'))
+    }
   } else {
     backend.value = 'none'
     reportError('webgl', tr('powerTime.webglUnsupported'))
@@ -487,6 +497,13 @@ function exportPNG(): string | null {
   return canvasRef.value.toDataURL('image/png')
 }
 
+watch(
+  () => props.data,
+  (v) => {
+    if (v !== undefined) setData(v)
+  },
+  { immediate: true }
+)
 watch(
   () => props.maxPoints,
   (v) => {

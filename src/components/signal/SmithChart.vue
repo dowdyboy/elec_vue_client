@@ -57,7 +57,7 @@ const info = computed(() => {
   const s = stats.value
   if (!s.points) return ''
   const rl = Number.isFinite(s.minReturnLossDb) ? `${s.minReturnLossDb.toFixed(1)} dB` : '∞'
-  return `${traces.value.length} traces · ${s.points} points · max VSWR ${s.maxVswr.toFixed(2)} · min RL ${rl}`
+  return `${traces.value.length} ${tr('smith.traces')} · ${s.points} ${tr('smith.points')} · ${tr('smith.maxVswr')} ${s.maxVswr.toFixed(2)} · ${tr('smith.minRl')} ${rl}`
 })
 
 const glChart = useGlChart(canvasRef, {

@@ -27,5 +27,8 @@ describe('眼图核心', () => {
   it('非有限值清洗，空输入未测量', () => {
     expect(Array.from(cleanEyeTrace([1, NaN, Infinity, -Infinity]))).toEqual([1, 0, 0, 0])
     expect(computeEyeStats([]).measured).toBe(false)
+    const flat = computeEyeStats([trace(0)])
+    expect(flat.height).toBe(0)
+    expect(flat.width).toBe(0)
   })
 })

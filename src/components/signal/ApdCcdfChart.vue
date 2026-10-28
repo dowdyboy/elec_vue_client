@@ -49,7 +49,7 @@ const analysisOn = computed(() => !!props.analysis && props.analysis.enabled !==
 const info = computed(() => {
   const d = data.value
   if (!d || d.sampleCount <= 0) return ''
-  return `${d.sampleCount} samples · mean ${d.meanDb.toFixed(1)} dB · peak ${d.peakDb.toFixed(1)} dB · PAPR ${d.paprDb.toFixed(1)} dB · CCDF 0.1% ${d.p01Db.toFixed(1)} dB`
+  return `${d.sampleCount} ${tr('apd.samples')} · ${tr('apd.mean')} ${d.meanDb.toFixed(1)} dB · ${tr('apd.peak')} ${d.peakDb.toFixed(1)} dB · ${tr('apd.papr')} ${d.paprDb.toFixed(1)} dB · ${tr('apd.ccdf01')} ${d.p01Db.toFixed(1)} dB`
 })
 
 const glChart = useGlChart(canvasRef, {
@@ -86,6 +86,7 @@ function appendData(raw: unknown): void {
   const curves = normalizeCurves(raw)
   if (curves) {
     data.value = curves
+    lastSamples = null
     glChart.scheduleDraw()
     return
   }
@@ -257,6 +258,7 @@ watch(
   (v) => {
     if (v !== undefined) {
       data.value = v
+      lastSamples = null
       glChart.scheduleDraw()
     }
   },

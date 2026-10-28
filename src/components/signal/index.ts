@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 信号组件公共入口（推荐宿主从本文件导入，而不是逐个 SFC 深路径）
  *
  * ```ts
@@ -89,7 +89,7 @@ export {
 } from './core/presets'
 
 /** 组件库版本（宿主可用于诊断/兼容判断；语义化版本按公共 API 变更维护） */
-export const SIGNAL_CHARTS_VERSION = '2.4.0'
+export const SIGNAL_CHARTS_VERSION = '2.4.1'
 
 /** Vue 插件：app.use(SignalCharts) 后可用 <IqChart>/<SpectrumChart>/... */
 export const SignalCharts: Plugin = {

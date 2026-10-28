@@ -83,7 +83,12 @@ const overall = computed(() => {
 </script>
 
 <template>
-  <section class="sig-quality" :class="{ compact: props.compact }">
+  <section
+    class="sig-quality"
+    role="region"
+    :aria-label="props.title ?? tr('quality.title')"
+    :class="{ compact: props.compact }"
+  >
     <header class="sig-quality-head">
       <div>
         <div class="sig-quality-title">{{ props.title ?? tr('quality.title') }}</div>

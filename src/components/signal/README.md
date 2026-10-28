@@ -566,4 +566,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.4.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.4.1'`（公共 API 变更时按语义化版本维护）。

@@ -80,7 +80,7 @@ const freqStart = computed(() => {
 const info = computed(() => {
   const s = stats.value
   if (!s) return ''
-  return `${s.width} bins × ${s.height} levels · ${s.frames} frames · max ${formatCount(s.max)}`
+  return `${s.width} ${tr('persistence.bins')} × ${s.height} ${tr('persistence.levels')} · ${s.frames} ${tr('persistence.frames')} · ${tr('persistence.max')} ${formatCount(s.max)}`
 })
 
 const glChart = useGlChart(canvasRef, {
