@@ -63,9 +63,9 @@
 | 11  | [类与面向对象](./TS-11-类与面向对象.md)                                      | /ts/oop                         |
 | 12  | [与 Electron 结合（IPC 类型安全）](./TS-12-与Electron结合（IPC类型安全）.md) | /ts/electron-bridge             |
 
-## 信号分析组件（SIG-00~07）
+## 信号分析组件（SIG-00~08）
 
-> IQ/频谱/时频/星座/功率-时间/信号质量/眼图已完成库化（公共入口、int16 适配器、Canvas2D 降级、i18n、dist-signal 包、像素回归；
+> IQ/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱已完成库化（公共入口、int16 适配器、Canvas2D 降级、i18n、dist-signal 包、像素回归；
 > 频谱/时频支持 real 单边与 complex 带符号复谱）；Mock 已按专业源拆分输出域/分析域；星座默认纯显示，可选分析仪模式。
 
 | #   | 文档                                     | 对应源码                                       | 状态       |
@@ -78,6 +78,7 @@
 | 05  | [功率-时间](./SIG-05-功率时间.md)        | `src/components/signal/PowerTimeChart.vue`     | 已完成库化（纯显示/脉冲分析） |
 | 06  | [信号质量面板](./SIG-06-信号质量面板.md) | `src/components/signal/SignalQualityPanel.vue` | 已完成（纯指标显示） |
 | 07  | [眼图](./SIG-07-眼图.md)                 | `src/components/signal/EyeDiagramChart.vue`    | 已完成（纯显示/眼图测量） |
+| 08  | [持续谱](./SIG-08-持续谱.md)             | `src/components/signal/PersistenceSpectrumChart.vue` | 已完成（纯显示/逐帧累计） |
 
 - 集成指南（尺寸/适配器/props/事件/方法/性能/限制）：[`src/components/signal/README.md`](../src/components/signal/README.md)
 - 独立 Vite Playground / Worker 示例：[`playground/README.md`](../playground/README.md)

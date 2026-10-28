@@ -704,6 +704,54 @@ export interface SignalQualityPanelProps {
   messages?: ChartMessages
 }
 
+// ── 持续谱 / 密度谱 ──
+export interface PersistenceMatrix {
+  density: ArrayLike<number>
+  width: number
+  height: number
+  minDb?: number
+  maxDb?: number
+}
+export type PersistenceAdapter = (raw: RawInput) => PersistenceMatrix | Float32Array | null
+export interface PersistenceAnalysisConfig {
+  enabled?: boolean
+  /** 每帧先乘 (1-decay)，0=不衰减 */
+  decay?: number
+}
+export interface PersistenceProps extends ChartBaseProps {
+  data?: RawInput | PersistenceMatrix
+  adapter?: PersistenceAdapter
+  /** 纯显示密度矩阵的宽（频率 bin 数）；缺省由 data.width 决定 */
+  bins?: number
+  /** 幅度 level 数，默认 256 */
+  levels?: number
+  minDb?: number
+  maxDb?: number
+  /** Y 轴单位（仅显示，默认 dB） */
+  unit?: string
+  colorMap?: ColorMap
+  /** 色阶 gamma（0.2~3，默认 1） */
+  gamma?: number
+  /** 频率轴：第 0 bin 的频率；real 默认 0，complex 通常 -Fs/2 */
+  freqStartHz?: number
+  binHz?: number
+  sampleRate?: number
+  fftSize?: number
+  fftShift?: boolean
+  spectrumMode?: SpectrumMode
+  showInfo?: boolean
+  showColorbar?: boolean
+  showCursor?: boolean
+  axis?: boolean
+  xAxis?: boolean
+  grid?: boolean
+  axisLabels?: boolean
+  /** 可选：把 appendData 的 dB 谱逐帧累加到密度矩阵 */
+  analysis?: PersistenceAnalysisConfig
+  chartStyle?: ChartStyle
+  labels?: ChartLabels
+}
+
 // ── 眼图 ──
 export interface EyeInput {
   traces: Float32Array[]

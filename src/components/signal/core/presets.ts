@@ -8,6 +8,7 @@
  * - 星座：不传 analysis，组件只画点
  * - 功率-时间：不启用脉冲分析、不显示信息栏
  * - 眼图：不显示信息栏，保留轴/网格
+ * - 持续谱：不显示信息栏，保留轴/色标/游标
  *
  * 用法：
  *   import { spectrumDisplayOnly } from '@components/signal'
@@ -19,6 +20,7 @@ import type {
   ConstellationProps,
   EyeDiagramProps,
   IqProps,
+  PersistenceProps,
   PowerTimeProps,
   SpectrogramProps,
   SpectrumProps
@@ -97,3 +99,13 @@ export const eyeDisplayOnly = {
   axisLabels: true,
   alpha: 0.55
 } satisfies Partial<EyeDiagramProps>
+
+export const persistenceDisplayOnly = {
+  showInfo: false,
+  showColorbar: true,
+  showCursor: true,
+  axis: true,
+  xAxis: true,
+  grid: true,
+  axisLabels: true
+} satisfies Partial<PersistenceProps>

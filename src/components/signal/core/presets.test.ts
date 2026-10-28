@@ -3,6 +3,7 @@ import {
   constellationDisplayOnly,
   eyeDisplayOnly,
   iqDisplayOnly,
+  persistenceDisplayOnly,
   powerTimeDisplayOnly,
   spectrogramDisplayOnly,
   spectrumDisplayOnly
@@ -44,5 +45,10 @@ describe('最小显示预设', () => {
     expect(eyeDisplayOnly.showInfo).toBe(false)
     expect(eyeDisplayOnly.axis).toBe(true)
     expect(eyeDisplayOnly.grid).toBe(true)
+
+    expect(persistenceDisplayOnly.showInfo).toBe(false)
+    expect(persistenceDisplayOnly.axis).toBe(true)
+    expect(persistenceDisplayOnly.grid).toBe(true)
+    expect('analysis' in persistenceDisplayOnly).toBe(false)
   })
 })
