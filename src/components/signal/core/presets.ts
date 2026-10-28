@@ -9,6 +9,8 @@
  * - 功率-时间：不启用脉冲分析、不显示信息栏
  * - 眼图：不显示信息栏，保留轴/网格
  * - 持续谱：不显示信息栏，保留轴/色标/游标
+ * - Smith：不显示信息栏，保留网格/标签/游标
+ * - APD/CCDF：不显示信息栏，保留轴/网格
  *
  * 用法：
  *   import { spectrumDisplayOnly } from '@components/signal'
@@ -17,11 +19,13 @@
  * 需要高级能力时，只需在预设之后覆盖对应 prop（后者优先）。
  */
 import type {
+  ApdCcdfProps,
   ConstellationProps,
   EyeDiagramProps,
   IqProps,
   PersistenceProps,
   PowerTimeProps,
+  SmithProps,
   SpectrogramProps,
   SpectrumProps
 } from './types'
@@ -109,3 +113,20 @@ export const persistenceDisplayOnly = {
   grid: true,
   axisLabels: true
 } satisfies Partial<PersistenceProps>
+
+export const smithDisplayOnly = {
+  showInfo: false,
+  showGrid: true,
+  showLabels: true,
+  showCursor: true,
+  alpha: 0.9,
+  traceWidth: 1.5
+} satisfies Partial<SmithProps>
+
+export const apdCcdfDisplayOnly = {
+  showInfo: false,
+  axis: true,
+  xAxis: true,
+  grid: true,
+  axisLabels: true
+} satisfies Partial<ApdCcdfProps>

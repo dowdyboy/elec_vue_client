@@ -289,7 +289,7 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../pages/ts/TsElectronBridgePage.vue'),
     meta: { title: '与 Electron 结合', icon: '🔗', group: 'TypeScript 惯用法' }
   },
-  // ── 信号分析板块（垂直领域，8 组件 + Mock 配置，Mock 服务端自产数）──
+  // ── 信号分析板块（垂直领域，10 组件 + Mock 配置，Mock 服务端自产数）──
   {
     path: '/signal',
     name: 'signal-config',
@@ -337,6 +337,18 @@ export const routes: RouteRecordRaw[] = [
     name: 'signal-persistence',
     component: () => import('../pages/signal/PersistenceDemoPage.vue'),
     meta: { title: '持续谱', icon: '🌌', group: '信号分析' }
+  },
+  {
+    path: '/signal/smith',
+    name: 'signal-smith',
+    component: () => import('../pages/signal/SmithDemoPage.vue'),
+    meta: { title: 'Smith 圆图', icon: '⭕', group: '信号分析' }
+  },
+  {
+    path: '/signal/apd',
+    name: 'signal-apd',
+    component: () => import('../pages/signal/ApdDemoPage.vue'),
+    meta: { title: 'APD/CCDF', icon: '📈', group: '信号分析' }
   },
   {
     // 子窗口演示页：仅通过主进程创建子窗口时加载，不在菜单显示

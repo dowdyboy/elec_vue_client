@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  apdCcdfDisplayOnly,
   constellationDisplayOnly,
   eyeDisplayOnly,
   iqDisplayOnly,
   persistenceDisplayOnly,
   powerTimeDisplayOnly,
+  smithDisplayOnly,
   spectrogramDisplayOnly,
   spectrumDisplayOnly
 } from './presets'
@@ -50,5 +52,14 @@ describe('最小显示预设', () => {
     expect(persistenceDisplayOnly.axis).toBe(true)
     expect(persistenceDisplayOnly.grid).toBe(true)
     expect('analysis' in persistenceDisplayOnly).toBe(false)
+
+    expect(smithDisplayOnly.showInfo).toBe(false)
+    expect(smithDisplayOnly.showGrid).toBe(true)
+    expect(smithDisplayOnly.showCursor).toBe(true)
+
+    expect(apdCcdfDisplayOnly.showInfo).toBe(false)
+    expect(apdCcdfDisplayOnly.axis).toBe(true)
+    expect(apdCcdfDisplayOnly.grid).toBe(true)
+    expect('analysis' in apdCcdfDisplayOnly).toBe(false)
   })
 })

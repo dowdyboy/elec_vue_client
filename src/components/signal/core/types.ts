@@ -752,6 +752,71 @@ export interface PersistenceProps extends ChartBaseProps {
   labels?: ChartLabels
 }
 
+// ── Smith 圆图 ──
+export interface SmithTrace {
+  i: Float32Array
+  q: Float32Array
+  name?: string
+  color?: string
+}
+export interface SmithProps extends ChartBaseProps {
+  data?: SmithTrace | SmithTrace[]
+  z0?: number
+  traceWidth?: number
+  alpha?: number
+  showGrid?: boolean
+  showLabels?: boolean
+  showCursor?: boolean
+  showInfo?: boolean
+  maxPoints?: number
+  freqStartHz?: number
+  freqStopHz?: number
+  chartStyle?: ChartStyle
+  labels?: ChartLabels
+}
+
+// ── APD / CCDF ──
+export interface ApdCurve {
+  /** 功率电平 dB */
+  x: Float32Array
+  /** 概率/超限概率 % */
+  y: Float32Array
+}
+export interface ApdCcdfData {
+  apd: ApdCurve
+  ccdf: ApdCurve
+  meanDb: number
+  peakDb: number
+  paprDb: number
+  /** CCDF 0.1% 电平 */
+  p01Db: number
+  /** CCDF 1% 电平 */
+  p1Db: number
+  sampleCount: number
+}
+export interface ApdAnalysisConfig {
+  enabled?: boolean
+  /** 直方图 bin 数，默认 100 */
+  bins?: number
+  minDb?: number
+  maxDb?: number
+  /** 输入是线性功率而非 dB */
+  linear?: boolean
+}
+export interface ApdCcdfProps extends ChartBaseProps {
+  data?: ApdCcdfData
+  /** 可选：把 appendData 的功率样本转成 APD/CCDF */
+  analysis?: ApdAnalysisConfig
+  showInfo?: boolean
+  axis?: boolean
+  xAxis?: boolean
+  grid?: boolean
+  axisLabels?: boolean
+  lineWidth?: number
+  chartStyle?: ChartStyle
+  labels?: ChartLabels
+}
+
 // ── 眼图 ──
 export interface EyeInput {
   traces: Float32Array[]

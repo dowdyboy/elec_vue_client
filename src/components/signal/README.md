@@ -1,4 +1,4 @@
-# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱）集成指南
+﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -33,12 +33,14 @@ import {
   SignalQualityPanel,
   EyeDiagramChart,
   PersistenceSpectrumChart,
+  SmithChart,
+  ApdCcdfChart,
   iqAdapters
 } from '@/components/signal'
 ```
 
-> 公共入口会引入 8 个组件；只打包部分组件时可直接深路径导入
-> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue` / `PowerTimeChart.vue` / `SignalQualityPanel.vue` / `EyeDiagramChart.vue` / `PersistenceSpectrumChart.vue`，由打包器做 tree-shaking。
+> 公共入口会引入 10 个组件；只打包部分组件时可直接深路径导入
+> `@/components/signal/IqChart.vue` / `SpectrumChart.vue` / `SpectrogramChart.vue` / `ConstellationChart.vue` / `PowerTimeChart.vue` / `SignalQualityPanel.vue` / `EyeDiagramChart.vue` / `PersistenceSpectrumChart.vue` / `SmithChart.vue` / `ApdCcdfChart.vue`，由打包器做 tree-shaking。
 
 ### 方式 B：全局注册
 
@@ -67,7 +69,7 @@ import 'elec-signal-charts/style.css'
 
 ### 最小显示预设
 
-公共入口导出七组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
+公共入口导出九组“纯显示”props 组合；不传额外分析参数即可当普通画布使用：
 
 ```ts
 import {
@@ -76,11 +78,15 @@ import {
   PowerTimeChart,
   EyeDiagramChart,
   PersistenceSpectrumChart,
+  SmithChart,
+  ApdCcdfChart,
   iqDisplayOnly,
   spectrumDisplayOnly,
   powerTimeDisplayOnly,
   eyeDisplayOnly,
-  persistenceDisplayOnly
+  persistenceDisplayOnly,
+  smithDisplayOnly,
+  apdCcdfDisplayOnly
 } from '@/components/signal'
 
 // 不启用触发/包络/右键菜单
@@ -97,6 +103,12 @@ import {
 
 // 直接显示密度矩阵，不显示信息栏
 <PersistenceSpectrumChart v-bind="persistenceDisplayOnly" :data="matrix" />
+
+// Smith 只画 Γ 轨迹
+<SmithChart v-bind="smithDisplayOnly" :data="traces" />
+
+// APD/CCDF 只画曲线
+<ApdCcdfChart v-bind="apdCcdfDisplayOnly" :data="curves" />
 ```
 
 - `iqDisplayOnly`：触发关闭、包络关闭、右键菜单关闭；
@@ -106,6 +118,8 @@ import {
 - `powerTimeDisplayOnly`：不启用脉冲分析、不显示信息栏；
 - `eyeDisplayOnly`：只叠加轨迹、不显示指标角标；
 - `persistenceDisplayOnly`：直接显示密度矩阵、不显示信息栏；
+- `smithDisplayOnly`：只画 Γ 轨迹、保留网格/游标；
+- `apdCcdfDisplayOnly`：只画 APD/CCDF 曲线；
 - 预设之后可继续覆盖任意 prop，后者优先。
 
 ### 尺寸（重点）
@@ -336,6 +350,43 @@ chart.appendData(spectrumDb) // Float32Array
 - Canvas2D 热力图，频率/幅度轴、色标、游标；
 - 详细 API 见 [SIG-08](../../../docs/SIG-08-持续谱.md)。
 
+### Smith 圆图
+
+```vue
+<SmithChart ref="smith" :height="520" :z0="50" />
+```
+
+```ts
+smith.value?.appendData({ i, q, name: 'Antenna' }) // Γ 实部/虚部
+smith.value?.getStats() // VSWR/回波损耗
+```
+
+- 纯显示 Γ 轨迹，不做 VNA 校准；
+- 等电阻/等电抗网格，游标显示 Γ/VSWR/RL/阻抗；
+- 详细 API 见 [SIG-09](../../../docs/SIG-09-Smith圆图.md)。
+
+### APD / CCDF
+
+纯显示曲线：
+
+```ts
+chart.appendData({ apd: { x, y }, ccdf: { x, y }, meanDb, peakDb, paprDb, p01Db, p1Db, sampleCount })
+```
+
+可选从功率样本计算：
+
+```vue
+<ApdCcdfChart :analysis="{ enabled: true, bins: 100 }" />
+```
+
+```ts
+chart.appendData(samplesDb)
+```
+
+- 不开 `analysis` 时只接受 APD/CCDF 曲线；
+- 输出 APD/CCDF/PAPR/0.1%/1% 电平；
+- 详细 API 见 [SIG-10](../../../docs/SIG-10-APD-CCDF.md)。
+
 ### 时频瀑布
 
 ```vue
@@ -477,7 +528,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 194 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 200 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -515,4 +566,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.3.0'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.4.0'`（公共 API 变更时按语义化版本维护）。
