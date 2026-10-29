@@ -25,7 +25,7 @@ import {
   type ModType,
   type SignalAnalysisConfig
 } from '../../shared/signal'
-import { createSignalGenerator, type SignalGenerator } from '../../shared/signalDsp'
+import { SourceEngine } from '../../shared/sourceEngine'
 import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
@@ -59,8 +59,8 @@ class LocalAnalysisSource implements SignalAnalysisSource {
   private acc = new SpectrogramAccumulator()
   /** 跨帧频谱分析器：pointsPerFrame < fftSize 时凑满窗再算，避免零填充 */
   private spec = new SpectrumAnalyzer()
-  /** 有状态信号生成器（相位/符号时钟/成型滤波跨帧连续）；配置变更时重建 */
-  private gen: SignalGenerator | null = null
+  /** 有状态源引擎（输出域）；分析只消费其 SourceFrame.data */
+  private sourceEngine: SourceEngine
   private onFrame: ((f: AnalysisFrame) => void) | null = null
   private lastErrAt = 0
   /** 消费者守卫：无订阅者且无外部 socket 观众时跳过重计算（trigger 强制一帧不受限） */
@@ -68,6 +68,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
+    this.sourceEngine = new SourceEngine(this.config)
   }
 
   start(onFrame: (f: AnalysisFrame) => void): void {
@@ -87,9 +88,9 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
     this.config = { ...this.config, ...patch }
+    this.sourceEngine.setConfig(this.config)
     this.acc.reset()
     this.spec.reset()
-    this.gen = null // 配置变更：重建生成器（相位/符号历史重置）
   }
 
   getConfig(): SignalAnalysisConfig {
@@ -110,7 +111,7 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 
   private genFrame(): Float32Array {
     const cfg = this.config
-    return (this.gen ??= createSignalGenerator(cfg)).next(cfg.pointsPerFrame)
+    return this.sourceEngine.next(cfg.pointsPerFrame).data
   }
 
   private tick(force = false): void {

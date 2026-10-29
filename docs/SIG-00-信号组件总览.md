@@ -1,4 +1,4 @@
-# SIG-00 - 信号组件总览（可复用高性能）
+﻿# SIG-00 - 信号组件总览（可复用高性能）
 
 > 信号源已从本组件总览拆出：`/source` 信号源工作台负责源类型/输出/损伤/播放，`/signal/*` 只负责分析 UI。见 [SRC-01](./SRC-01-信号源工作台.md)。
 
@@ -147,7 +147,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 203 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
+npm run typecheck && npm run lint && npm test   # 当前 206 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 npm run test:smoke    # 新组件 Electron 集成冒烟 + 截图（PowerTime/Eye/Persistence/Smith/APD/Quality）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)
