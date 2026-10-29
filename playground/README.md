@@ -20,6 +20,13 @@ npx vite build --config playground/vite.config.ts
 
 产物在 `playground/dist`。
 
+新组件集成 smoke（PowerTime/Eye/Persistence/Smith/APD/Quality）：
+
+```powershell
+npm run test:smoke
+# 构建后由 Electron 加载 smoke.html，检查统计结果/页面错误并输出 playground/dist/smoke.png
+```
+
 ## 演示内容
 
 - `IqChart`：模拟 int16 交织 IQ → Web Worker 解析为 Float32 → `appendData(..., { sampleRate })`

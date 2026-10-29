@@ -66,6 +66,7 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例
 - 像素级视觉回归（Canvas2D/WebGL2 双基线，覆盖 IQ/频谱/时频/星座）
+- 新组件 Electron smoke：PowerTime/Eye/Persistence/Smith/APD/Quality 的 API/统计/渲染检查
 
 文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 

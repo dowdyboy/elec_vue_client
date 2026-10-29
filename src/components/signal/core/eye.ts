@@ -123,6 +123,8 @@ export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeSta
 
   // 各采样位置的眼张开；取张开最大的位置作为眼图中心
   const sep = new Float32Array(maxLen)
+  const midFrac = new Float32Array(maxLen)
+  const band = Math.max(1e-12, amplitude * 0.15)
   const vals: number[] = []
   let bestIndex = 0
   for (let x = 0; x < maxLen; x++) {
@@ -132,6 +134,9 @@ export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeSta
     }
     vals.sort((a, b) => a - b)
     sep[x] = percentile(vals, 0.95) - percentile(vals, 0.05)
+    let midCount = 0
+    for (const v of vals) if (Math.abs(v - mid) <= band) midCount++
+    midFrac[x] = vals.length > 0 ? midCount / vals.length : 0
     if (sep[x]! > sep[bestIndex]!) bestIndex = x
   }
   const height = Math.max(0, sep[bestIndex]!)
@@ -140,8 +145,9 @@ export function computeEyeStats(traces: Float32Array[], spanSymbols = 2): EyeSta
   let left = bestIndex
   let right = bestIndex
   if (height > 0) {
-    while (left > 0 && sep[left - 1]! >= threshold) left--
-    while (right < maxLen - 1 && sep[right + 1]! >= threshold) right++
+    // 眼宽：围绕张开最大处，扩展“经过中点附近的轨迹比例 <= 20%”的连续区间
+    while (left > 0 && sep[left - 1]! >= threshold && midFrac[left - 1]! <= 0.2) left--
+    while (right < maxLen - 1 && sep[right + 1]! >= threshold && midFrac[right + 1]! <= 0.2) right++
   }
   const width = height > 0 ? (right - left + 1) / maxLen : 0
 

@@ -135,7 +135,7 @@ function clear(): void {
 function plotMetrics(): { x: number; y: number; w: number; h: number } {
   const w = Math.max(1, glChart.width.value / Math.max(1, glChart.dpr.value))
   const h = Math.max(1, glChart.height.value / Math.max(1, glChart.dpr.value))
-  return { x: 58, y: 18, w: Math.max(1, w - 76), h: Math.max(1, h - 48) }
+  return { x: 58, y: 34, w: Math.max(1, w - 76), h: Math.max(1, h - 64) }
 }
 
 function draw(): void {
@@ -176,7 +176,6 @@ function draw(): void {
   if (props.axisLabels !== false && props.axis) {
     ctx.fillStyle = t.text
     ctx.font = '11px system-ui, sans-serif'
-    ctx.fillText('probability', plot.x + 4, plot.y + 12)
     ctx.textAlign = 'right'
     ctx.fillText('dB', plot.x + plot.w, plot.y + plot.h - 4)
     ctx.textAlign = 'left'
@@ -214,16 +213,17 @@ function draw(): void {
   drawCurve(d.ccdf, t.traceQ)
   ctx.restore()
   ctx.globalAlpha = 1
-  // 图例
+  // 图例（右上，避开左侧 Y 轴与信息栏）
+  const lx = plot.x + plot.w - 108
   ctx.fillStyle = t.traceI
-  ctx.fillRect(plot.x + 8, plot.y + 8, 12, 2)
+  ctx.fillRect(lx, plot.y + 8, 12, 2)
   ctx.fillStyle = t.text
   ctx.font = '11px system-ui, sans-serif'
-  ctx.fillText('APD', plot.x + 24, plot.y + 13)
+  ctx.fillText('APD', lx + 16, plot.y + 13)
   ctx.fillStyle = t.traceQ
-  ctx.fillRect(plot.x + 62, plot.y + 8, 12, 2)
+  ctx.fillRect(lx + 54, plot.y + 8, 12, 2)
   ctx.fillStyle = t.text
-  ctx.fillText('CCDF', plot.x + 78, plot.y + 13)
+  ctx.fillText('CCDF', lx + 70, plot.y + 13)
 }
 
 function getStats(): ApdCcdfData | null {

@@ -23,7 +23,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        visual: fileURLToPath(new URL('./visual.html', import.meta.url))
+        visual: fileURLToPath(new URL('./visual.html', import.meta.url)),
+        smoke: fileURLToPath(new URL('./smoke.html', import.meta.url))
       }
     }
   }

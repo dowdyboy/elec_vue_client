@@ -81,6 +81,7 @@ const threshold = computed(() => {
   return Number.isFinite(v) ? (v as number) : undefined
 })
 const info = computed(() => {
+  void pointCount.value
   const s = computePowerStats(buffer.values, buffer.length)
   const unit = props.unit
   if (!s.count) return ''
@@ -138,7 +139,7 @@ function normalize(raw: unknown): PowerTimeNormalized | null {
       return null
     }
   }
-  if (input && typeof input === 'object' && 'values' in input) {
+  if (!ArrayBuffer.isView(input) && input && typeof input === 'object' && 'values' in input) {
     const o = input as {
       values: unknown
       timeStepSec?: number
@@ -239,7 +240,7 @@ function plotMetrics(): { x: number; y: number; w: number; h: number } {
   const h = Math.max(1, glChart.height.value / Math.max(1, glChart.dpr.value))
   const left = 56
   const right = 16
-  const top = 18
+  const top = 30
   const bottom = 28
   return { x: left, y: top, w: Math.max(1, w - left - right), h: Math.max(1, h - top - bottom) }
 }
@@ -367,7 +368,9 @@ function drawOverlay(
       ctx.stroke()
       ctx.fillStyle = theme.triggerColor
       ctx.font = '11px system-ui, sans-serif'
-      ctx.fillText(`${threshold.value.toFixed(1)} ${props.unit}`, plot.x + 4, y - 3)
+      ctx.textAlign = 'right'
+      ctx.fillText(`${threshold.value.toFixed(1)} ${props.unit}`, plot.x + plot.w - 4, y - 3)
+      ctx.textAlign = 'left'
       ctx.restore()
     }
   }

@@ -139,7 +139,7 @@ function clear(): void {
 function plotMetrics(): { x: number; y: number; w: number; h: number } {
   const w = Math.max(1, glChart.width.value / Math.max(1, glChart.dpr.value))
   const h = Math.max(1, glChart.height.value / Math.max(1, glChart.dpr.value))
-  return { x: 56, y: 18, w: Math.max(1, w - 72), h: Math.max(1, h - 46) }
+  return { x: 56, y: 32, w: Math.max(1, w - 72), h: Math.max(1, h - 60) }
 }
 
 function draw(): void {

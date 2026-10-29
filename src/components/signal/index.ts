@@ -89,7 +89,7 @@ export {
 } from './core/presets'
 
 /** 组件库版本（宿主可用于诊断/兼容判断；语义化版本按公共 API 变更维护） */
-export const SIGNAL_CHARTS_VERSION = '2.4.1'
+export const SIGNAL_CHARTS_VERSION = '2.4.2'
 
 /** Vue 插件：app.use(SignalCharts) 后可用 <IqChart>/<SpectrumChart>/... */
 export const SignalCharts: Plugin = {

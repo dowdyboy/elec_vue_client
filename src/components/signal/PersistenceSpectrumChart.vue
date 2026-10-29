@@ -231,7 +231,7 @@ function plotMetrics(): { x: number; y: number; w: number; h: number; barX: numb
   const h = Math.max(1, glChart.height.value / Math.max(1, glChart.dpr.value))
   const left = 56
   const right = props.showColorbar !== false ? 78 : 16
-  const top = 18
+  const top = 32
   const bottom = 28
   return {
     x: left,

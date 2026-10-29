@@ -370,7 +370,16 @@ smith.value?.getStats() // VSWR/回波损耗
 纯显示曲线：
 
 ```ts
-chart.appendData({ apd: { x, y }, ccdf: { x, y }, meanDb, peakDb, paprDb, p01Db, p1Db, sampleCount })
+chart.appendData({
+  apd: { x, y },
+  ccdf: { x, y },
+  meanDb,
+  peakDb,
+  paprDb,
+  p01Db,
+  p1Db,
+  sampleCount
+})
 ```
 
 可选从功率样本计算：
@@ -536,7 +545,7 @@ specgram.value?.appendData(rowDb, {
 
 ```bash
 npm run playground          # 开发服务器
-npm run build:playground    # 生产构建（index + visual 两个入口）
+npm run build:playground    # 生产构建（index + visual + smoke 三个入口）
 ```
 
 **像素级视觉回归**（固定种子、1200×2000 页面、dark、en-US、DPR=1；real + complex 频谱/瀑布 + QPSK 星座，分别回归 canvas2d/webgl2）：
@@ -549,6 +558,14 @@ npm run test:visual:update   # 构建 + 更新两套基线
 - 基线：`playground/visual/baseline-canvas2d.png`、`baseline-webgl2.png`；失败时输出 `playground/dist/visual-*.png`。
 - 判定：通道差 > `VISUAL_PIXEL_DELTA`（默认 16）计差异像素，占比 > `VISUAL_MAX_DIFF_RATIO`（默认 0.4%）失败。
 - 基线绑定本机 Electron/GPU/字体；CI 需在相同镜像生成。DPR 通过 `--force-device-scale-factor=1` 固定；每个后端独立 Electron 进程运行。
+
+**新组件 smoke**（PowerTime/Eye/Persistence/Smith/APD/Quality 的 API、统计与渲染）：
+
+```powershell
+npm run test:smoke
+# 构建 playground 后由 Electron 加载 smoke.html，检查统计结果、页面错误并截图
+# 输出：playground/dist/smoke.png
+```
 
 **截图冒烟**（可交互 Playground，自动检查非空）：
 
@@ -566,4 +583,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.4.1'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.4.2'`（公共 API 变更时按语义化版本维护）。

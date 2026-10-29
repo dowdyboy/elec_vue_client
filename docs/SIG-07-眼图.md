@@ -1,4 +1,4 @@
-# SIG-07 - 眼图（Eye Diagram）
+﻿# SIG-07 - 眼图（Eye Diagram）
 
 > `src/components/signal/EyeDiagramChart.vue`
 >
@@ -69,7 +69,7 @@ chart.setData(traces)          // 替换
 
 - `height`：张开最大处 p5~p95 的张开量；
 - `opening`：眼高 / 全幅度；
-- `width`：该位置附近 p5~p95 张开 ≥25% 眼高的连续区间占比；
+- `width`：该位置附近 p5~p95 张开 ≥25% 眼高、且过中点附近的轨迹比例 ≤20% 的连续区间占比；
 - `jitter`：首次过中点时间的 RMS / 轨迹长度；
 - `jitterUi`：按 `spanSymbols` 换算的 UI 值。
 
