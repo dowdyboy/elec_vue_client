@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 【文件】预加载脚本（preload）
  * 【说明】preload 是渲染进程与主进程之间的"安全桥"：
  *         - contextBridge 暴露的 API 是受控的（白名单方式，不泄露 Electron 全部能力）
@@ -557,6 +557,26 @@ const api = {
     setConfig: (cfg: unknown) =>
       invoke<{ ok: boolean; config?: unknown; error?: string }>('source:setConfig', cfg),
     trigger: () => invoke<{ ok: boolean; seq?: number }>('source:trigger'),
+    recordStart: () => invoke<{ ok: boolean; status?: unknown }>('source:recordStart'),
+    recordStop: () => invoke<{ ok: boolean; status?: unknown }>('source:recordStop'),
+    recordStatus: () =>
+      invoke<{
+        recording: boolean
+        frames: number
+        samples: number
+        durationMs: number
+        truncated: boolean
+      }>('source:recordStatus'),
+    recordExport: () =>
+      invoke<{
+        ok: boolean
+        path?: string
+        metaPath?: string
+        frames?: number
+        samples?: number
+        canceled?: boolean
+        error?: string
+      }>('source:recordExport'),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },
 

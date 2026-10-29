@@ -41,6 +41,16 @@ contextBridge.exposeInMainWorld('api', {
     },
     setConfig: async () => ({ ok: true, config }),
     trigger: async () => ({ ok: true, seq: 1 }),
+    recordStart: async () => ({ ok: true }),
+    recordStop: async () => ({ ok: true }),
+    recordStatus: async () => ({
+      recording: false,
+      frames: 0,
+      samples: 0,
+      durationMs: 0,
+      truncated: false
+    }),
+    recordExport: async () => ({ ok: false, canceled: true }),
     onFrame: () => () => {}
   },
   signalAnalysis: {

@@ -59,6 +59,13 @@ const pulseDuty = ref(0.5)
 const toneSpacing = ref(100)
 const enabled = ref(true)
 const frameCount = ref(0)
+const recording = ref(false)
+const recordFrames = ref(0)
+const recordSamples = ref(0)
+const recordDurationMs = ref(0)
+const recordTruncated = ref(false)
+const recordBusy = ref(false)
+let recordPoll: ReturnType<typeof setInterval> | null = null
 const lastFrame = ref<{
   seq: number
   sampleRate?: number
@@ -177,9 +184,79 @@ async function stopSource(): Promise<void> {
     await window.api.signalAnalysis.stop().catch(() => {})
     analysisStartedHere = false
   }
+  if (recording.value) {
+    await window.api.source.recordStop().catch(() => {})
+    recording.value = false
+  }
   await window.api.source.stop()
   await refreshStatus()
+  await refreshRecordStatus()
   message.success('信号源已停止')
+}
+
+async function refreshRecordStatus(): Promise<void> {
+  try {
+    const st = (await window.api.source.recordStatus()) as {
+      recording: boolean
+      frames: number
+      samples: number
+      durationMs: number
+      truncated: boolean
+    }
+    recording.value = st.recording
+    recordFrames.value = st.frames
+    recordSamples.value = st.samples
+    recordDurationMs.value = st.durationMs
+    recordTruncated.value = st.truncated
+  } catch {
+    /* ignore */
+  }
+}
+
+async function toggleRecord(): Promise<void> {
+  if (recording.value) {
+    await window.api.source.recordStop().catch(() => {})
+    recording.value = false
+    await refreshRecordStatus()
+    return
+  }
+  if (!running.value) {
+    message.warning('请先启动源再录制')
+    return
+  }
+  await window.api.source.recordStart().catch(() => {})
+  await refreshRecordStatus()
+  message.success('开始录制源帧')
+}
+
+async function exportRecord(): Promise<void> {
+  if (recordFrames.value === 0) {
+    message.warning('当前没有录制数据')
+    return
+  }
+  recordBusy.value = true
+  try {
+    const r = (await window.api.source.recordExport()) as {
+      ok: boolean
+      path?: string
+      metaPath?: string
+      canceled?: boolean
+      error?: string
+    }
+    if (r.canceled) return
+    if (!r.ok) {
+      message.error(r.error || '导出失败')
+      return
+    }
+    message.success(`已导出 ${r.path}（元数据 ${r.metaPath}）`)
+  } finally {
+    recordBusy.value = false
+    await refreshRecordStatus()
+  }
+}
+
+function formatDuration(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 async function applyAndNotify(): Promise<void> {
@@ -195,6 +272,8 @@ let disposeSourceFrame: (() => void) | null = null
 
 onMounted(async () => {
   await refreshStatus(true)
+  await refreshRecordStatus()
+  recordPoll = setInterval(() => void refreshRecordStatus(), 1000)
   disposeSourceFrame = window.api.source.onFrame((frame: SourceFrame) => {
     frameCount.value++
     lastFrame.value = {
@@ -223,6 +302,8 @@ onMounted(async () => {
 onUnmounted(() => {
   disposeSourceFrame?.()
   disposeSourceFrame = null
+  if (recordPoll) clearInterval(recordPoll)
+  recordPoll = null
 })
 </script>
 
@@ -238,7 +319,25 @@ onUnmounted(() => {
           {{ running ? '运行中' : '未运行' }}
         </NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
+        <NButton size="small" :type="recording ? 'error' : 'default'" @click="toggleRecord">
+          {{ recording ? '停止录制' : '录制' }}
+        </NButton>
+        <NButton
+          size="small"
+          :disabled="recordFrames === 0 || recordBusy"
+          :loading="recordBusy"
+          @click="exportRecord"
+          >导出</NButton
+        >
       </div>
+    </div>
+    <div v-if="recording || recordFrames > 0" class="record-bar">
+      <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
+      <span
+        >{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
+        {{ formatDuration(recordDurationMs) }}</span
+      >
+      <span v-if="recordTruncated" class="record-warn">已达录制上限，后续帧未记录</span>
     </div>
 
     <NGrid :cols="24" :x-gap="16">
@@ -411,6 +510,20 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+.record-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.08);
+  font-size: 12px;
+  color: #888;
+}
+.record-warn {
+  color: #e6a23c;
 }
 .source-desc {
   margin-top: 8px;

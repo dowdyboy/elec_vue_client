@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/8 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖，以及 PowerTime/Eye/APD/Persistence 的源数据接入。
+> 状态：Phase 0/9 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入，以及源帧录制/导出。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -149,17 +149,45 @@ SourceService.source:frame
 
 Demo 中显式提供“仿真/源数据”切换，组件本身仍是纯显示，不依赖源。
 
-## 七、当前边界
+## 七、源帧录制 / 导出
+
+源工作台支持：
+
+- 开始/停止录制；
+- 显示录制帧数/样本数/时长；
+- 达到上限后标记截断并停止；
+- 导出为 `.f32` + `.json`。
+
+文件格式：
+
+```text
+source-recording-*.f32   little-endian interleaved IQ
+source-recording-*.json  {
+  format: 'source-iq-f32-v1',
+  endianness: 'little',
+  layout: 'interleaved IQ',
+  sampleRate,
+  totalSamples,
+  frames: [{ seq, timestamp, sampleRate, centerFrequencyHz,
+             outputMode, waveform, modType, samplesPerSymbol,
+             amplitude, sampleCount }]
+}
+```
+
+`SourceRecorder` 位于 `src/shared/sourceRecorder.ts`，默认上限 4,000,000 样本。
+
+## 八、当前边界
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 仍主要使用静态 Γ 数据；
+- 录制在内存中进行（上限后截断），尚不支持流式落盘/无限时长；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
-- 尚未接入硬件输出/文件导出/独立模拟后端。
+- 尚未接入硬件输出/独立模拟后端。
 
-## 八、验证
+## 九、验证
 
 ```powershell
 npm run typecheck
@@ -170,9 +198,10 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 `test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃；真实推流仍由 `signalAnalysis` 服务测试覆盖。
 
-## 九、后续
+## 十、后续
 
 1. 新分析组件按源类型自动选择显示模式；
-2. 真实 RF/DAC 后端与仿真后端；
-3. 数字源扩展 OFDM/任意 IQ；
-4. 源帧录制/导出与可重复种子。
+2. 增加扫频/S11 源并接入 Smith；
+3. 真实 RF/DAC 后端与仿真后端；
+4. 数字源扩展 OFDM/任意 IQ；
+5. 录制定时/流式落盘与可重复种子。
