@@ -1,5 +1,7 @@
 # SIG-00 - 信号组件总览（可复用高性能）
 
+> 信号源已从本组件总览拆出：`/source` 信号源工作台负责源类型/输出/损伤/播放，`/signal/*` 只负责分析 UI。见 [SRC-01](./SRC-01-信号源工作台.md)。
+
 > 定位：垂直领域 10 组件（IQ/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith/APD-CCDF）。**10 个组件均已完成库化**（公共入口、适配器、i18n、包构建；IQ/频谱/时频/星座含像素回归，其余先以核心单测 + Demo 覆盖）。数据经 `adapter` 自转（后端协议不确定，前端统一为 `Float32Array`），组件内 `WebGL2/Canvas2D` 自闭环高性能——**FFT/窗/dB/时频行在服务端完成**；组件只做迹线累计、抽稀、峰值/带宽类测量与绘制（频谱组件因此不是「零信号处理」），组件内无 Worker（Playground 提供宿主侧 Worker 解析示例）；自带 `light`/`dark`/`auto`/`spectrum` 主题，无额外依赖。IQ/频谱/时频/星座默认 WebGL2，不可用时自动回退 Canvas2D（`renderer` 可强制后端）；也可构建为 `dist-signal` 包（`npm run build:signal`，含 ESM/CSS/d.ts）。
 
 > 所有组件都保留**最简使用路径**：IQ 不启用触发、频谱只累计/显示迹线、时频只追加 dB 行、星座纯显示、功率-时间不启用脉冲分析、信号质量面板只显示指标、眼图只叠加轨迹、持续谱直接显示密度矩阵、Smith 只画 Γ 轨迹、APD/CCDF 只画曲线；触发、OBW/ACPR/迹线保持、EVM/载波/符号恢复等高级分析必须由调用方显式开启。组件不会因为没有传高级参数而拒绝工作。
@@ -145,7 +147,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 200 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
+npm run typecheck && npm run lint && npm test   # 当前 203 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 npm run test:smoke    # 新组件 Electron 集成冒烟 + 截图（PowerTime/Eye/Persistence/Smith/APD/Quality）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)

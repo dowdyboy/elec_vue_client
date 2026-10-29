@@ -20,7 +20,8 @@ declare module 'vue-router' {
 const GROUP_LABELS: Record<string, string> = {
   'Electron 教学': '⚛ Electron 教学',
   'TypeScript 惯用法': '🟦 TypeScript 惯用法',
-  信号分析: '📡 信号分析'
+  信号源: '📶 信号源',
+  信号分析UI组件: '📡 信号分析 UI 组件'
 }
 
 export const routes: RouteRecordRaw[] = [
@@ -289,66 +290,77 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../pages/ts/TsElectronBridgePage.vue'),
     meta: { title: '与 Electron 结合', icon: '🔗', group: 'TypeScript 惯用法' }
   },
-  // ── 信号分析板块（垂直领域，10 组件 + Mock 配置，Mock 服务端自产数）──
+  // ── 信号源（源输出域）──
+  {
+    path: '/source',
+    name: 'source-workbench',
+    component: () => import('../pages/source/SourceWorkbenchPage.vue'),
+    meta: { title: '信号源工作台', icon: '📶', group: '信号源' }
+  },
+  {
+    path: '/source/advanced',
+    name: 'source-advanced',
+    component: () => import('../pages/signal/SignalConfigPage.vue'),
+    meta: { title: '源/服务高级配置', icon: '🛠️', group: '信号源' }
+  },
   {
     path: '/signal',
-    name: 'signal-config',
-    component: () => import('../pages/signal/SignalConfigPage.vue'),
-    meta: { title: 'Mock 配置', icon: '🛠️', group: '信号分析' }
+    redirect: '/source/advanced'
   },
+  // ── 信号分析 UI 组件（显示/测量域）──
   {
     path: '/signal/iq',
     name: 'signal-iq',
     component: () => import('../pages/signal/IqDemoPage.vue'),
-    meta: { title: 'IQ 时域', icon: '〰️', group: '信号分析' }
+    meta: { title: 'IQ 时域', icon: '〰️', group: '信号分析UI组件' }
   },
   {
     path: '/signal/spectrum',
     name: 'signal-spectrum',
     component: () => import('../pages/signal/SpectrumDemoPage.vue'),
-    meta: { title: '频谱', icon: '📊', group: '信号分析' }
+    meta: { title: '频谱', icon: '📊', group: '信号分析UI组件' }
   },
   {
     path: '/signal/spectrogram',
     name: 'signal-spectrogram',
     component: () => import('../pages/signal/SpectrogramDemoPage.vue'),
-    meta: { title: '时频图', icon: '🌈', group: '信号分析' }
+    meta: { title: '时频图', icon: '🌈', group: '信号分析UI组件' }
   },
   {
     path: '/signal/constellation',
     name: 'signal-constellation',
     component: () => import('../pages/signal/ConstellationDemoPage.vue'),
-    meta: { title: '星座图', icon: '✨', group: '信号分析' }
+    meta: { title: '星座图', icon: '✨', group: '信号分析UI组件' }
   },
   {
     path: '/signal/power-time',
     name: 'signal-power-time',
     component: () => import('../pages/signal/PowerTimeDemoPage.vue'),
-    meta: { title: '功率-时间', icon: '⚡', group: '信号分析' }
+    meta: { title: '功率-时间', icon: '⚡', group: '信号分析UI组件' }
   },
   {
     path: '/signal/eye',
     name: 'signal-eye',
     component: () => import('../pages/signal/EyeDemoPage.vue'),
-    meta: { title: '眼图', icon: '👁️', group: '信号分析' }
+    meta: { title: '眼图', icon: '👁️', group: '信号分析UI组件' }
   },
   {
     path: '/signal/persistence',
     name: 'signal-persistence',
     component: () => import('../pages/signal/PersistenceDemoPage.vue'),
-    meta: { title: '持续谱', icon: '🌌', group: '信号分析' }
+    meta: { title: '持续谱', icon: '🌌', group: '信号分析UI组件' }
   },
   {
     path: '/signal/smith',
     name: 'signal-smith',
     component: () => import('../pages/signal/SmithDemoPage.vue'),
-    meta: { title: 'Smith 圆图', icon: '⭕', group: '信号分析' }
+    meta: { title: 'Smith 圆图', icon: '⭕', group: '信号分析UI组件' }
   },
   {
     path: '/signal/apd',
     name: 'signal-apd',
     component: () => import('../pages/signal/ApdDemoPage.vue'),
-    meta: { title: 'APD/CCDF', icon: '📈', group: '信号分析' }
+    meta: { title: 'APD/CCDF', icon: '📈', group: '信号分析UI组件' }
   },
   {
     // 子窗口演示页：仅通过主进程创建子窗口时加载，不在菜单显示

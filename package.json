@@ -19,6 +19,7 @@
     "test:visual": "npm run build:playground && node scripts/visual-run-all.mjs",
     "test:visual:update": "npm run build:playground && node scripts/visual-run-all.mjs --update",
     "test:smoke": "npm run build:playground && node scripts/run-smoke.mjs",
+    "test:source": "npm run build && node scripts/run-source-ui-smoke.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",

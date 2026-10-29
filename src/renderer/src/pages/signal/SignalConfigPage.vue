@@ -1,11 +1,9 @@
 <script setup lang="ts">
 /**
- * SignalConfigPage（信号分析服务配置页，纯配置，不含图表）
+ * SignalConfigPage（源/服务高级配置，过渡页）
  * 【职责】信源/处理/连接三类配置统一在此页维护，双源（local/remote）在此切换
- *  演示页不再持有任何处理/信源配置，仅做展示（theme/colorMap 等除外）
- *  配置保存后即时生效（运行中修改 FFT/窗等，前端组件自适应重置瀑布）
- *  端口约束：本地服务与内置远端Mock同端口互斥（OS 端口占用即互斥）；
- *  远程模式支持自定义 socket.io 后端地址，留空则连接同端口内置 Mock。
+ * 注意：Phase 0/1 后源工作台已独立到 /source；本页暂时保留源+FFT 过渡配置，
+ * 后续把 FFT/窗/重叠迁到分析 UI 侧，本页只保留源/连接。
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import {
@@ -463,7 +461,7 @@ onMounted(async () => {
 
 <template>
   <div style="padding: 16px; max-width: 880px">
-    <NCard title="🛠 信号分析服务配置" :bordered="false">
+    <NCard title="🛠 源 / 服务高级配置" :bordered="false">
       <template #header-extra>
         <div style="display: flex; gap: 8px; align-items: center">
           <NTag v-if="running" type="success" :bordered="false">

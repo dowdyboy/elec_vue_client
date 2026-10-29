@@ -46,6 +46,16 @@
 
 **进阶实践**：[docs/21](./docs/21-进阶工程实践.md)（sandbox 生产切换、远程调试、Sentry 崩溃上报、contentTracing、electron-store、electron-log 等）。
 
+## 信号源
+
+信号源与信号分析 UI 已拆分：源工作台负责波形/输出/损伤/播放，分析组件只负责显示/测量。
+
+- **信号源工作台**：`/source`，源类型目录、real/complex、载波/幅度/AWGN、启动/停止/单帧、IQ 预览
+- **源/服务高级配置**：`/source/advanced`，当前仍是源与 FFT 的过渡配置页
+- **信号分析 UI 组件**：`/signal/*`，不再承担源波形参数
+- 源领域模型与目录：[`src/shared/source.ts`](./src/shared/source.ts)
+- 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
+
 ## 信号分析组件
 
 IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith/APD-CCDF 10 个组件已按“可被其他上位机集成”的目标库化：
@@ -68,7 +78,7 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 - 像素级视觉回归（Canvas2D/WebGL2 双基线，覆盖 IQ/频谱/时频/星座）
 - 新组件 Electron smoke：PowerTime/Eye/Persistence/Smith/APD/Quality 的 API/统计/渲染检查
 
-文档：[SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
+文档：[SRC-01 信号源](./docs/SRC-01-信号源工作台.md) · [SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
 > 10 个组件均已完成库化；IQ/频谱/时频/星座含 Canvas2D 降级与像素回归，其余以核心单测 + Demo 覆盖。
 

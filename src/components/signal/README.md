@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
+# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -212,11 +212,11 @@ spec.value?.appendData(fullNRow, {
 
 > `real`：只取 I 通道，非 DC ×2，长度 `fftSize/2`；`complex`：I/Q 完整 FFT，长度 `fftSize`，负频独立。
 > 频率轴统一 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
-> Mock 配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
+> 源/服务高级配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
 
-### Mock 专业源（只影响演示后端）
+### 信号源（只影响演示后端）
 
-Mock 配置按专业源拆分：
+源工作台/高级配置按专业源拆分：
 
 - `outputMode`：`real`（默认）单路实数输出，IQ 捕获 I=x、Q=0；`complex` 复 IQ 输出；
 - `waveform`：CW / AM / FM / Pulse / Two-tone / Noise / Digital（BPSK/QPSK/16QAM）；
@@ -537,7 +537,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 200 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 203 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
