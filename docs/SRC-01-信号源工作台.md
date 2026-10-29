@@ -2,8 +2,8 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/5 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame，以及独立分析配置页。
-> 源工作台启动源后会启动本地分析消费者；分析 UI 的 `signal:analysis` 帧由 SourceFrame 经 FFT/时频生成。
+> 状态：Phase 0/6 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页，以及本地分析去 HTTP/socket 依赖。
+> 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
 
@@ -131,6 +131,7 @@ SourceService.source:frame
 ## 六、当前边界
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
+- 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
@@ -149,8 +150,7 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 ## 八、后续
 
-1. 去掉本地 `signalAnalysis` 的 HTTP/socket 依赖，纯化 SourceFrame 消费者；
-2. 新分析组件按源类型自动选择显示模式；
-3. 真实 RF/DAC 后端与仿真后端；
-4. 数字源扩展 OFDM/任意 IQ；
-5. 源帧录制/导出与可重复种子。
+1. 新分析组件按源类型自动选择显示模式；
+2. 真实 RF/DAC 后端与仿真后端；
+3. 数字源扩展 OFDM/任意 IQ；
+4. 源帧录制/导出与可重复种子。

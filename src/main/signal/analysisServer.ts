@@ -13,13 +13,10 @@
  */
 
 import { BrowserWindow, ipcMain } from 'electron'
-import http from 'node:http'
-import { Server as SocketIOServer } from 'socket.io'
 import { io as socketIoClient, type Socket as ClientSocket } from 'socket.io-client'
 import {
   defaultAnalysisConfig,
   FRAME_TYPE_BY_CODE,
-  FRAME_TYPE_CODE,
   sanitizeConfigPatch,
   type AnalysisFrame,
   type ModType,
@@ -566,14 +563,11 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
 }
 
 // ──────────────────────────────────────────────────
-// 注册（主进程）：统一把帧转发给渲染进程 + 可选 socket.io 外部观众
+// 注册（主进程）：本地 SourceFrame 消费者 / 远程 socket 客户端 → 渲染进程
 // ──────────────────────────────────────────────────
 
 export function registerSignalAnalysisServer(): () => void {
   let source: SignalAnalysisSource | null = null
-  let io: SocketIOServer | null = null
-  let server: http.Server | null = null
-  let port = 0
   // 持久化配置（未运行时也保留，供下次 start 使用；setConfig 即更新此处，重启生效）
   let persistedConfig: SignalAnalysisConfig = defaultAnalysisConfig()
   let persistedRemoteUrl = 'http://127.0.0.1:8768'
@@ -593,24 +587,6 @@ export function registerSignalAnalysisServer(): () => void {
     }
   }
 
-  async function closeIoAndServer(): Promise<void> {
-    if (io) {
-      const closing = io
-      io = null
-      await new Promise<void>((resolve) => closing.close(() => resolve()))
-    }
-    if (server) {
-      const closing = server
-      server = null
-      // 强制断开残留 keep-alive 连接，确保端口立即可复用（Node ≥18.2）
-      closing.closeAllConnections?.()
-      await new Promise<void>((resolve) => {
-        closing.close(() => resolve())
-        setTimeout(resolve, 500) // 兜底超时，避免异常连接卡住关闭流程
-      })
-    }
-  }
-
   function emitFrame(f: AnalysisFrame): void {
     if (!f.data || f.data.length === 0) {
       const now = Date.now()
@@ -621,34 +597,6 @@ export function registerSignalAnalysisServer(): () => void {
     }
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('signal:analysis', f)
-    }
-    if (io) {
-      // 用 Buffer.from(TypedArray) 直拷，避免池化 offset 对齐陷阱
-      let buf: Buffer
-      try {
-        buf = Buffer.from(f.data.buffer, f.data.byteOffset, f.data.byteLength)
-      } catch {
-        // 极端非对齐或异常则回退为按字节拷贝
-        buf = Buffer.from(new Uint8Array(f.data.buffer, f.data.byteOffset, f.data.byteLength))
-      }
-      io.emit('signal:analysis', {
-        type: FRAME_TYPE_CODE[f.type],
-        seq: f.seq,
-        fftSize: f.fftSize,
-        sampleRate: f.sampleRate,
-        dbScale: f.dbScale,
-        spectrumMode: f.spectrumMode,
-        freqStartHz: f.freqStartHz,
-        binHz: f.binHz,
-        fftShift: f.fftShift,
-        timeStepSec: f.timeStepSec,
-        outputMode: f.outputMode,
-        carrierHz: f.carrierHz,
-        samplesPerSymbol: f.samplesPerSymbol,
-        waveform: f.waveform,
-        modType: f.modType,
-        buffer: buf
-      })
     }
   }
 
@@ -664,15 +612,11 @@ export function registerSignalAnalysisServer(): () => void {
       if (!isTrustedSender(e)) return FORBIDDEN
       if (source) return { ok: false, error: '已运行，请先停止' }
       const mode = opts?.mode ?? 'local'
-      // 校验
-      if (mode === 'local') {
-        const p = opts?.port ?? (port || 8767)
-        if (!Number.isInteger(p) || p < 1 || p > 65535)
-          return { ok: false, error: `端口非法: ${p}` }
-      } else if (mode === 'remote') {
+      // 本地分析是纯 IPC SourceFrame 消费者，不监听端口；port 仅保留给远端 Mock/旧调用兼容
+      if (mode === 'remote') {
         const u = opts?.remoteUrl ?? persistedRemoteUrl
         if (!isValidUrl(u)) return { ok: false, error: `remoteUrl 非法: ${u}` }
-      } else {
+      } else if (mode !== 'local') {
         return { ok: false, error: `未知模式: ${mode}` }
       }
       try {
@@ -687,72 +631,14 @@ export function registerSignalAnalysisServer(): () => void {
           source.start(emitFrame)
           return { ok: true, mode, remoteUrl: persistedRemoteUrl }
         } else {
-          const p = opts?.port ?? 8767
           const local = new LocalAnalysisSource(persistedConfig)
-          // 消费者守卫：渲染进程订阅数 > 0，或外部 socket.io 观众在线时才重计算
-          local.hasConsumers = () =>
-            analysisSubscribers.size > 0 || (io?.engine?.clientsCount ?? 0) > 0
+          local.hasConsumers = () => analysisSubscribers.size > 0
           source = local
-          // 本地模式同时起一个 socket.io 服务，供外部观众订阅 analysis 帧（同端口互斥）
-          server = http.createServer((_, res) => {
-            res.setHeader('Content-Type', 'application/json; charset=utf-8')
-            res.setHeader('Access-Control-Allow-Origin', '*')
-            res.end(JSON.stringify({ ok: true, note: 'signal analysis server' }))
-          })
-          io = new SocketIOServer(server, { cors: { origin: '*' } })
-          const listenResult = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-            const onErr = (err: NodeJS.ErrnoException): void => {
-              console.error('[signalAnalysis] server error', err)
-              const msg =
-                err.code === 'EADDRINUSE'
-                  ? `端口 ${p} 已被占用（本地与远端同端口，只能其一运行）`
-                  : err.message
-              resolve({ ok: false, error: msg })
-            }
-            server!.once('error', onErr)
-            server!.listen(p, '127.0.0.1', () => {
-              server?.removeListener('error', onErr)
-              port = p
-              resolve({ ok: true })
-            })
-          })
-          if (!listenResult.ok) {
-            source = null
-            try {
-              io.close()
-            } catch {
-              void 0
-            }
-            io = null
-            try {
-              server.close()
-            } catch {
-              void 0
-            }
-            server = null
-            return { ok: false, error: listenResult.error }
-          }
-          source.start(emitFrame)
-          return { ok: true, mode, port, remoteUrl: persistedRemoteUrl }
+          local.start(emitFrame)
+          return { ok: true, mode, port: 0, remoteUrl: persistedRemoteUrl }
         }
       } catch (err) {
         source = null
-        if (io) {
-          try {
-            io.close()
-          } catch {
-            void 0
-          }
-          io = null
-        }
-        if (server) {
-          try {
-            server.close()
-          } catch {
-            void 0
-          }
-          server = null
-        }
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     }
@@ -765,16 +651,13 @@ export function registerSignalAnalysisServer(): () => void {
     source = null
     if (wasRemote)
       broadcastRemoteStatus({ connected: false, error: 'stopped', url: persistedRemoteUrl })
-    // 等待端口真正释放，消除「停止后立即重启」的 EADDRINUSE 竞态
-    await closeIoAndServer()
-    port = 0
     return { ok: true }
   })
 
   ipcMain.handle('signalAnalysis:getStatus', () => ({
     running: source !== null,
     mode: source?.mode ?? 'none',
-    port,
+    port: 0,
     remoteUrl: persistedRemoteUrl,
     config: source?.getConfig() ?? persistedConfig
   }))
@@ -841,6 +724,5 @@ export function registerSignalAnalysisServer(): () => void {
     ipcMain.removeHandler('signalAnalysis:trigger')
     ipcMain.removeHandler('signalAnalysis:subscribe')
     ipcMain.removeHandler('signalAnalysis:unsubscribe')
-    void closeIoAndServer()
   }
 }

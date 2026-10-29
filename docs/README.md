@@ -65,11 +65,11 @@
 
 ## 信号源（SRC-01）
 
-> 信号源与信号分析 UI 拆分：源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC，以及 SourceFrame 驱动的 FFT 分析链路和独立分析配置页。
+> 信号源与信号分析 UI 拆分：源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC，以及 SourceFrame 驱动的纯 IPC 本地 FFT 分析链路和独立分析配置页。
 
 | #   | 文档                                     | 对应源码                                                                                                                                          | 状态      |
 | --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/5 |
+| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/6 |
 
 ## 信号分析组件（SIG-00~10）
 

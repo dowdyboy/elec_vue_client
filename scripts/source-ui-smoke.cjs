@@ -61,6 +61,12 @@ async function run() {
     'document.body.innerText.includes("分析配置")'
   )
   if (!cfg) throw new Error('analysis config route did not render')
+  await win.webContents.executeJavaScript('location.hash = "#/source/advanced"')
+  await wait(400)
+  const conn = await win.webContents.executeJavaScript(
+    'document.body.innerText.includes("连接高级配置")'
+  )
+  if (!conn) throw new Error('source advanced route did not render')
   if (errors.length) throw new Error(`console errors: ${errors.join('; ')}`)
   console.log(`[source-ui] PASS ${out}`)
 }

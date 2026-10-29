@@ -26,7 +26,6 @@ const port = ref(8767)
 const remoteUrl = ref('')
 const running = ref(false)
 const mode = ref('none')
-const runningPort = ref(0)
 const runningRemoteUrl = ref('')
 const remoteMockRunning = ref(false)
 const remoteMockPort = ref(0)
@@ -44,7 +43,6 @@ async function refresh(): Promise<void> {
     }
     running.value = st.running
     mode.value = st.mode
-    runningPort.value = st.port || 0
     runningRemoteUrl.value = st.remoteUrl || ''
     if (st.config)
       sourceLabel.value = `${st.config.waveform}/${st.config.modType} @ ${st.config.freq} Hz`
@@ -63,7 +61,7 @@ async function refresh(): Promise<void> {
 async function startLocal(): Promise<void> {
   loading.value = true
   try {
-    const r = (await window.api.signalAnalysis.start({ mode: 'local', port: port.value })) as {
+    const r = (await window.api.signalAnalysis.start({ mode: 'local' })) as {
       ok: boolean
       error?: string
     }
@@ -137,7 +135,7 @@ onMounted(refresh)
         <router-link to="/signal/analysis-config">分析配置</router-link>。本页只管本地/远程连接。
       </NAlert>
       <NAlert v-if="running" type="success" :bordered="false" style="margin-bottom: 14px">
-        {{ runningPort ? `本地端口 ${runningPort}` : runningRemoteUrl }} · 源
+        {{ mode === 'local' ? '本地分析（纯 IPC，无端口）' : runningRemoteUrl }} · 源
         {{ sourceLabel || '—' }}
       </NAlert>
 
@@ -148,13 +146,18 @@ onMounted(refresh)
             <NRadio value="remote">远程后端</NRadio>
           </NRadioGroup>
         </NFormItem>
-        <NFormItem label="端口">
-          <NInputNumber v-model:value="port" :min="1024" :max="65535" :disabled="running" />
+        <NFormItem label="Mock 端口">
+          <NInputNumber
+            v-model:value="port"
+            :min="1024"
+            :max="65535"
+            :disabled="running || remoteMockRunning"
+          />
         </NFormItem>
         <NFormItem label="远程地址">
           <NInput
             v-model:value="remoteUrl"
-            placeholder="http://127.0.0.1:8767，留空使用同端口内置 Mock"
+            placeholder="http://127.0.0.1:8767"
             :disabled="running || modeSelect !== 'remote'"
           />
         </NFormItem>
