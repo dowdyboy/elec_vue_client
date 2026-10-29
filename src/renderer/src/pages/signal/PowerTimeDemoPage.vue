@@ -1,14 +1,19 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { NButton, NCard, NSlider, NSwitch, NTag } from 'naive-ui'
+import { NButton, NCard, NSelect, NSlider, NSwitch, NTag } from 'naive-ui'
 import {
   PowerTimeChart,
   SignalQualityPanel,
   type PowerTimeAnalysisConfig,
   type SignalQualityMetrics
 } from '@components/signal'
+import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
+import { iqToPowerDb } from '../../../../shared/sourceAdapters'
 
 const chartRef = ref<InstanceType<typeof PowerTimeChart> | null>(null)
+const sig = useSignalAnalysis({ autoSubscribe: true })
+const dataSource = ref<'sim' | 'source'>('sim')
+const sourceMode = computed(() => dataSource.value === 'source')
 const running = ref(true)
 const analysisOn = ref(true)
 const thresholdDb = ref(-42)
@@ -62,9 +67,7 @@ const thresholds = {
   paprDbMax: 60
 }
 
-function tick(): void {
-  if (!running.value) return
-  chartRef.value?.appendData(nextFrame())
+function updateMetrics(): void {
   const stats = chartRef.value?.getStats()
   const pulses = chartRef.value?.getPulses()
   pulseCount.value = pulses?.count ?? 0
@@ -79,8 +82,15 @@ function tick(): void {
     : {}
 }
 
+function tick(): void {
+  if (!running.value || sourceMode.value) return
+  chartRef.value?.appendData(nextFrame())
+  updateMetrics()
+}
+
 function start(): void {
   if (timer) clearInterval(timer)
+  if (sourceMode.value) return
   timer = setInterval(tick, 100)
 }
 function stop(): void {
@@ -92,13 +102,26 @@ function onToggle(v: boolean): void {
   if (v) start()
   else stop()
 }
+function onSourceChange(): void {
+  stop()
+  onClear()
+  if (!sourceMode.value) start()
+}
 function onClear(): void {
   chartRef.value?.clear()
   metrics.value = {}
   pulseCount.value = 0
 }
 
-onMounted(start)
+sig.onIq((data) => {
+  if (!sourceMode.value) return
+  chartRef.value?.appendData(iqToPowerDb(data))
+  updateMetrics()
+})
+
+onMounted(() => {
+  if (!sourceMode.value) start()
+})
 onUnmounted(stop)
 </script>
 
@@ -110,6 +133,19 @@ onUnmounted(stop)
       </template>
       <div class="pt-controls">
         <label>
+          数据源
+          <NSelect
+            v-model:value="dataSource"
+            size="small"
+            :options="[
+              { label: '仿真脉冲', value: 'sim' },
+              { label: '源 IQ', value: 'source' }
+            ]"
+            style="width: 130px"
+            @update:value="onSourceChange"
+          />
+        </label>
+        <label v-if="!sourceMode">
           分析
           <NSwitch v-model:value="analysisOn" size="small" />
         </label>
@@ -123,7 +159,7 @@ onUnmounted(stop)
             style="width: 160px"
           />
         </label>
-        <label>
+        <label v-if="!sourceMode">
           脉宽 {{ pulseWidthMs.toFixed(1) }} ms
           <NSlider
             v-model:value="pulseWidthMs"
@@ -133,18 +169,22 @@ onUnmounted(stop)
             style="width: 150px"
           />
         </label>
-        <label>
+        <label v-if="!sourceMode">
           周期 {{ periodMs.toFixed(0) }} ms
           <NSlider v-model:value="periodMs" :min="5" :max="80" :step="1" style="width: 150px" />
         </label>
-        <label>
+        <label v-if="!sourceMode">
           噪声 {{ noiseDb.toFixed(1) }} dB
           <NSlider v-model:value="noiseDb" :min="0" :max="10" :step="0.1" style="width: 130px" />
         </label>
-        <NButton size="small" @click="onToggle(!running)">
+        <NButton v-if="!sourceMode" size="small" @click="onToggle(!running)">
           {{ running ? '暂停' : '运行' }}
         </NButton>
         <NButton size="small" @click="onClear">清空</NButton>
+      </div>
+      <div v-if="sourceMode" class="source-hint">
+        使用主进程 IQ 帧计算功率；请先在 <router-link to="/source">信号源工作台</router-link>
+        启动源并选择 Pulse/CW。
       </div>
       <PowerTimeChart
         ref="chartRef"
@@ -190,5 +230,16 @@ onUnmounted(stop)
   margin-top: 8px;
   color: #888;
   font-size: 12px;
+}
+.source-hint {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(79, 195, 247, 0.08);
+  color: #4fc3f7;
+  font-size: 12px;
+}
+.source-hint a {
+  color: #4fc3f7;
 }
 </style>

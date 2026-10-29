@@ -168,5 +168,5 @@ dispose()
 
 - 核心：`core/spectrogram.test.ts` 8 例（色阶端点/LUT、电平/gamma/NaN、环形缓冲换行/容量/冻结拷贝）。
 - DSP：real 单边 ×2、complex 全 bin/fftShift、正负频率方向（`signalFrames.test.ts` / `signalDsp.test.ts`）。
-- 总单测：**206**（`npm test`）。
+- 总单测：**209**（`npm test`）。
 - 视觉：`npm run test:visual` 的 canvas2d/webgl2 双基线包含 real 与 complex 时频图。
