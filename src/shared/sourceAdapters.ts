@@ -25,6 +25,40 @@ export function iqToAmplitude(data: Float32Array): Float32Array {
 }
 
 /**
+ * 频谱行 → 固定显示 bins。
+ * 降采样用桶平均（dB 域），升采样用线性映射（最近邻保形）。
+ */
+export function spectrumToBins(data: Float32Array, bins: number): Float32Array {
+  const n = Math.max(1, Math.floor(bins))
+  if (n === data.length) return new Float32Array(data)
+  const out = new Float32Array(n)
+  if (data.length > n) {
+    for (let i = 0; i < n; i++) {
+      const start = Math.floor((i * data.length) / n)
+      const end = Math.max(start + 1, Math.floor(((i + 1) * data.length) / n))
+      let sum = 0
+      for (let k = start; k < end; k++) sum += data[k]!
+      out[i] = sum / (end - start)
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      out[i] = data[Math.min(data.length - 1, Math.floor((i * data.length) / n))]!
+    }
+  }
+  return out
+}
+
+/** 线性幅度 → dB，floor 保护 */
+export function linearToDb(data: Float32Array, floor = -120): Float32Array {
+  const out = new Float32Array(data.length)
+  for (let i = 0; i < data.length; i++) {
+    const v = Math.abs(data[i]!)
+    out[i] = v <= 1e-12 ? floor : Math.max(floor, 20 * Math.log10(v))
+  }
+  return out
+}
+
+/**
  * 交织 IQ → I 路眼图轨迹。
  * 不做时钟恢复，只按帧内固定 sps 切窗；spanSymbols=2 时每 trace 覆盖 2 UI。
  */

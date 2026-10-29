@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/7 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖，以及 PowerTime/Eye/APD 的源 IQ 数据源。
+> 状态：Phase 0/8 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖，以及 PowerTime/Eye/APD/Persistence 的源数据接入。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -134,17 +134,20 @@ SourceService.source:frame
 
 - `iqToPowerDb`：IQ → 每采样功率 dB；
 - `iqToAmplitude`：IQ → 幅度；
-- `iqToEyeTraces`：IQ → I 路眼图轨迹。
+- `iqToEyeTraces`：IQ → I 路眼图轨迹；
+- `spectrumToBins`：频谱行 → 固定显示 bins；
+- `linearToDb`：线性幅度 → dB。
 
 已接入：
 
-| 组件      | 数据源                          |
-| --------- | ------------------------------- |
-| PowerTime | 仿真脉冲 / 源 IQ 功率           |
-| Eye       | 仿真眼图 / 源 IQ（按 sps 切窗） |
-| APD/CCDF  | 仿真 PAPR / 源 IQ 幅度          |
+| 组件        | 数据源                                 |
+| ----------- | -------------------------------------- |
+| PowerTime   | 仿真脉冲 / 源 IQ 功率                  |
+| Eye         | 仿真眼图 / 源 IQ（按 sps 切窗）        |
+| APD/CCDF    | 仿真 PAPR / 源 IQ 幅度                 |
+| Persistence | 仿真频谱 / 源频谱（重采样到固定 bins） |
 
-Demo 中显式提供“仿真/源 IQ”切换，组件本身仍是纯显示，不依赖源。
+Demo 中显式提供“仿真/源数据”切换，组件本身仍是纯显示，不依赖源。
 
 ## 七、当前边界
 
@@ -152,7 +155,7 @@ Demo 中显式提供“仿真/源 IQ”切换，组件本身仍是纯显示，�
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
-- PowerTime/Eye/APD Demo 支持“源 IQ”数据源；Persistence/Smith 仍主要使用仿真/静态数据；
+- PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 仍主要使用静态 Γ 数据；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/文件导出/独立模拟后端。
 

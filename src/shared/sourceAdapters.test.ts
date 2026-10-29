@@ -1,5 +1,11 @@
-﻿import { describe, expect, it } from 'vitest'
-import { iqToAmplitude, iqToEyeTraces, iqToPowerDb } from './sourceAdapters'
+import { describe, expect, it } from 'vitest'
+import {
+  iqToAmplitude,
+  iqToEyeTraces,
+  iqToPowerDb,
+  linearToDb,
+  spectrumToBins
+} from './sourceAdapters'
 
 describe('源帧 → 分析组件适配', () => {
   it('功率与幅度', () => {
@@ -22,5 +28,18 @@ describe('源帧 → 分析组件适配', () => {
     expect(() => iqToPowerDb(new Float32Array(3))).toThrow(/even/)
     expect(() => iqToAmplitude(new Float32Array(3))).toThrow(/even/)
     expect(() => iqToEyeTraces(new Float32Array(3), 4)).toThrow(/even/)
+  })
+
+  it('频谱重采样到固定 bins', () => {
+    const src = new Float32Array([-10, -20, -30, -40])
+    expect(Array.from(spectrumToBins(src, 2))).toEqual([-15, -35])
+    expect(Array.from(spectrumToBins(new Float32Array([-20]), 3))).toEqual([-20, -20, -20])
+  })
+
+  it('线性幅度转 dB', () => {
+    const db = linearToDb(new Float32Array([1, 0.5, 0]))
+    expect(db[0]).toBe(0)
+    expect(db[1]).toBeCloseTo(-6.0206, 4)
+    expect(db[2]).toBe(-120)
   })
 })
