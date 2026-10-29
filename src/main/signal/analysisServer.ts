@@ -1,7 +1,7 @@
 /**
  * 信号分析服务端（统一抽象，替代原 signalMockServer）
  * 【设计】信号处理（FFT / 窗 / dB / 重叠）全部在此完成：
- *   - LocalAnalysisSource：本地主进程自产 IQ 并计算频谱/时频（演示用）
+ *   - LocalAnalysisSource：消费独立 SourceService 的 SourceFrame，计算频谱/时频（演示用）
  *   - RemoteAnalysisSource：连接外部 socket.io 后端，消费其算好的帧
  *   渲染进程只通过 IPC 'signal:analysis' 收「显示就绪」帧，不感知来源。
  *
@@ -25,7 +25,8 @@ import {
   type ModType,
   type SignalAnalysisConfig
 } from '../../shared/signal'
-import { SourceEngine } from '../../shared/sourceEngine'
+import { getSourceService, type SourceService } from '../source/sourceService'
+import type { SourceFrame } from '../../shared/sourceEngine'
 import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
@@ -48,47 +49,85 @@ export interface SignalAnalysisSource {
 }
 
 // ──────────────────────────────────────────────────
-// 本地生成 + 处理
+// 本地分析：SourceService → SourceFrame → FFT/时频
 // ──────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────
+// 本地分析：消费 SourceService 的 SourceFrame，只做 FFT/时频
+// ──────────────────────────────────────────────────
+
+/** 从源配置提取输出域字段；FFT/窗/重叠仍归分析器所有 */
+function sourceFields(c: SignalAnalysisConfig): Partial<SignalAnalysisConfig> {
+  return {
+    freq: c.freq,
+    snr: c.snr,
+    amplitude: c.amplitude,
+    modType: c.modType,
+    outputMode: c.outputMode,
+    waveform: c.waveform,
+    modFreq: c.modFreq,
+    amDepth: c.amDepth,
+    fmDeviation: c.fmDeviation,
+    pulsePeriod: c.pulsePeriod,
+    pulseDuty: c.pulseDuty,
+    toneSpacing: c.toneSpacing,
+    sampleRate: c.sampleRate,
+    pointsPerFrame: c.pointsPerFrame,
+    samplesPerSymbol: c.samplesPerSymbol,
+    enabled: c.enabled,
+    imageDb: c.imageDb
+  }
+}
 
 class LocalAnalysisSource implements SignalAnalysisSource {
   readonly mode = 'local' as const
   private config: SignalAnalysisConfig
-  private timer: NodeJS.Timeout | null = null
   private seq = 0
   private acc = new SpectrogramAccumulator()
   /** 跨帧频谱分析器：pointsPerFrame < fftSize 时凑满窗再算，避免零填充 */
   private spec = new SpectrumAnalyzer()
-  /** 有状态源引擎（输出域）；分析只消费其 SourceFrame.data */
-  private sourceEngine: SourceEngine
+  /** 源由独立 SourceService 生成；分析只订阅 SourceFrame */
+  private sourceService: SourceService
+  private sourceUnsub: (() => void) | null = null
+  private ownsSource = false
   private onFrame: ((f: AnalysisFrame) => void) | null = null
   private lastErrAt = 0
-  /** 消费者守卫：无订阅者且无外部 socket 观众时跳过重计算（trigger 强制一帧不受限） */
+  /** 消费者守卫：无订阅者且无外部 socket 观众时跳过重计算 */
   hasConsumers: (() => boolean) | null = null
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
-    this.sourceEngine = new SourceEngine(this.config)
+    this.sourceService = getSourceService()
   }
 
   start(onFrame: (f: AnalysisFrame) => void): void {
     this.onFrame = onFrame
-    if (this.timer) return
-    const interval = Math.max(16, Math.floor(1000 / 60))
-    this.timer = setInterval(() => this.tick(), interval)
+    if (this.sourceUnsub) return
+    const st = this.sourceService.getStatus()
+    if (!st.running) {
+      this.sourceService.setConfig(this.config)
+      this.sourceService.start()
+      this.ownsSource = true
+    } else {
+      // 源已在源工作台运行：以源配置为准，保留本分析器的 FFT/窗参数
+      this.config = { ...this.config, ...sourceFields(st.config) }
+    }
+    this.sourceUnsub = this.sourceService.subscribe((frame) => this.handleSourceFrame(frame))
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
+    this.sourceUnsub?.()
+    this.sourceUnsub = null
+    if (this.ownsSource) {
+      this.sourceService.stop()
+      this.ownsSource = false
     }
     this.onFrame = null
   }
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
     this.config = { ...this.config, ...patch }
-    this.sourceEngine.setConfig(this.config)
+    this.sourceService.setConfig(patch)
     this.acc.reset()
     this.spec.reset()
   }
@@ -98,7 +137,12 @@ class LocalAnalysisSource implements SignalAnalysisSource {
   }
 
   trigger(): void {
-    this.tick(true)
+    if (!this.sourceService.getStatus().running) {
+      this.sourceService.setConfig(this.config)
+      this.sourceService.start()
+      this.ownsSource = true
+    }
+    this.sourceService.trigger()
   }
 
   private logError(e: unknown): void {
@@ -109,30 +153,25 @@ class LocalAnalysisSource implements SignalAnalysisSource {
     }
   }
 
-  private genFrame(): Float32Array {
-    const cfg = this.config
-    return this.sourceEngine.next(cfg.pointsPerFrame).data
-  }
-
-  private tick(force = false): void {
+  private handleSourceFrame(frame: SourceFrame): void {
     if (!this.onFrame) return
-    if (!force && !this.config.enabled) return
-    if (!force && this.hasConsumers && !this.hasConsumers()) return
+    if (this.hasConsumers && !this.hasConsumers()) return
     try {
       const cfg = this.config
-      const iq = this.genFrame()
+      const iq = frame.data
       const seq = ++this.seq
-      // IQ（时域图）：带 sampleRate，宿主可直接用帧元数据换算时间轴
+      const sampleRate = frame.sampleRate
+      // IQ（时域图）
       this.onFrame({
         type: 'iq',
         seq,
         data: iq,
-        sampleRate: cfg.sampleRate,
-        carrierHz: cfg.freq,
-        samplesPerSymbol: cfg.samplesPerSymbol,
-        outputMode: cfg.outputMode,
-        waveform: cfg.waveform,
-        modType: cfg.modType
+        sampleRate,
+        carrierHz: frame.centerFrequencyHz,
+        samplesPerSymbol: frame.samplesPerSymbol,
+        outputMode: frame.outputMode,
+        waveform: frame.waveform,
+        modType: frame.modType
       })
       // 频谱（跨帧凑满 fftSize；窗增益已在 computeSpectrumRow 内补偿）
       const spec = this.spec.push(iq, cfg)
@@ -142,17 +181,17 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           seq,
           data: spec,
           fftSize: cfg.fftSize,
-          sampleRate: cfg.sampleRate,
-          carrierHz: cfg.freq,
-          samplesPerSymbol: cfg.samplesPerSymbol,
+          sampleRate,
+          carrierHz: frame.centerFrequencyHz,
+          samplesPerSymbol: frame.samplesPerSymbol,
           dbScale: cfg.dbScale,
           spectrumMode: cfg.spectrumMode,
-          freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
-          binHz: cfg.sampleRate / cfg.fftSize,
+          freqStartHz: cfg.spectrumMode === 'complex' ? -sampleRate / 2 : 0,
+          binHz: sampleRate / cfg.fftSize,
           fftShift: cfg.spectrumMode === 'complex',
-          outputMode: cfg.outputMode,
-          waveform: cfg.waveform,
-          modType: cfg.modType
+          outputMode: frame.outputMode,
+          waveform: frame.waveform,
+          modType: frame.modType
         })
       }
       // 时频（重叠行，固定 dB 行——与谱图的 dbScale 显示开关解耦）
@@ -163,18 +202,18 @@ class LocalAnalysisSource implements SignalAnalysisSource {
           seq: ++this.seq,
           data: row,
           fftSize: cfg.fftSize,
-          sampleRate: cfg.sampleRate,
-          carrierHz: cfg.freq,
-          samplesPerSymbol: cfg.samplesPerSymbol,
+          sampleRate,
+          carrierHz: frame.centerFrequencyHz,
+          samplesPerSymbol: frame.samplesPerSymbol,
           dbScale: true,
           spectrumMode: cfg.spectrumMode,
-          freqStartHz: cfg.spectrumMode === 'complex' ? -cfg.sampleRate / 2 : 0,
-          binHz: cfg.sampleRate / cfg.fftSize,
+          freqStartHz: cfg.spectrumMode === 'complex' ? -sampleRate / 2 : 0,
+          binHz: sampleRate / cfg.fftSize,
           fftShift: cfg.spectrumMode === 'complex',
-          timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / cfg.sampleRate,
-          outputMode: cfg.outputMode,
-          waveform: cfg.waveform,
-          modType: cfg.modType
+          timeStepSec: (cfg.fftSize * (1 - cfg.overlap)) / sampleRate,
+          outputMode: frame.outputMode,
+          waveform: frame.waveform,
+          modType: frame.modType
         })
       }
     } catch (e) {

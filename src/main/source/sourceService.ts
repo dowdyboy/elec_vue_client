@@ -20,11 +20,12 @@ export interface SourceStatus {
   config: SignalAnalysisConfig
 }
 
-class SourceService {
+export class SourceService {
   private engine: SourceEngine
   private config: SignalAnalysisConfig
   private timer: NodeJS.Timeout | null = null
   private frameSeq = 0
+  private subscribers = new Set<(frame: SourceFrame) => void>()
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
@@ -53,6 +54,11 @@ class SourceService {
     return { running: !!this.timer, config: { ...this.config } }
   }
 
+  subscribe(cb: (frame: SourceFrame) => void): () => void {
+    this.subscribers.add(cb)
+    return () => this.subscribers.delete(cb)
+  }
+
   trigger(): void {
     this.tick(true)
   }
@@ -70,6 +76,13 @@ class SourceService {
   }
 
   private broadcast(frame: SourceFrame): void {
+    for (const cb of this.subscribers) {
+      try {
+        cb(frame)
+      } catch (e) {
+        console.error('[source] subscriber failed', e)
+      }
+    }
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('source:frame', frame)
     }
@@ -77,6 +90,7 @@ class SourceService {
 
   dispose(): void {
     this.stop()
+    this.subscribers.clear()
   }
 
   get lastSeq(): number {
@@ -84,8 +98,16 @@ class SourceService {
   }
 }
 
+let sourceServiceInstance: SourceService | null = null
+
+/** analysisServer 等主进程消费者获取同一个源服务实例 */
+export function getSourceService(): SourceService {
+  if (!sourceServiceInstance) sourceServiceInstance = new SourceService()
+  return sourceServiceInstance
+}
+
 export function registerSourceService(): () => void {
-  const service = new SourceService()
+  const service = getSourceService()
 
   ipcMain.handle('source:start', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
@@ -120,6 +142,7 @@ export function registerSourceService(): () => void {
 
   return () => {
     service.dispose()
+    sourceServiceInstance = null
     ipcMain.removeHandler('source:start')
     ipcMain.removeHandler('source:stop')
     ipcMain.removeHandler('source:getStatus')

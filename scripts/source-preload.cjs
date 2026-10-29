@@ -2,6 +2,7 @@
 const { contextBridge } = require('electron')
 
 const noop = () => () => {}
+let sourceRunning = false
 const config = {
   freq: 512,
   snr: 20,
@@ -29,9 +30,15 @@ const config = {
 
 contextBridge.exposeInMainWorld('api', {
   source: {
-    getStatus: async () => ({ running: false, config }),
-    start: async () => ({ ok: true, status: { running: true, config } }),
-    stop: async () => ({ ok: true, status: { running: false, config } }),
+    getStatus: async () => ({ running: sourceRunning, config }),
+    start: async () => {
+      sourceRunning = true
+      return { ok: true, status: { running: true, config } }
+    },
+    stop: async () => {
+      sourceRunning = false
+      return { ok: true, status: { running: false, config } }
+    },
     setConfig: async () => ({ ok: true, config }),
     trigger: async () => ({ ok: true, seq: 1 }),
     onFrame: () => () => {}

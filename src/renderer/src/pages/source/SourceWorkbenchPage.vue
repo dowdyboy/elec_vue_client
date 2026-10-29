@@ -37,6 +37,7 @@ const message = useMessage()
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 
 const running = ref(false)
+let analysisStartedHere = false
 const kind = ref<SourceKind>('cw')
 const outputMode = ref<'real' | 'complex'>('complex')
 const carrierHz = ref(512)
@@ -151,11 +152,26 @@ async function startSource(): Promise<void> {
     await refreshStatus()
     return
   }
-  message.success('信号源已启动')
+  // 源启动后顺带启动本地分析消费者，分析 UI 页面才能收到 signal:analysis 帧。
+  // 已运行（例如高级配置页）则保持原状态。
+  const ar = (await window.api.signalAnalysis.start({ mode: 'local' }).catch(() => null)) as {
+    ok?: boolean
+    error?: string
+  } | null
+  analysisStartedHere = !!ar?.ok
+  if (!ar?.ok && ar?.error && !ar.error.includes('已运行')) {
+    message.warning(`源已启动，但分析消费者未启动：${ar.error}`)
+  } else {
+    message.success('信号源已启动')
+  }
   await refreshStatus()
 }
 
 async function stopSource(): Promise<void> {
+  if (analysisStartedHere) {
+    await window.api.signalAnalysis.stop().catch(() => {})
+    analysisStartedHere = false
+  }
   await window.api.source.stop()
   await refreshStatus()
   message.success('信号源已停止')

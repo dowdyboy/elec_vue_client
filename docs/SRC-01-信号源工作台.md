@@ -2,8 +2,8 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/3 已完成——信息架构拆分、源类型目录、源工作台、IQ 预览、SourceEngine/SourceFrame，以及独立 `source:*` IPC/SourceService。
-> 源服务通过 `source:frame` 推送 SourceFrame；当前分析页仍走既有 `signalAnalysis` 服务，下一步把分析侧也切到 SourceFrame。
+> 状态：Phase 0/4 已完成——信息架构拆分、源类型目录、源工作台、IQ 预览、SourceEngine/SourceFrame、独立 `source:*` IPC/SourceService，以及分析侧消费 SourceFrame。
+> 源工作台启动源后会启动本地分析消费者；分析 UI 的 `signal:analysis` 帧由 SourceFrame 经 FFT/时频生成。
 
 ## 一、为什么拆
 
@@ -115,12 +115,21 @@ source:start / source:stop / source:getStatus / source:setConfig / source:trigge
 source:frame  →  SourceFrame
 ```
 
-源工作台已切到 `window.api.source`，不再通过分析服务启动源。
+源工作台已切到 `window.api.source`，不再通过分析服务启动源。启动源后同时启动本地 `signalAnalysis` 消费者，分析 UI 页面即可收到 `signal:analysis`。
+
+分析链路：
+
+```text
+SourceService.source:frame
+  → LocalAnalysisSource.handleSourceFrame
+  → SpectrumAnalyzer / SpectrogramAccumulator
+  → signal:analysis
+```
 
 ## 六、当前边界
 
-- `SourceService` 已独立于 `signalAnalysis`，但分析页仍订阅旧 `analysis:frame`；
-- 同一 SourceFrame 尚未被分析侧复用，下一阶段要统一为 source-driven analysis；
+- `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
+- 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - 高级配置页 `/source/advanced` 暂时仍含 FFT/窗/重叠，后续拆到分析配置；
 - 预览只有 IQ，频谱/时频等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/文件导出/独立模拟后端。
