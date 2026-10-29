@@ -378,7 +378,7 @@ onUnmounted(() => {
             <span v-else>等待源帧…</span>
             <span class="meta-links">
               <router-link to="/signal/analysis-config">分析配置 →</router-link>
-              <router-link to="/source/advanced">源/服务高级配置 →</router-link>
+              <router-link to="/source/advanced">源/连接高级配置 →</router-link>
             </span>
           </div>
         </NCard>

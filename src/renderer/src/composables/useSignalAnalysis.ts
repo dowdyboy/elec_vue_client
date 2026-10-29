@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useSignalAnalysis（轻量，演示用）
  * 订阅服务端分析帧（signal:analysis），按类型路由到 spectrum / spectrogram / iq 回调。
  * 组件只负责展示，不关心数据来自本地主进程还是远程后端。
@@ -190,7 +190,7 @@ export function useSignalAnalysis(
     remoteError.value = ''
   }
 
-  // 默认仅订阅帧（不自启服务），服务启停由 SignalConfigPage 统一管控
+  // 默认仅订阅帧（不自启服务），服务启停由源/连接配置页统一管控
   const shouldSubscribe = opts.autoSubscribe !== false && opts.autoConnect !== false
   if (shouldSubscribe) ensureSubscription()
 

@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
+# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -212,7 +212,7 @@ spec.value?.appendData(fullNRow, {
 
 > `real`：只取 I 通道，非 DC ×2，长度 `fftSize/2`；`complex`：I/Q 完整 FFT，长度 `fftSize`，负频独立。
 > 频率轴统一 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
-> 源/服务高级配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
+> 源配置的 `imageDb` 可在 `-freq` 叠加 -120~0 dB 的共轭镜像，用于验证负频；它是**相对载波**电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅），默认 -120 关闭。0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化；复调制请关闭镜像或使用独立负频。
 
 ### 信号源（只影响演示后端）
 

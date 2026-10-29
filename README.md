@@ -52,7 +52,7 @@
 
 - **信号源工作台**：`/source`，源类型目录、real/complex、载波/幅度/AWGN、启动/停止/单帧、IQ/频谱预览
 - **分析配置**：`/signal/analysis-config`，FFT/窗/dB/重叠/频谱语义；源参数不在这里
-- **源/服务高级配置**：`/source/advanced`，当前仍是源与 FFT 的过渡配置页
+- **源/连接高级配置**：`/source/advanced`，本地/远程连接、端口、远端 Mock；不再含 FFT
 - **信号分析 UI 组件**：`/signal/*`，不再承担源波形参数
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
 - 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`

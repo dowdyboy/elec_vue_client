@@ -21,7 +21,7 @@
 ```text
 信号源
 ├─ 信号源工作台       /source
-└─ 源/服务高级配置    /source/advanced
+└─ 源/连接高级配置    /source/advanced
 
 信号分析 UI 组件
 ├─ 分析配置            /signal/analysis-config
@@ -132,7 +132,7 @@ SourceService.source:frame
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
-- FFT/窗/重叠已提供独立 `/signal/analysis-config`，但 `/source/advanced` 仍保留旧 FFT 字段作为过渡；
+- FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/文件导出/独立模拟后端。
 
@@ -149,9 +149,8 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 ## 八、后续
 
-1. 分析侧改为消费 `source:frame`，去掉 LocalAnalysisSource 内置源；
-2. 源工作台加频谱/时频预览/输出路由；
+1. 去掉本地 `signalAnalysis` 的 HTTP/socket 依赖，纯化 SourceFrame 消费者；
+2. 新分析组件按源类型自动选择显示模式；
 3. 真实 RF/DAC 后端与仿真后端；
 4. 数字源扩展 OFDM/任意 IQ；
-5. 把 FFT/窗/重叠从高级配置迁到分析 UI 侧；
-6. 分析页按源场景自动联调。
+5. 源帧录制/导出与可重复种子。

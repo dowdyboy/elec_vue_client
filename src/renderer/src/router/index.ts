@@ -300,8 +300,8 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/source/advanced',
     name: 'source-advanced',
-    component: () => import('../pages/signal/SignalConfigPage.vue'),
-    meta: { title: '源/服务高级配置', icon: '🛠️', group: '信号源' }
+    component: () => import('../pages/source/SourceAdvancedPage.vue'),
+    meta: { title: '源/连接高级配置', icon: '🔌', group: '信号源' }
   },
   {
     path: '/signal',

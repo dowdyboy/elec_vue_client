@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 【文件】预加载脚本（preload）
  * 【说明】preload 是渲染进程与主进程之间的"安全桥"：
  *         - contextBridge 暴露的 API 是受控的（白名单方式，不泄露 Electron 全部能力）
@@ -560,7 +560,7 @@ const api = {
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },
 
-  /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由 SignalConfigPage 统一）── */
+  /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由源/分析配置页统一）── */
   signalAnalysis: {
     start: (opts?: { mode?: 'local' | 'remote'; port?: number; remoteUrl?: string }) =>
       invoke<{ ok: boolean; mode?: string; port?: number; remoteUrl?: string; error?: string }>(
