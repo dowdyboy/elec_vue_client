@@ -40,7 +40,8 @@ async function run() {
   await win.loadFile(renderer, { hash: '/source' })
   await wait(1200)
   const text = await win.webContents.executeJavaScript('document.body.innerText || ""')
-  if (!text.includes('信号源工作台')) throw new Error(`source page text missing: ${text.slice(0, 300)}`)
+  if (!text.includes('信号源工作台'))
+    throw new Error(`source page text missing: ${text.slice(0, 300)}`)
   await win.webContents.executeJavaScript(`
     (() => {
       const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('启动'))
@@ -48,10 +49,18 @@ async function run() {
     })()
   `)
   await wait(400)
-  const started = await win.webContents.executeJavaScript('document.body.innerText.includes("运行中")')
+  const started = await win.webContents.executeJavaScript(
+    'document.body.innerText.includes("运行中")'
+  )
   if (!started) throw new Error('source start did not switch UI to running')
   const img = await win.webContents.capturePage()
   fs.writeFileSync(out, img.toPNG())
+  await win.webContents.executeJavaScript('location.hash = "#/signal/analysis-config"')
+  await wait(400)
+  const cfg = await win.webContents.executeJavaScript(
+    'document.body.innerText.includes("分析配置")'
+  )
+  if (!cfg) throw new Error('analysis config route did not render')
   if (errors.length) throw new Error(`console errors: ${errors.join('; ')}`)
   console.log(`[source-ui] PASS ${out}`)
 }

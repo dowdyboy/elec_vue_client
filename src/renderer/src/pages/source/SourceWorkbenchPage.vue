@@ -18,10 +18,13 @@ import {
   NSelect,
   NSlider,
   NSwitch,
+  NTabPane,
+  NTabs,
   NTag,
   useMessage
 } from 'naive-ui'
-import { IqChart } from '@components/signal'
+import { IqChart, SpectrumChart } from '@components/signal'
+import { useSignalAnalysis } from '../../composables/useSignalAnalysis'
 import type { SourceFrame } from '../../../../shared/sourceEngine'
 import type { SignalAnalysisConfig } from '../../../../shared/signal'
 import {
@@ -34,7 +37,9 @@ import {
 } from '../../../../shared/source'
 
 const message = useMessage()
+const analysis = useSignalAnalysis({ autoSubscribe: true })
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
+const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
 
 const running = ref(false)
 let analysisStartedHere = false
@@ -203,6 +208,17 @@ onMounted(async () => {
       sampleRate: frame.sampleRate ?? sampleRate.value
     })
   })
+  analysis.onSpectrum((data, frame) => {
+    spectrumRef.value?.appendData(data, {
+      fftSize: frame.fftSize,
+      sampleRate: frame.sampleRate,
+      dbScale: frame.dbScale,
+      spectrumMode: frame.spectrumMode,
+      freqStartHz: frame.freqStartHz,
+      binHz: frame.binHz,
+      fftShift: frame.fftShift
+    })
+  })
 })
 onUnmounted(() => {
   disposeSourceFrame?.()
@@ -334,26 +350,36 @@ onUnmounted(() => {
             </div>
           </template>
           <NAlert v-if="!running" type="info" :bordered="false" style="margin-bottom: 10px">
-            启动后由本地源持续推送 IQ；当前预览只订阅源帧，不在此页改 FFT/窗。
+            启动后由本地源持续推送 IQ，同时启动本地分析消费者；可在 IQ/频谱预览间切换。
           </NAlert>
           <NAlert v-else type="success" :bordered="false" style="margin-bottom: 10px">
             {{ summary.label }} · {{ summary.outputMode }} · {{ summary.sampleRate }} Sa/s · 每帧
             {{ summary.pointsPerFrame }} 点
           </NAlert>
-          <IqChart
-            ref="iqRef"
-            :height="380"
-            :sample-rate="sampleRate"
-            :trigger="{ enabled: false }"
-            theme="spectrum"
-          />
+          <NTabs type="line" size="small" animated>
+            <NTabPane name="iq" tab="IQ 时域">
+              <IqChart
+                ref="iqRef"
+                :height="380"
+                :sample-rate="sampleRate"
+                :trigger="{ enabled: false }"
+                theme="spectrum"
+              />
+            </NTabPane>
+            <NTabPane name="spectrum" tab="频谱">
+              <SpectrumChart ref="spectrumRef" :height="380" theme="spectrum" />
+            </NTabPane>
+          </NTabs>
           <div class="frame-meta">
             <span v-if="lastFrame">
               最近帧 #{{ lastFrame.seq }} · {{ lastFrame.outputMode }} · {{ lastFrame.waveform }} ·
               {{ lastFrame.centerFrequencyHz }} Hz
             </span>
             <span v-else>等待源帧…</span>
-            <router-link to="/source/advanced">源/服务高级配置 →</router-link>
+            <span class="meta-links">
+              <router-link to="/signal/analysis-config">分析配置 →</router-link>
+              <router-link to="/source/advanced">源/服务高级配置 →</router-link>
+            </span>
           </div>
         </NCard>
       </NGi>
@@ -411,5 +437,9 @@ onUnmounted(() => {
 .frame-meta a {
   color: #4fc3f7;
   text-decoration: none;
+}
+.meta-links {
+  display: flex;
+  gap: 12px;
 }
 </style>

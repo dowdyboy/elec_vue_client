@@ -309,6 +309,12 @@ export const routes: RouteRecordRaw[] = [
   },
   // ── 信号分析 UI 组件（显示/测量域）──
   {
+    path: '/signal/analysis-config',
+    name: 'signal-analysis-config',
+    component: () => import('../pages/signal/AnalysisConfigPage.vue'),
+    meta: { title: '分析配置', icon: '📐', group: '信号分析UI组件' }
+  },
+  {
     path: '/signal/iq',
     name: 'signal-iq',
     component: () => import('../pages/signal/IqDemoPage.vue'),

@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/4 已完成——信息架构拆分、源类型目录、源工作台、IQ 预览、SourceEngine/SourceFrame、独立 `source:*` IPC/SourceService，以及分析侧消费 SourceFrame。
+> 状态：Phase 0/5 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame，以及独立分析配置页。
 > 源工作台启动源后会启动本地分析消费者；分析 UI 的 `signal:analysis` 帧由 SourceFrame 经 FFT/时频生成。
 
 ## 一、为什么拆
@@ -24,6 +24,7 @@
 └─ 源/服务高级配置    /source/advanced
 
 信号分析 UI 组件
+├─ 分析配置            /signal/analysis-config
 ├─ IQ 时域            /signal/iq
 ├─ 频谱               /signal/spectrum
 ├─ 时频               /signal/spectrogram
@@ -74,8 +75,9 @@
 - AM/FM/Pulse/双音参数；
 - 本地端口、启动/停止/单帧、运行中应用参数；
 - IQ 实时预览；
+- 频谱实时预览（分析消费者生成）；
 - 源帧元数据：seq/outputMode/waveform/carrierHz；
-- 高级配置入口。
+- 分析配置入口：`/signal/analysis-config`；
 
 ## 五、SourceEngine / SourceFrame（Phase 2）
 
@@ -130,8 +132,8 @@ SourceService.source:frame
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
-- 高级配置页 `/source/advanced` 暂时仍含 FFT/窗/重叠，后续拆到分析配置；
-- 预览只有 IQ，频谱/时频等分析 UI 仍各自订阅分析帧；
+- FFT/窗/重叠已提供独立 `/signal/analysis-config`，但 `/source/advanced` 仍保留旧 FFT 字段作为过渡；
+- 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/文件导出/独立模拟后端。
 
 ## 七、验证
@@ -143,7 +145,7 @@ npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 ```
 
-`test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台路由/布局/无同步崩溃；真实推流仍由 `signalAnalysis` 服务测试覆盖。
+`test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃；真实推流仍由 `signalAnalysis` 服务测试覆盖。
 
 ## 八、后续
 
