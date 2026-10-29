@@ -2,8 +2,8 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/2 已完成——信息架构拆分、源类型目录、源工作台、IQ 预览，以及 `SourceEngine`/`SourceFrame` 抽取。
-> 当前仍通过 `signalAnalysis` IPC 播放；FFT 分析在 LocalAnalysisSource 内消费 SourceFrame，源/分析已开始解耦。
+> 状态：Phase 0/3 已完成——信息架构拆分、源类型目录、源工作台、IQ 预览、SourceEngine/SourceFrame，以及独立 `source:*` IPC/SourceService。
+> 源服务通过 `source:frame` 推送 SourceFrame；当前分析页仍走既有 `signalAnalysis` 服务，下一步把分析侧也切到 SourceFrame。
 
 ## 一、为什么拆
 
@@ -108,10 +108,19 @@ interface SourceFrame {
 - 可注入确定性 RNG/时钟；
 - LocalAnalysisSource 现在只消费 `sourceEngine.next().data` 后做 FFT/时频。
 
+主进程新增 `src/main/source/sourceService.ts` 与独立 IPC：
+
+```text
+source:start / source:stop / source:getStatus / source:setConfig / source:trigger
+source:frame  →  SourceFrame
+```
+
+源工作台已切到 `window.api.source`，不再通过分析服务启动源。
+
 ## 六、当前边界
 
-- SourceEngine 已抽取，但仍运行在主进程既有 `signalAnalysis` 生命周期内；
-- 源输出和 FFT 分析仍共享 IPC `signalAnalysis`，未拆独立 source IPC；
+- `SourceService` 已独立于 `signalAnalysis`，但分析页仍订阅旧 `analysis:frame`；
+- 同一 SourceFrame 尚未被分析侧复用，下一阶段要统一为 source-driven analysis；
 - 高级配置页 `/source/advanced` 暂时仍含 FFT/窗/重叠，后续拆到分析配置；
 - 预览只有 IQ，频谱/时频等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/文件导出/独立模拟后端。
@@ -129,10 +138,9 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 ## 八、后续
 
-1. 拆独立 source IPC / SourceService；
-2. 源工作台加频谱预览/输出路由；
+1. 分析侧改为消费 `source:frame`，去掉 LocalAnalysisSource 内置源；
+2. 源工作台加频谱/时频预览/输出路由；
 3. 真实 RF/DAC 后端与仿真后端；
 4. 数字源扩展 OFDM/任意 IQ；
 5. 把 FFT/窗/重叠从高级配置迁到分析 UI 侧；
 6. 分析页按源场景自动联调。
-7. 分析页按源场景接入（Pulse→PowerTime、Digital→Eye 等）。

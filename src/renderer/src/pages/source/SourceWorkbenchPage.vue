@@ -4,7 +4,7 @@
  * - 源领域页面：波形/输出/损伤/播放，不包含 FFT/窗等分析配置
  * - 当前复用主进程 signalAnalysis 的本地源与 IQ 帧；后续 SourceEngine 迁移时保持本页参数契约
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   NAlert,
   NButton,
@@ -22,7 +22,7 @@ import {
   useMessage
 } from 'naive-ui'
 import { IqChart } from '@components/signal'
-import { useSignalAnalysis } from '../../composables/useSignalAnalysis'
+import type { SourceFrame } from '../../../../shared/sourceEngine'
 import type { SignalAnalysisConfig } from '../../../../shared/signal'
 import {
   SOURCE_CATALOG,
@@ -34,12 +34,9 @@ import {
 } from '../../../../shared/source'
 
 const message = useMessage()
-const sig = useSignalAnalysis({ autoSubscribe: true })
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 
-const port = ref(8767)
 const running = ref(false)
-const mode = ref('none')
 const kind = ref<SourceKind>('cw')
 const outputMode = ref<'real' | 'complex'>('complex')
 const carrierHz = ref(512)
@@ -61,7 +58,7 @@ const lastFrame = ref<{
   sampleRate?: number
   outputMode?: string
   waveform?: string
-  carrierHz?: number
+  centerFrequencyHz?: number
 } | null>(null)
 
 const meta = computed(() => sourceKindMeta(kind.value))
@@ -130,15 +127,13 @@ function hydrate(c: Partial<SignalAnalysisConfig>): void {
 }
 
 async function refreshStatus(sync = false): Promise<void> {
-  const st = await sig.getStatus()
+  const st = await window.api.source.getStatus()
   running.value = st.running
-  mode.value = st.mode
-  if (st.port) port.value = st.port
-  if (sync && st.config) hydrate(st.config)
+  if (sync && st.config) hydrate(st.config as Partial<SignalAnalysisConfig>)
 }
 
 async function applyConfig(): Promise<boolean> {
-  const r = (await window.api.signalAnalysis.setConfig(
+  const r = (await window.api.source.setConfig(
     configWith({}) as unknown as Record<string, unknown>
   )) as { ok: boolean; error?: string }
   if (!r.ok) {
@@ -150,23 +145,18 @@ async function applyConfig(): Promise<boolean> {
 
 async function startSource(): Promise<void> {
   if (!(await applyConfig())) return
-  const r = (await window.api.signalAnalysis.start({ mode: 'local', port: port.value })) as {
-    ok: boolean
-    error?: string
-    port?: number
-  }
+  const r = (await window.api.source.start()) as { ok: boolean; error?: string }
   if (!r.ok) {
-    message.error(r.error || '源启动失败，端口可能被占用')
+    message.error(r.error || '源启动失败')
     await refreshStatus()
     return
   }
-  sig.ensureSubscription()
-  message.success(`信号源已启动 :${r.port ?? port.value}`)
+  message.success('信号源已启动')
   await refreshStatus()
 }
 
 async function stopSource(): Promise<void> {
-  await sig.stop()
+  await window.api.source.stop()
   await refreshStatus()
   message.success('信号源已停止')
 }
@@ -175,27 +165,32 @@ async function applyAndNotify(): Promise<void> {
   if (await applyConfig()) message.success('源参数已下发')
 }
 async function triggerOnce(): Promise<void> {
-  const r = (await window.api.signalAnalysis.trigger()) as { ok: boolean }
+  const r = (await window.api.source.trigger()) as { ok: boolean }
   if (r.ok) message.info('已触发一帧')
   else message.warning('当前源不支持单帧触发')
 }
 
+let disposeSourceFrame: (() => void) | null = null
+
 onMounted(async () => {
   await refreshStatus(true)
-  sig.ensureSubscription()
-  sig.onIq((data, frame) => {
+  disposeSourceFrame = window.api.source.onFrame((frame: SourceFrame) => {
     frameCount.value++
     lastFrame.value = {
       seq: frame.seq,
       sampleRate: frame.sampleRate,
       outputMode: frame.outputMode,
       waveform: frame.waveform,
-      carrierHz: frame.carrierHz
+      centerFrequencyHz: frame.centerFrequencyHz
     }
-    iqRef.value?.appendData(data, {
+    iqRef.value?.appendData(frame.data, {
       sampleRate: frame.sampleRate ?? sampleRate.value
     })
   })
+})
+onUnmounted(() => {
+  disposeSourceFrame?.()
+  disposeSourceFrame = null
 })
 </script>
 
@@ -208,9 +203,8 @@ onMounted(async () => {
       </div>
       <div class="source-status">
         <NTag :type="running ? 'success' : 'default'" :bordered="false">
-          {{ running ? `运行中 :${port}` : '未运行' }}
+          {{ running ? '运行中' : '未运行' }}
         </NTag>
-        <NTag v-if="mode === 'remote'" type="warning" :bordered="false">远程源</NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
       </div>
     </div>
@@ -257,9 +251,6 @@ onMounted(async () => {
             </NFormItem>
             <NFormItem v-if="isDigital" label="每符号采样">
               <NInputNumber v-model:value="samplesPerSymbol" :min="2" :max="256" />
-            </NFormItem>
-            <NFormItem label="端口">
-              <NInputNumber v-model:value="port" :min="1024" :max="65535" :disabled="running" />
             </NFormItem>
             <NFormItem label="输出/推送">
               <NSwitch v-model:value="enabled" />
@@ -343,7 +334,7 @@ onMounted(async () => {
           <div class="frame-meta">
             <span v-if="lastFrame">
               最近帧 #{{ lastFrame.seq }} · {{ lastFrame.outputMode }} · {{ lastFrame.waveform }} ·
-              {{ lastFrame.carrierHz }} Hz
+              {{ lastFrame.centerFrequencyHz }} Hz
             </span>
             <span v-else>等待源帧…</span>
             <router-link to="/source/advanced">源/服务高级配置 →</router-link>

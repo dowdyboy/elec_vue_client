@@ -28,6 +28,14 @@ const config = {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  source: {
+    getStatus: async () => ({ running: false, config }),
+    start: async () => ({ ok: true, status: { running: true, config } }),
+    stop: async () => ({ ok: true, status: { running: false, config } }),
+    setConfig: async () => ({ ok: true, config }),
+    trigger: async () => ({ ok: true, seq: 1 }),
+    onFrame: () => () => {}
+  },
   signalAnalysis: {
     getStatus: async () => ({ running: false, mode: 'none', port: 0, config }),
     start: async () => ({ ok: true, mode: 'local', port: 8767 }),

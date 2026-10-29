@@ -69,6 +69,7 @@ import { registerAppPaths } from './features/appPaths'
 import { registerBetterSqlite } from './features/betterSqlite'
 // Demo：信号分析服务端（本地主进程计算 + 远程后端，仅演示，置于 signal 而非 features）
 import { registerSignalAnalysisServer } from './signal/analysisServer'
+import { registerSourceService } from './source/sourceService'
 import { registerRemoteMockServer } from './signal/remoteMockServer'
 
 // ⚠️ 必须在 app ready 之前：声明 elec-fs 自定义协议特权（见 protocolContent.ts）
@@ -214,6 +215,7 @@ app.whenReady().then(() => {
   registerAppPaths() // 应用数据目录（getPath/setPath）
   registerBetterSqlite() // 第三方 SQLite（better-sqlite3）
   featureDisposers.push(registerSignalAnalysisServer()) // 信号分析服务端（Demo，本地计算/远程后端，IPC + WS）
+  featureDisposers.push(registerSourceService()) // 独立源服务（SourceEngine → source:frame）
   featureDisposers.push(registerRemoteMockServer()) // 远端Mock内置（与本地同端口互斥，演示一键远程）
 
   // 启动闪屏（教学演示默认开启；主窗口 ready 后自动关闭）

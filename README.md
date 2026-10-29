@@ -53,7 +53,8 @@
 - **信号源工作台**：`/source`，源类型目录、real/complex、载波/幅度/AWGN、启动/停止/单帧、IQ 预览
 - **源/服务高级配置**：`/source/advanced`，当前仍是源与 FFT 的过渡配置页
 - **信号分析 UI 组件**：`/signal/*`，不再承担源波形参数
-- 源领域模型与目录：[`src/shared/source.ts`](./src/shared/source.ts)
+- 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
+- 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`
 - 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
 
 ## 信号分析组件

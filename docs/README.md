@@ -65,11 +65,11 @@
 
 ## 信号源（SRC-01）
 
-> 信号源与信号分析 UI 拆分后的第一阶段：源类型目录、源工作台、IQ 预览。当前仍复用本地 `signalAnalysis` 服务。
+> 信号源与信号分析 UI 拆分：源类型目录、源工作台、IQ 预览、SourceEngine/SourceFrame 与独立 source IPC；分析页仍走旧 signalAnalysis（下一阶段迁移）。
 
 | #   | 文档                                     | 对应源码                                                                        | 状态      |
 | --- | ---------------------------------------- | ------------------------------------------------------------------------------- | --------- |
-| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts` | Phase 0/1 |
+| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/3 |
 
 ## 信号分析组件（SIG-00~10）
 

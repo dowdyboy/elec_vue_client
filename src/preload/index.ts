@@ -16,6 +16,7 @@ import type { NotificationOptions } from '../main/features/notification'
 import type { ThemeSource } from '../main/features/theme'
 import type { ShellOpenResult } from '../main/features/shellOps'
 import type { DownloadRecord } from '../main/features/download'
+import type { SourceFrame } from '../shared/sourceEngine'
 
 /** 事件监听辅助：统一封装"注册监听 + 返回取消函数" */
 function on<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -544,6 +545,19 @@ const api = {
     getAll: () => ipcRenderer.invoke('paths:getAll'),
     set: (key: string, value: string) => ipcRenderer.invoke('paths:set', key, value),
     getAppPath: () => ipcRenderer.invoke('paths:getAppPath')
+  },
+
+  /** ── 独立信号源服务（SourceEngine → source:frame；不含 FFT）── */
+  source: {
+    start: () =>
+      invoke<{ ok: boolean; status?: { running: boolean; config: unknown } }>('source:start'),
+    stop: () =>
+      invoke<{ ok: boolean; status?: { running: boolean; config: unknown } }>('source:stop'),
+    getStatus: () => invoke<{ running: boolean; config: unknown }>('source:getStatus'),
+    setConfig: (cfg: unknown) =>
+      invoke<{ ok: boolean; config?: unknown; error?: string }>('source:setConfig', cfg),
+    trigger: () => invoke<{ ok: boolean; seq?: number }>('source:trigger'),
+    onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },
 
   /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由 SignalConfigPage 统一）── */
