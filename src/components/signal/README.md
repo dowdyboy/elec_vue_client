@@ -533,7 +533,7 @@ specgram.value?.appendData(rowDb, {
 - 不可见（离屏）时暂停重绘；数据仍入缓冲，滚回可见时补一帧。
 - 频谱/时频支持 **real 单边 0~Fs/2** 与 **complex 完整带符号复谱 -Fs/2~+Fs/2**；复谱负频独立，不要只取正半轴。
 - 频率轴由 `freqStartHz + bin × binHz` 决定；`freqOffsetHz` 仅显示偏移，API/CSV 返回物理频率。
-- 噪声底未做 ENBW/PSD 绝对校准；峰值已按窗相干增益校准，Mock 默认口径为 dBFS。
+- 噪声底未做 ENBW/PSD 绝对校准；峰值已按窗相干增益校准，演示源默认口径为 dBFS。
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。

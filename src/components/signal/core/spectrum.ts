@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 频谱迹线累计与峰值搜索（零依赖，可拷贝）
  *
  * SpectrumTraceBuffer：按迹线模式合并逐帧频谱
@@ -550,7 +550,7 @@ export class SpectrumAutoRange {
 
 /**
  * dBFS → 目标单位。
- * - dBFS：直通（0 dB = 满量程复单音，Mock 的默认口径）
+ * - dBFS：直通（0 dB = 满量程复单音，演示源的默认口径）
  * - dBm：直通（0 dBFS 视作 0 dBm，需宿主用 ampOffsetDb 做绝对校准）
  * - 50Ω：dBmV=+46.99 / dBµV=+106.99；75Ω：+48.75 / +108.75；dBW=−30
  */

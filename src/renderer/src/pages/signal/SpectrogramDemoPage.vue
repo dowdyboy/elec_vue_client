@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref } from 'vue'
 import { NCard, NSelect, NButton, NCheckbox, NEmpty, NSwitch, useMessage } from 'naive-ui'
 import { SpectrogramChart } from '@components/signal'
@@ -106,7 +106,7 @@ function onExportCsv(): void {
         <NButton size="small" @click="onExportCsv">CSV</NButton>
         <NButton size="small" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
-          >等待数据（请至“Mock 配置”页启动）…</span
+          >等待数据（请至“信号源工作台”启动）…</span
         >
         <span v-else-if="sig.remoteError.value" style="color: #d03050; font-size: 12px"
           >远程错误: {{ sig.remoteError.value }}</span
@@ -118,7 +118,7 @@ function onExportCsv(): void {
         {{ lastMeta.mode === 'complex' ? '复谱 -Fs/2~+Fs/2' : '单边 0~Fs/2' }} · FFT
         {{ lastMeta.fftSize || '-' }} · Fs {{ lastMeta.sampleRate || '-' }} · Δt
         {{ lastMeta.timeStepSec ? lastMeta.timeStepSec.toExponential(3) + ' s' : '-' }}
-        · 重叠 / FFT 处理在服务端配置（请至“Mock 配置”页）
+        · 重叠/FFT 在「分析配置」页，源在「信号源工作台」
       </div>
     </NCard>
     <NCard content-style="padding: 0">
@@ -136,7 +136,7 @@ function onExportCsv(): void {
         />
         <NEmpty
           v-if="!hasData"
-          description="暂无数据，请至“Mock 配置”页启动服务…"
+          description="暂无数据，请至“信号源工作台”启动源…"
           style="
             position: absolute;
             inset: 0;

@@ -1,8 +1,8 @@
 /**
- * 内置远端Mock服务端（与 LocalAnalysisSource 同端口互斥，供远程演示一键启动）
+ * 内置远端 Mock 服务端（独立 socket.io 端口，供远程演示一键启动）
  * 复用 shared/signalDsp 计算，行为与 scripts/remote-signal-mock.mjs 一致，
  * 但由 Electron 主进程托管，无需独立终端。
- * 约束：与 signalAnalysis 的本地服务同端口（默认 8767），只能二选一运行（OS 端口占用即互斥）。
+ * 约束：仅与占用同一端口的其他服务互斥；本地分析走纯 IPC，不监听端口。
  */
 import http from 'node:http'
 import { Server as SocketIOServer } from 'socket.io'

@@ -69,7 +69,7 @@
 
 源类型与分析配置的映射由 `sourceKindOf/sourceKindPatch` 统一，避免页面各自拼 `waveform/modType`。
 
-## 四、工作台能力（Phase 1）
+## 四、工作台能力
 
 - 源类型选择；
 - real/complex 输出；
@@ -116,7 +116,7 @@ interface SourceFrame {
 - `next(n)` 只生成 `SourceFrame`，不做 FFT；
 - `setConfig` 重建生成器，保持相位/符号历史重置语义；
 - 可注入确定性 RNG/时钟；
-- LocalAnalysisSource 现在只消费 `sourceEngine.next().data` 后做 FFT/时频。
+- LocalAnalysisSource 订阅 SourceService 的 SourceFrame，再计算 FFT/时频（不再直接调用 SourceEngine）。
 
 OFDM 生成：
 
@@ -239,7 +239,7 @@ Z = R + j(ωL - 1/ωC)
 Γ = (Z - Z0) / (Z + Z0)
 ```
 
-- 1–500 MHz 等间隔频点；
+- 默认 1–500 MHz 等间隔频点（可配置）；
 - 默认 401 点；
 - `SweepService` 以 `sweep:frame` 推送；
 - Smith 圆图“S11 扫频”模式消费，R/L/C 可调；
@@ -249,7 +249,7 @@ Z = R + j(ωL - 1/ωC)
 
 ## 九、当前边界
 
-- `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
+- `LocalAnalysisSource` 已不再自产 IQ，分析页通过 `signal:analysis` 接收显示帧；
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；

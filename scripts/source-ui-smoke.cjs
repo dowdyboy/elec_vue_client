@@ -1,6 +1,7 @@
 /**
- * 源工作台路由 UI smoke：用构建后的 renderer + 真实 preload 加载 #/source。
- * 不启动主进程 IPC 服务，只验证页面能渲染、无同步崩溃、截图非空。
+ * 源工作台路由 UI smoke：用构建后的 renderer + 最小 mock preload 加载 #/source。
+ * 不启动主进程 IPC 服务，只验证页面渲染、按钮/路由与截图。
+ * 真实主进程 IPC 覆盖见 scripts/source-ipc-e2e.ts（test:source-ipc）。
  */
 if (!process.versions.electron) {
   console.error('[source-ui] must run under Electron')

@@ -1,9 +1,8 @@
 /**
- * 信号源领域模型（跨页面/后续 main 生成器共用）
+ * 信号源领域模型（跨页面 / 主进程源服务共用）
  *
- * 当前阶段先把“源类型/能力/配置映射”从分析 UI 页抽出来；
- * 真正的 SourceEngine/OutputBackend 仍在主进程 signal/analysisServer 内，
- * 后续迁移时保持这里的 SourceKind/参数契约不变。
+ * SourceKind/能力/推荐分析目录保持稳定；真实生成由 SourceEngine 完成，
+ * 输出由 Simulated/Playback OutputBackend 适配，硬件后端按同一 SourceFrame 契约接入。
  */
 import type { ModType, SignalAnalysisConfig, SourceWaveform } from './signal'
 
@@ -12,7 +11,7 @@ export type SourceKind =
 
 export interface SourceCapabilities {
   outputModes: Array<'real' | 'complex'>
-  /** 是否支持复用同一套调制参数 */
+  /** 是否为数字调制源（星座/眼图等） */
   supportsDigital: boolean
   /** 是否需要每符号采样数 */
   usesSamplesPerSymbol: boolean

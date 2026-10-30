@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 星座分析仪核心（零依赖，可单测）
  *
  * 纯显示路径不调用本模块；调用方显式传 analysis 时才启用：
@@ -92,7 +92,7 @@ interface RefPoint {
   mag: number
 }
 
-/** 理想参考点（归一化到平均功率 1；16QAM 与 Mock 生成器一致 ±1/±3 / √10） */
+/** 理想参考点（归一化到平均功率 1；16QAM 与演示源生成器一致 ±1/±3 / √10） */
 export function referencePoints(mod: ConstellationModulation): RefPoint[] {
   if (mod === 'BPSK') {
     const pts = [

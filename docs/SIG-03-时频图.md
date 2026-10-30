@@ -59,8 +59,8 @@ ws.onmessage = (e) => {
 
 服务端计算重叠行时：`timeStepSec = fftSize * (1 - overlap) / sampleRate`。
 频率轴统一为 `f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示，CSV/API 返回物理频率。
-Mock 的 `outputMode`（real/complex）决定源输出，本组件的 `spectrumMode` 只决定行按单边还是复谱计算，两者独立。Real 源复谱分析天然左右对称，Complex 源 real 分析是 I 投影；**Complex IQ 不保证双边**，QPSK 在 +f 单边是正常的，负频为空。
-Mock 的 `imageDb`（-120~0 dB，仅 complex 输出）会在 `-freq` 叠加共轭镜像，用于验证复谱/瀑布负频；默认 -120 关闭。
+源工作台的 `outputMode`（real/complex）决定源输出，本组件的 `spectrumMode` 只决定行按单边还是复谱计算，两者独立。Real 源复谱分析天然左右对称，Complex 源 real 分析是 I 投影；**Complex IQ 不保证双边**，QPSK 在 +f 单边是正常的，负频为空。
+源工作台的 `imageDb`（-120~0 dB，仅 complex 输出）会在 `-freq` 叠加共轭镜像，用于验证复谱/瀑布负频；默认 -120 关闭。
 
 ## 二、Props
 

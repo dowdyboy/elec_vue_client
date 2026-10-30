@@ -13,7 +13,7 @@ export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
  * - complex：复数 IQ 输出（矢量源/仿真）；I/Q 独立
  */
 export type OutputMode = 'real' | 'complex'
-/** 源波形/调制（digital 时使用 modType） */
+/** 源波形/调制（digital 时使用 modType；file 用于任意 IQ 回放） */
 export type SourceWaveform =
   'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm' | 'file'
 /**
@@ -23,15 +23,15 @@ export type SourceWaveform =
  */
 export type SpectrumMode = 'real' | 'complex'
 
-/** 处理配置（全部在服务端；UI 配置页只改这里，组件不持有） */
+/** 源 + 分析共享配置；源参数在 /source，FFT 参数在 /signal/analysis-config */
 export interface SignalAnalysisConfig {
   // ── 信号源 ──
-  freq: number // Hz，相对采样率归一化频率
+  freq: number // Hz，载波/中心频率
   snr: number // dB，AWGN 信噪比
   amplitude: number // 载波/波形幅度（线性峰值口径）
   modType: ModType // digital 波形下的调制方式
   outputMode: OutputMode // real=实数输出；complex=复 IQ 输出
-  waveform: SourceWaveform // cw/am/fm/pulse/twoTone/noise/digital
+  waveform: SourceWaveform // cw/am/fm/pulse/twoTone/noise/digital/ofdm/file
   modFreq: number // Hz，AM/FM 内部调制频率
   amDepth: number // 0~1，AM 调制度
   fmDeviation: number // Hz，FM 峰值频偏

@@ -91,7 +91,7 @@ describe('magnitudeSpectrum（实/复谱）', () => {
     expect(peakBin(half)).toBe(7)
   })
 
-  it('Mock 镜像分量：负频峰约等于设定 imageDb', () => {
+  it('演示源镜像分量：负频峰约等于设定 imageDb', () => {
     const cfg: SignalAnalysisConfig = {
       ...defaultAnalysisConfig(),
       modType: 'sine',

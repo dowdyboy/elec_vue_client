@@ -631,7 +631,7 @@ const api = {
     onFrame: (cb: (frame: SweepFrame) => void) => on('sweep:frame', cb)
   },
 
-  /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由源/分析配置页统一）── */
+  /** ── 信号分析服务端（本地纯 IPC / 远程后端，仅演示；配置即时生效）── */
   signalAnalysis: {
     start: (opts?: { mode?: 'local' | 'remote'; port?: number; remoteUrl?: string }) =>
       invoke<{ ok: boolean; mode?: string; port?: number; remoteUrl?: string; error?: string }>(
@@ -657,7 +657,7 @@ const api = {
       on('signal:analysis:status', cb)
   },
 
-  /** ── 远端Mock内置（与本地同端口互斥，演示一键远程）── */
+  /** ── 远端Mock内置（独立 socket.io 端口，演示一键远程）── */
   remoteMock: {
     start: (opts?: { port?: number; config?: unknown }) =>
       invoke<{ ok: boolean; port?: number; error?: string }>('remoteMock:start', opts),

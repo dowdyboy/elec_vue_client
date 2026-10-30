@@ -8,7 +8,7 @@
 >
 > 公共入口提供 `iqDisplayOnly` / `spectrumDisplayOnly` / `spectrogramDisplayOnly` / `constellationDisplayOnly` / `powerTimeDisplayOnly` / `eyeDisplayOnly` / `persistenceDisplayOnly` / `smithDisplayOnly` / `apdCcdfDisplayOnly` 九组最小显示预设；`v-bind` 后仍可覆盖单项。2.0 起星座旧 `carrierHz/symbolStrobe` 隐式预处理路径已移除，唯一预处理入口是 `analysis`。
 
-> 演示信号源（Mock：主进程本地源 / remoteMock / `scripts/remote-signal-mock.mjs`）按「专业源」模型重构：**源输出域**与**分析域**分离。
+> 演示信号源（主进程 SourceService / remoteMock / `scripts/remote-signal-mock.mjs`）按「专业源」模型重构：**源输出域**与**分析域**分离。
 >
 > **源输出域** `outputMode`：`real`（默认）= 单路实数输出，IQ 捕获 I=x、Q=0，对应真实信号源/DAC；`complex` = 复数 IQ 输出，I/Q 独立，对应矢量源/仿真。
 >
@@ -18,7 +18,7 @@
 >
 > 噪声按输出域保持 SNR：complex 每路 σ²=信号功率/(2·SNR)，real 只加 I 路同 σ；镜像/损伤只对 complex 有效。`imageDb` 为相对载波电平（-20 dB = 负频低 20 dB，只有 0 dB 等幅；0 dB 时 Q 抵消、基带变实，QPSK/16QAM 会退化）。
 >
-> 频谱行按窗相干增益补偿（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时跨帧凑满窗再算。独立脚本是纯 JS 同步副本，`remoteScriptParity` 会对比行计算/生成器/波形，防止三套 Mock 漂移。
+> 频谱行按窗相干增益补偿（0 dBFS 复单音在 rect/hann/hamming/blackman 下均读 0 dB）；`pointsPerFrame < fftSize` 时跨帧凑满窗再算。独立脚本是纯 JS 同步副本，`remoteScriptParity` 会对比行计算/生成器/波形，防止三套实现漂移。
 
 ## 一、快速拷贝
 
@@ -71,7 +71,7 @@ import {
 
 - 频率轴统一：`f = freqStartHz + bin × binHz`；`freqOffsetHz` 只影响显示读数。
 - 帧元数据：`spectrumMode / freqStartHz / binHz / fftShift`；缺省按 real、`Fs/fftSize` 推导。
-- 三个 Mock 与配置页都支持 `spectrumMode` 切换；`real` 只取 I 通道，`complex` 使用 I/Q 完整 FFT。
+- 本地源、远端 Mock、独立脚本与分析配置页都支持 `spectrumMode` 切换；`real` 只取 I 通道，`complex` 使用 I/Q 完整 FFT。
 - `SpectrumChart`/`SpectrogramChart` 均支持带符号轴、负频显示、游标/CSV/测量 API。
 
 ## 二、适配器（前端自转）

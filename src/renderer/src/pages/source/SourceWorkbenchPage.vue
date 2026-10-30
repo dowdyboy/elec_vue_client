@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * SourceWorkbenchPage（信号源工作台）
- * - 源领域页面：波形/输出/损伤/播放，不包含 FFT/窗等分析配置
- * - 当前复用主进程 signalAnalysis 的本地源与 IQ 帧；后续 SourceEngine 迁移时保持本页参数契约
+ * - 源领域页面：波形/输出/损伤/录制/回放，不包含 FFT/窗等分析配置
+ * - 使用独立 window.api.source；启动源后确保本地分析消费者运行
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {

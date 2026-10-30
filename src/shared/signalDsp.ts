@@ -155,8 +155,9 @@ export interface SignalGenerator {
  * 有状态信号源（相位/符号时钟/成型滤波历史跨帧连续）：
  * - outputMode=real：单路实数输出，IQ 表示为 I=x、Q=0（真实信号源/DAC）
  * - outputMode=complex：复数 IQ 输出（矢量源/仿真），可叠加共轭镜像
- * - waveform：cw / am / fm / pulse / twoTone / noise / digital
+ * - waveform：cw / am / fm / pulse / twoTone / noise / digital / ofdm
  * - digital：BPSK/QPSK/16QAM 随机符号 → 升余弦成型 → 上变频
+ * - ofdm：64 点 IFFT、QPSK 子载波、循环前缀（file 由回放后端提供，不在此生成）
  * @param opts.rng 可注入确定性随机（默认 Math.random，便于单测）
  */
 export function createSignalGenerator(

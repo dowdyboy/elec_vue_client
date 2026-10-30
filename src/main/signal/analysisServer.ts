@@ -46,10 +46,6 @@ export interface SignalAnalysisSource {
 }
 
 // ──────────────────────────────────────────────────
-// 本地分析：SourceService → SourceFrame → FFT/时频
-// ──────────────────────────────────────────────────
-
-// ──────────────────────────────────────────────────
 // 本地分析：消费 SourceService 的 SourceFrame，只做 FFT/时频
 // ──────────────────────────────────────────────────
 
@@ -570,7 +566,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
 
 export function registerSignalAnalysisServer(): () => void {
   let source: SignalAnalysisSource | null = null
-  // 持久化配置（未运行时也保留，供下次 start 使用；setConfig 即更新此处，重启生效）
+  // 持久化配置（未运行时保留，供下次 start；setConfig 即时更新运行中的 source）
   let persistedConfig: SignalAnalysisConfig = defaultAnalysisConfig()
   let persistedRemoteUrl = 'http://127.0.0.1:8768'
   let lastEmptyWarnAt = 0

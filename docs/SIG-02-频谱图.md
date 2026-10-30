@@ -1,4 +1,4 @@
-# SIG-02 - 频谱仪（SpectrumChart）
+﻿# SIG-02 - 频谱仪（SpectrumChart）
 
 > `src/components/signal/SpectrumChart.vue` 拷贝即用
 >
@@ -37,7 +37,7 @@ ws.onmessage = (e) => {
 
 **输入**：服务端算好的幅度谱 `Float32Array`。窗函数/FFT/dB 换算在服务端完成；组件只做迹线累计、检波/抽稀、峰值/带宽类测量与显示换算。
 
-> **源输出域 ≠ 分析域**：Mock 的 `outputMode` 决定源发实数（Q=0）还是复数 IQ；组件的 `spectrumMode` 只决定 FFT 单边/双边。Real 源做复谱分析会自然左右对称（同一实单音单边 0 dB 时，复谱两侧各约 -6 dB，是能量分半而非幅度错误）；Complex 源做 real 分析只是 I 投影。**Complex IQ 不保证双边**：QPSK 复载波在 +f 单边是正常的，负频为空；要负频请用实数输出、镜像或独立负频。
+> **源输出域 ≠ 分析域**：源工作台的 `outputMode` 决定源发实数（Q=0）还是复数 IQ；组件的 `spectrumMode` 只决定 FFT 单边/双边。Real 源做复谱分析会自然左右对称（同一实单音单边 0 dB 时，复谱两侧各约 -6 dB，是能量分半而非幅度错误）；Complex 源做 real 分析只是 I 投影。**Complex IQ 不保证双边**：QPSK 复载波在 +f 单边是正常的，负频为空；要负频请用实数输出、镜像或独立负频。
 
 - **real 模式（默认）**：长度 = `fftSize/2`，单边 `0 ~ Fs/2`，非 DC 幅度已由服务端 ×2；
 - **complex 模式**：长度 = `fftSize`，完整复谱，通常 `fftShift` 后覆盖 `-Fs/2 ~ +Fs/2`；
@@ -53,7 +53,7 @@ ws.onmessage = (e) => {
 - `dbScale`：true（默认）= 数据为 dB；false = 线性幅度。**线性显示下功率类测量（OBW/N dB/信道功率/区间功率/ACPR/噪声密度）会先转 dB 再计算，结果始终以 dB 表示**
 - 分辨率显示 `RBW≈ binHz`（含窗函数影响的 ENBW 未计入，仅作参考）
 - 服务端已按**窗相干增益**补偿：同一 0 dBFS 复单音切 rect/hann/hamming/blackman 峰值都读 0 dB；`pointsPerFrame < fftSize` 时跨帧凑满再算，不再零填充
-- Mock 复谱验证：`outputMode=complex` 时配置 `imageDb=-20 dB` 会在 `-freq` 生成共轭镜像，复谱负半轴出现约 -20 dB 的峰；`imageDb` 是**相对载波**的电平，只有 `0 dB` 时正负等幅，但此时 Q 抵消、基带变实（QPSK/16QAM 会退化），复调制请关闭镜像或使用独立负频；`-120`（默认）关闭。
+- 源工作台复谱验证：`outputMode=complex` 时配置 `imageDb=-20 dB` 会在 `-freq` 生成共轭镜像，复谱负半轴出现约 -20 dB 的峰；`imageDb` 是**相对载波**的电平，只有 `0 dB` 时正负等幅，但此时 Q 抵消、基带变实（QPSK/16QAM 会退化），复调制请关闭镜像或使用独立负频；`-120`（默认）关闭。
 
 ## 二、Props
 
@@ -99,7 +99,7 @@ interface SpectrumProps {
   span?: number // 显示窗宽（bin 数，0/缺省=全带宽；支持 v-model:span）
   peakTrack?: boolean // 峰值跟踪：每帧把 M1 移到可见跨度最大点
   // 仪器化
-  unit?: 'dBFS' | 'dBm' | 'dBuV' | 'dBmV' | 'dBW' // 幅度显示单位（默认 dBFS；Mock 输出为相对满量程 dB，dBm 等需宿主用 ampOffsetDb 校准）
+  unit?: 'dBFS' | 'dBm' | 'dBuV' | 'dBmV' | 'dBW' // 幅度显示单位（默认 dBFS；演示源输出为相对满量程 dB，dBm 等需宿主用 ampOffsetDb 校准）
   impedance?: 50 | 75 // dBµV/dBmV 阻抗换算（默认 50）
   vbw?: number // 视频带宽 Hz（0/缺省=关；比例模型 α=1−VBW/RBW，VBW≥RBW 视为关。先滤波再做平均/保持）
   showInfo?: boolean // 图内参数栏（四角：Ref/Scale、Center/Span、RBW/VBW；默认开启）

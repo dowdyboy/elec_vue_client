@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import {
   NCard,
@@ -306,7 +306,7 @@ watch(adapterKey, (v) => {
         <NButton size="tiny" @click="onStopStream">停止推流</NButton>
         <NButton size="tiny" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
-          >等待服务端（请至“Mock 配置”页启动）…</span
+          >等待服务端（请至“信号源工作台”启动）…</span
         >
         <span v-else-if="sig.remoteError.value" style="color: #d03050; font-size: 12px"
           >远程错误: {{ sig.remoteError.value }}</span
@@ -533,7 +533,7 @@ watch(adapterKey, (v) => {
         />
         <NEmpty
           v-if="!hasData"
-          description="暂无数据，请至“Mock 配置”页启动服务…"
+          description="暂无数据，请至“信号源工作台”启动源…"
           style="
             position: absolute;
             inset: 0;

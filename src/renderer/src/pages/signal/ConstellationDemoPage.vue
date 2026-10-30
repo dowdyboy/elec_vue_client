@@ -206,7 +206,7 @@ watch(analysisConfig, () => {
       </div>
       <div style="margin-top: 8px; font-size: 12px; color: #888">
         纯显示：IQ 点原样绘制，不做载波/符号/EVM；分析仪：中心频率下变频 + 可选自动载波/定时 +
-        判决点/EVM。高 SNR 不会去掉 RRC 过渡轨迹，分析仪只画判决点。自动定时只补偿符号相位； Mock
+        判决点/EVM。高 SNR 不会去掉 RRC 过渡轨迹，分析仪只画判决点。自动定时只补偿符号相位；演示源
         通常已对齐，结果为 0，看不到变化是正常的。
       </div>
       <NAlert
@@ -215,14 +215,14 @@ watch(analysisConfig, () => {
         title="当前只有 I 路（Q≈0）"
         style="margin-top: 8px"
       >
-        Mock 当前是「实数输出」，IQ 捕获 Q=0，星座会退化成一条 I 轴线。要看 QPSK/QAM
-        星座，请到「Mock 配置」把输出模式改为「复数 IQ 输出」。
+        当前源是「实数输出」，IQ 捕获 Q=0，星座会退化成一条 I 轴线。要看 QPSK/QAM
+        星座，请到「信号源工作台」把输出模式改为「复数 IQ 输出」。
       </NAlert>
       <div
         v-if="!hasData && !sig.remoteError.value"
         style="color: #18a058; font-size: 12px; margin-top: 6px"
       >
-        等待服务端（请至「Mock 配置」页启动/选择源）
+        等待服务端（请至「信号源工作台」启动/选择源）
       </div>
       <div
         v-else-if="sig.remoteError.value"
@@ -248,7 +248,7 @@ watch(analysisConfig, () => {
         />
         <NEmpty
           v-if="!hasData"
-          description="暂无数据，请至「Mock 配置」页启动服务"
+          description="暂无数据，请至「信号源工作台」启动源"
           style="
             position: absolute;
             inset: 0;

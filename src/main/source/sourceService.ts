@@ -1,10 +1,10 @@
 /**
  * SourceService（主进程独立源服务）
  *
- * 与 analysisServer 解耦：
- *   - 只持有 SourceEngine，生成 SourceFrame
- *   - 通过 IPC 'source:frame' 推送原始 IQ，不做 FFT/时频
- *   - 分析侧后续可消费同一 SourceFrame；当前分析页仍走旧 signalAnalysis
+ * - 持有 SourceEngine / Playback / 录制器
+ * - 通过 source:frame 推送 SourceFrame，不做 FFT/时频
+ * - LocalAnalysisSource 消费同一 SourceFrame 生成 signal:analysis
+ * - 支持模拟源、录制回放、任意 IQ、内存/流式录制
  */
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import fs from 'node:fs/promises'
