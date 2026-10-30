@@ -395,6 +395,8 @@ export function menuOptions(): MenuOption[] {
 
   for (const route of routes) {
     if (route.meta?.hidden) continue
+    // 重定向路由（如 /signal → /source/advanced）没有页面标题，不能生成空白菜单项
+    if (!route.meta?.title) continue
     const item: MenuOption = {
       key: route.path,
       label: `${route.meta?.icon ?? ''} ${route.meta?.menuTitle ?? route.meta?.title ?? ''}`,

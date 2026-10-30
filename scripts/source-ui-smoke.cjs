@@ -54,6 +54,12 @@ async function run() {
   if (!text.includes('信号源工作台'))
     throw new Error(`source page text missing: ${text.slice(0, 300)}`)
   await waitHeader('信号源工作台')
+  const blankMenu = await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('.n-menu-item-content-header')].some(
+      (el) => !el.textContent.trim()
+    )
+  `)
+  if (blankMenu) throw new Error('menu contains blank clickable item')
   await win.webContents.executeJavaScript(`
     (() => {
       const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('启动'))
