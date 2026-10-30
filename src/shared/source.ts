@@ -8,7 +8,7 @@
 import type { ModType, SignalAnalysisConfig, SourceWaveform } from './signal'
 
 export type SourceKind =
-  'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'BPSK' | 'QPSK' | '16QAM'
+  'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'BPSK' | 'QPSK' | '16QAM' | 'ofdm'
 
 export interface SourceCapabilities {
   outputModes: Array<'real' | 'complex'>
@@ -25,6 +25,8 @@ export interface SourceKindMeta {
   waveform: SourceWaveform
   modType?: ModType
   capabilities: SourceCapabilities
+  /** 推荐分析页面（一键跳转） */
+  analysis: Array<{ label: string; path: string }>
 }
 
 const ANALOG: SourceCapabilities = {
@@ -44,42 +46,63 @@ export const SOURCE_CATALOG: SourceKindMeta[] = [
     label: 'CW 单音',
     description: '单载波/单音，最适合频率与幅度校准',
     waveform: 'cw',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [
+      { label: '频谱', path: '/signal/spectrum' },
+      { label: 'IQ', path: '/signal/iq' }
+    ]
   },
   {
     id: 'am',
     label: 'AM 调幅',
     description: '幅度调制，可调调制频率与调制度',
     waveform: 'am',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [
+      { label: '频谱', path: '/signal/spectrum' },
+      { label: '时频', path: '/signal/spectrogram' }
+    ]
   },
   {
     id: 'fm',
     label: 'FM 调频',
     description: '频率调制，可调调制频率与峰值频偏',
     waveform: 'fm',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [
+      { label: '频谱', path: '/signal/spectrum' },
+      { label: '时频', path: '/signal/spectrogram' }
+    ]
   },
   {
     id: 'pulse',
     label: 'Pulse 脉冲',
     description: '脉冲调制，可调周期/占空比，适合功率-时间与雷达场景',
     waveform: 'pulse',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [
+      { label: '功率-时间', path: '/signal/power-time' },
+      { label: '持续谱', path: '/signal/persistence' }
+    ]
   },
   {
     id: 'twoTone',
     label: '双音',
     description: '双音测试，适合互调/失真观察',
     waveform: 'twoTone',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [{ label: '频谱', path: '/signal/spectrum' }]
   },
   {
     id: 'noise',
     label: 'Noise 噪声',
     description: '带限/白噪声源，适合底噪与统计场景',
     waveform: 'noise',
-    capabilities: ANALOG
+    capabilities: ANALOG,
+    analysis: [
+      { label: '持续谱', path: '/signal/persistence' },
+      { label: 'APD/CCDF', path: '/signal/apd' }
+    ]
   },
   {
     id: 'BPSK',
@@ -87,7 +110,11 @@ export const SOURCE_CATALOG: SourceKindMeta[] = [
     description: '数字调制，适合星座/眼图/信号质量',
     waveform: 'digital',
     modType: 'BPSK',
-    capabilities: DIGITAL
+    capabilities: DIGITAL,
+    analysis: [
+      { label: '星座', path: '/signal/constellation' },
+      { label: '眼图', path: '/signal/eye' }
+    ]
   },
   {
     id: 'QPSK',
@@ -95,7 +122,11 @@ export const SOURCE_CATALOG: SourceKindMeta[] = [
     description: '数字调制，适合星座/眼图/EVM',
     waveform: 'digital',
     modType: 'QPSK',
-    capabilities: DIGITAL
+    capabilities: DIGITAL,
+    analysis: [
+      { label: '星座', path: '/signal/constellation' },
+      { label: '眼图', path: '/signal/eye' }
+    ]
   },
   {
     id: '16QAM',
@@ -103,7 +134,23 @@ export const SOURCE_CATALOG: SourceKindMeta[] = [
     description: '数字调制，适合高阶 QAM 星座/质量分析',
     waveform: 'digital',
     modType: '16QAM',
-    capabilities: DIGITAL
+    capabilities: DIGITAL,
+    analysis: [
+      { label: '星座', path: '/signal/constellation' },
+      { label: '眼图', path: '/signal/eye' }
+    ]
+  },
+  {
+    id: 'ofdm',
+    label: 'OFDM',
+    description: '多载波 OFDM，适合频谱/持续谱/APD 与峰均比观察',
+    waveform: 'ofdm',
+    capabilities: ANALOG,
+    analysis: [
+      { label: '频谱', path: '/signal/spectrum' },
+      { label: '持续谱', path: '/signal/persistence' },
+      { label: 'APD/CCDF', path: '/signal/apd' }
+    ]
   }
 ]
 
@@ -125,7 +172,8 @@ export function sourceKindOf(
     config.waveform === 'fm' ||
     config.waveform === 'pulse' ||
     config.waveform === 'twoTone' ||
-    config.waveform === 'noise'
+    config.waveform === 'noise' ||
+    config.waveform === 'ofdm'
   )
     return config.waveform
   return 'cw'

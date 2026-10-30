@@ -10,11 +10,13 @@ import { defaultAnalysisConfig } from './signal'
 
 describe('信号源领域模型', () => {
   it('目录覆盖模拟与数字源', () => {
-    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(9)
+    expect(SOURCE_CATALOG.length).toBeGreaterThanOrEqual(10)
     expect(sourceKindMeta('pulse').waveform).toBe('pulse')
     expect(sourceKindMeta('16QAM').waveform).toBe('digital')
     expect(sourceKindMeta('16QAM').modType).toBe('16QAM')
     expect(sourceKindMeta('16QAM').capabilities.usesSamplesPerSymbol).toBe(true)
+    expect(sourceKindMeta('ofdm').waveform).toBe('ofdm')
+    expect(sourceKindMeta('ofdm').analysis.length).toBeGreaterThan(0)
   })
 
   it('源类型与分析配置映射', () => {
@@ -22,6 +24,7 @@ describe('信号源领域模型', () => {
     expect(sourceKindOf({ waveform: 'digital', modType: 'QPSK' })).toBe('QPSK')
     expect(sourceKindPatch('BPSK')).toEqual({ waveform: 'digital', modType: 'BPSK' })
     expect(sourceKindPatch('pulse')).toEqual({ waveform: 'pulse', modType: 'sine' })
+    expect(sourceKindPatch('ofdm')).toEqual({ waveform: 'ofdm', modType: 'sine' })
   })
 
   it('摘要保留运行参数', () => {

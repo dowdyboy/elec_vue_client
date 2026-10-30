@@ -14,6 +14,8 @@ const sweepRunning = ref(false)
 const rOhm = ref(25)
 const lNano = ref(100)
 const cPico = ref(5)
+const calDelayPs = ref(0)
+const calLossDb = ref(0)
 let disposeSweep: (() => void) | null = null
 
 function makeTraces(): SmithTrace[] {
@@ -78,7 +80,9 @@ async function startSweep(): Promise<void> {
     z0: 50,
     rOhm: rOhm.value,
     lHenry: lNano.value * 1e-9,
-    cFarad: cPico.value * 1e-12
+    cFarad: cPico.value * 1e-12,
+    calDelayPs: calDelayPs.value,
+    calLossDb: calLossDb.value
   })) as { ok: boolean; error?: string }
   if (!r.ok) {
     message.error(r.error || '扫频配置失败')
@@ -153,6 +157,26 @@ onUnmounted(() => {
             C {{ cPico.toFixed(1) }} pF
             <NSlider v-model:value="cPico" :min="1" :max="20" :step="0.5" style="width: 110px" />
           </label>
+          <label>
+            延时 {{ calDelayPs.toFixed(0) }} ps
+            <NSlider
+              v-model:value="calDelayPs"
+              :min="-500"
+              :max="500"
+              :step="10"
+              style="width: 110px"
+            />
+          </label>
+          <label>
+            补偿 {{ calLossDb.toFixed(1) }} dB
+            <NSlider
+              v-model:value="calLossDb"
+              :min="-10"
+              :max="10"
+              :step="0.5"
+              style="width: 110px"
+            />
+          </label>
           <NButton size="small" :disabled="sweepRunning" @click="startSweep">启动扫频</NButton>
           <NButton size="small" :disabled="!sweepRunning" @click="stopSweep">停止</NButton>
         </template>
@@ -160,7 +184,7 @@ onUnmounted(() => {
         <NButton size="small" @click="chartRef?.clear()">清空</NButton>
       </div>
       <div v-if="sourceMode" class="source-hint">
-        串联 RLC 负载的 S11 扫频（1–500 MHz，401 点）；R/L/C 改变后点“启动扫频”应用。
+        串联 RLC 负载的 S11 扫频（1–500 MHz，401 点）；R/L/C/校准改变后点“启动扫频”应用。
       </div>
       <SmithChart ref="chartRef" :height="520" :z0="50" theme="spectrum" />
       <div class="sm-hint">

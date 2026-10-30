@@ -39,4 +39,11 @@ describe('信号配置：频谱模式', () => {
     })
     expect(sanitizeConfigPatch({ pulseDuty: 1.2 }).ok).toBe(false)
   })
+
+  it('OFDM 配置校验', () => {
+    expect(sanitizeConfigPatch({ ofdmSubcarriers: 32 }).value).toEqual({ ofdmSubcarriers: 32 })
+    expect(sanitizeConfigPatch({ ofdmCpRatio: 0.25 }).value).toEqual({ ofdmCpRatio: 0.25 })
+    expect(sanitizeConfigPatch({ ofdmSubcarriers: 7 }).ok).toBe(false)
+    expect(sanitizeConfigPatch({ ofdmCpRatio: 0.6 }).ok).toBe(false)
+  })
 })

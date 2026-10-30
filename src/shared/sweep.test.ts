@@ -33,6 +33,15 @@ describe('S11 扫频源', () => {
     expect(f.gammaI[mid]!).toBeCloseTo((25 - 50) / (25 + 50), 2)
   })
 
+  it('校准延时/补偿损耗作用于 Γ', () => {
+    const base = defaultSweepConfig()
+    const raw = makeSweepFrame(base, 1)
+    const cal = makeSweepFrame({ ...base, calDelayPs: 100, calLossDb: 6.0206 }, 2)
+    const g0 = Math.hypot(raw.gammaI[0]!, raw.gammaQ[0]!)
+    const g1 = Math.hypot(cal.gammaI[0]!, cal.gammaQ[0]!)
+    expect(g1 / g0).toBeCloseTo(2, 1)
+  })
+
   it('配置校验与生成器序号', () => {
     expect(sanitizeSweepConfig({ points: 10 }).ok).toBe(false)
     expect(sanitizeSweepConfig({ startHz: 100, stopHz: 1 }).ok).toBe(false)

@@ -14,35 +14,45 @@ import {
   type SignalAnalysisConfig
 } from '../../shared/signal'
 import { SourceEngine, type SourceFrame } from '../../shared/sourceEngine'
+import { PlaybackOutputBackend, SimulatedOutputBackend } from '../../shared/sourceBackend'
 import { SourcePlayback } from '../../shared/sourcePlayback'
 import { SourceRecorder } from '../../shared/sourceRecorder'
+import type { RecordedFrameMeta } from '../../shared/sourceRecorder'
+import { SourceStreamRecorder } from './streamRecorder'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export interface SourceStatus {
   running: boolean
   mode: 'live' | 'playback'
+  backend: 'simulated' | 'playback'
   config: SignalAnalysisConfig
 }
 
 export class SourceService {
   private engine: SourceEngine
   private config: SignalAnalysisConfig
+  private liveBackend: SimulatedOutputBackend
+  private playbackBackend: PlaybackOutputBackend | null = null
   private timer: NodeJS.Timeout | null = null
   private playbackTimer: NodeJS.Timeout | null = null
   private playbackTiming: 'fixed' | 'timestamp' = 'fixed'
   private frameSeq = 0
   private subscribers = new Set<(frame: SourceFrame) => void>()
   private recorder = new SourceRecorder()
+  private streamRecorder = new SourceStreamRecorder()
+  private recordMode: 'memory' | 'stream' = 'memory'
   private playback: SourcePlayback | null = null
   private playbackSpeed = 1
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
     this.engine = new SourceEngine(this.config)
+    this.liveBackend = new SimulatedOutputBackend(this.engine, () => this.config.pointsPerFrame)
   }
 
   start(): void {
     this.playback = null
+    this.playbackBackend = null
     this.clearTimers()
     this.startTimer()
   }
@@ -145,6 +155,7 @@ export class SourceService {
   stopPlayback(): void {
     this.playback?.stop()
     this.playback = null
+    this.playbackBackend = null
     this.clearTimers()
   }
 
@@ -152,6 +163,7 @@ export class SourceService {
     if (frames.length === 0) return false
     this.clearTimers()
     this.playback = new SourcePlayback(frames)
+    this.playbackBackend = new PlaybackOutputBackend(this.playback)
     return true
   }
 
@@ -178,6 +190,7 @@ export class SourceService {
     return {
       running: !!this.timer || !!this.playbackTimer,
       mode: this.playback ? 'playback' : 'live',
+      backend: this.playbackBackend?.kind ?? 'simulated',
       config: { ...this.config }
     }
   }
@@ -194,9 +207,7 @@ export class SourceService {
   private tick(force = false): void {
     if (!force && !this.config.enabled) return
     try {
-      const frame = this.playback
-        ? this.playback.next()
-        : this.engine.next(this.config.pointsPerFrame)
+      const frame = this.playbackBackend ? this.playbackBackend.next() : this.liveBackend.next()
       if (!frame) {
         if (this.playback && !this.playback.getStatus().playing) this.stop()
         return
@@ -209,7 +220,8 @@ export class SourceService {
 
   private emitFrame(frame: SourceFrame): void {
     this.frameSeq = frame.seq
-    this.recorder.push(frame)
+    if (this.recordMode === 'stream') this.streamRecorder.push(frame)
+    else this.recorder.push(frame)
     this.broadcast(frame)
   }
 
@@ -259,22 +271,46 @@ export class SourceService {
     this.stop()
     this.subscribers.clear()
     this.recorder.reset()
+    this.streamRecorder.dispose()
   }
 
-  recordStart(): void {
-    this.recorder.start()
+  recordStart(stream = false): void {
+    if (stream) {
+      this.recorder.reset()
+      this.recordMode = 'stream'
+      this.streamRecorder.start()
+    } else {
+      this.streamRecorder.dispose()
+      this.recordMode = 'memory'
+      this.recorder.start()
+    }
   }
 
-  recordStop(): void {
-    this.recorder.stop()
+  async recordStop(): Promise<void> {
+    if (this.recordMode === 'stream') await this.streamRecorder.stop()
+    else this.recorder.stop()
   }
 
   recordStatus(): ReturnType<SourceRecorder['getStatus']> {
-    return this.recorder.getStatus()
+    return this.recordMode === 'stream'
+      ? this.streamRecorder.getStatus()
+      : this.recorder.getStatus()
   }
 
   recordFrames(): ReturnType<SourceRecorder['getFrames']> {
     return this.recorder.getFrames()
+  }
+
+  streamFrames(): RecordedFrameMeta[] {
+    return this.streamRecorder.getFrames()
+  }
+
+  async copyStreamRecording(target: string): Promise<void> {
+    await this.streamRecorder.copyTo(target)
+  }
+
+  isStreamRecordingMode(): boolean {
+    return this.recordMode === 'stream'
   }
 
   get lastSeq(): number {
@@ -404,15 +440,15 @@ export function registerSourceService(): () => void {
     return { ok: true, seq: service.lastSeq }
   })
 
-  ipcMain.handle('source:recordStart', (e) => {
+  ipcMain.handle('source:recordStart', (e, stream: unknown) => {
     if (!isTrustedSender(e)) return FORBIDDEN
-    service.recordStart()
+    service.recordStart(!!stream)
     return { ok: true, status: service.recordStatus() }
   })
 
-  ipcMain.handle('source:recordStop', (e) => {
+  ipcMain.handle('source:recordStop', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
-    service.recordStop()
+    await service.recordStop()
     return { ok: true, status: service.recordStatus() }
   })
 
@@ -423,9 +459,10 @@ export function registerSourceService(): () => void {
 
   ipcMain.handle('source:recordExport', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
-    const frames = service.recordFrames()
+    const streamMode = service.isStreamRecordingMode()
+    const frames = streamMode ? service.streamFrames() : service.recordFrames()
     if (frames.length === 0) return { ok: false, error: '没有可导出的录制帧' }
-    service.recordStop()
+    await service.recordStop()
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const opts = {
       title: '导出源录制（原始 IQ + 元数据）',
@@ -444,23 +481,30 @@ export function registerSourceService(): () => void {
       ? ret.filePath
       : `${ret.filePath}.f32`
     const jsonPath = f32Path.replace(/\.f32$/i, '.json')
-    const totalFloats = frames.reduce((n, f) => n + f.data.length, 0)
-    const buf = Buffer.allocUnsafe(totalFloats * 4)
-    let off = 0
-    for (const f of frames) {
-      for (let i = 0; i < f.data.length; i++) {
-        buf.writeFloatLE(f.data[i]!, off)
-        off += 4
+    if (streamMode) {
+      await service.copyStreamRecording(f32Path)
+    } else {
+      const rawFrames = frames as ReturnType<SourceRecorder['getFrames']>
+      const totalFloats = rawFrames.reduce((n, f) => n + f.data.length, 0)
+      const buf = Buffer.allocUnsafe(totalFloats * 4)
+      let off = 0
+      for (const f of rawFrames) {
+        for (let i = 0; i < f.data.length; i++) {
+          buf.writeFloatLE(f.data[i]!, off)
+          off += 4
+        }
       }
+      await fs.writeFile(f32Path, buf)
     }
     const sampleRates = new Set(frames.map((f) => f.sampleRate))
+    const totalSamples = frames.reduce((n, f) => n + f.sampleCount, 0)
     const meta = {
       format: 'source-iq-f32-v1',
       endianness: 'little',
       layout: 'interleaved IQ',
       createdAt: new Date().toISOString(),
       sampleRate: sampleRates.size === 1 ? frames[0]!.sampleRate : null,
-      totalSamples: totalFloats / 2,
+      totalSamples,
       frames: frames.map((f) => ({
         seq: f.seq,
         timestamp: f.timestamp,
@@ -474,14 +518,13 @@ export function registerSourceService(): () => void {
         sampleCount: f.sampleCount
       }))
     }
-    await fs.writeFile(f32Path, buf)
     await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2), 'utf8')
     return {
       ok: true,
       path: f32Path,
       metaPath: jsonPath,
       frames: frames.length,
-      samples: meta.totalSamples
+      samples: totalSamples
     }
   })
 

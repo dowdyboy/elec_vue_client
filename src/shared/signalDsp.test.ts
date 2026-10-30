@@ -159,6 +159,15 @@ describe('专业源：实数/复数输出与波形', () => {
     expect(cNeg / cPos).toBeLessThan(0.01)
   })
 
+  it('OFDM 生成复数基带并保持 real 输出 Q=0', () => {
+    const c = gen({ waveform: 'ofdm', outputMode: 'complex', ofdmSubcarriers: 16 }, 2048)
+    let energy = 0
+    for (let k = 0; k < c.length; k++) energy += Math.abs(c[k]!)
+    expect(energy).toBeGreaterThan(100)
+    const r = gen({ waveform: 'ofdm', outputMode: 'real', ofdmSubcarriers: 16 }, 2048)
+    for (let k = 0; k < r.length / 2; k++) expect(r[2 * k + 1]).toBe(0)
+  })
+
   it('AM/FM/Pulse/TwoTone/Noise/Digital 均能生成，关键特征正确', () => {
     const am = gen({ outputMode: 'real', waveform: 'am', amDepth: 0.8, modFreq: 50 })
     let amMin = Infinity

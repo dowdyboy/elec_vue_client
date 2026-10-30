@@ -178,6 +178,13 @@ export function createSignalGenerator(
   const waveform = rawWaveform === 'cw' && cfg.modType !== 'sine' ? 'digital' : rawWaveform
   const isDigital = waveform === 'digital'
   const isNoise = waveform === 'noise'
+  const isOfdm = waveform === 'ofdm'
+  const ofdmN = 64
+  const ofdmActive = Math.min(52, Math.max(2, Math.floor((cfg.ofdmSubcarriers ?? 32) / 2) * 2))
+  const ofdmCp = Math.min(ofdmN / 2, Math.max(0, Math.floor(ofdmN * (cfg.ofdmCpRatio ?? 0.25))))
+  const ofdmQueueI: number[] = []
+  const ofdmQueueQ: number[] = []
+  let ofdmRead = 0
   const imageDb = cfg.imageDb ?? -120
   // 镜像只对复数输出有意义；实信号输出本身已含正负共轭
   const imageGain = complexOut && !isNoise && imageDb > -119.9 ? Math.pow(10, imageDb / 20) : 0
@@ -264,6 +271,54 @@ export function createSignalGenerator(
     }
   }
 
+  function appendOfdmSymbol(): void {
+    const half = Math.floor(ofdmActive / 2)
+    const idx: number[] = []
+    const br: number[] = []
+    const bi: number[] = []
+    for (let j = 1; j <= half; j++) {
+      const re = rng() > 0.5 ? SQRT1_2 : -SQRT1_2
+      const im = rng() > 0.5 ? SQRT1_2 : -SQRT1_2
+      idx.push(j, ofdmN - j)
+      br.push(re, re)
+      bi.push(im, -im)
+    }
+    const scale = 1 / Math.sqrt(ofdmActive)
+    const symI = new Float64Array(ofdmN)
+    const symQ = new Float64Array(ofdmN)
+    for (let n = 0; n < ofdmN; n++) {
+      let sr = 0
+      let si = 0
+      for (let b = 0; b < idx.length; b++) {
+        const th = (2 * Math.PI * idx[b]! * n) / ofdmN
+        const c = Math.cos(th)
+        const s = Math.sin(th)
+        sr += br[b]! * c - bi[b]! * s
+        si += br[b]! * s + bi[b]! * c
+      }
+      symI[n] = sr * scale
+      symQ[n] = si * scale
+    }
+    // cyclic prefix
+    for (let k = ofdmN - ofdmCp; k < ofdmN; k++) {
+      ofdmQueueI.push(symI[k]!)
+      ofdmQueueQ.push(symQ[k]!)
+    }
+    for (let k = 0; k < ofdmN; k++) {
+      ofdmQueueI.push(symI[k]!)
+      ofdmQueueQ.push(symQ[k]!)
+    }
+  }
+
+  function ensureOfdm(count: number): void {
+    while (ofdmQueueI.length - ofdmRead < count) appendOfdmSymbol()
+    if (ofdmRead > 8192) {
+      ofdmQueueI.splice(0, ofdmRead)
+      ofdmQueueQ.splice(0, ofdmRead)
+      ofdmRead = 0
+    }
+  }
+
   return {
     next(n: number): Float32Array {
       const out = new Float32Array(n * 2)
@@ -283,11 +338,23 @@ export function createSignalGenerator(
         return out
       }
 
+      if (isOfdm) ensureOfdm(n)
+
       for (let k = 0; k < n; k++) {
         const t = sampleIndex + k
         let zr = 0
         let zi = 0
-        if (isDigital) {
+        if (isOfdm) {
+          zr = ofdmQueueI[ofdmRead] ?? 0
+          zi = ofdmQueueQ[ofdmRead] ?? 0
+          ofdmRead++
+          const c = Math.cos(phase)
+          const s = Math.sin(phase)
+          const br = zr
+          const bq = zi
+          zr = br * c - bq * s
+          zi = br * s + bq * c
+        } else if (isDigital) {
           const mMin = Math.ceil((t - half) / S)
           const mMax = Math.floor((t + half) / S)
           ensureSymbol(mMax)
@@ -358,6 +425,9 @@ export function createSignalGenerator(
       baseM = 0
       symI.length = 0
       symQ.length = 0
+      ofdmQueueI.length = 0
+      ofdmQueueQ.length = 0
+      ofdmRead = 0
     }
   }
 }

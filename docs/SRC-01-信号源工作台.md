@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/15 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、源数据接入、源帧录制/导出/回放（暂停/单步/定位/变速/时间戳/循环），以及 S11 扫频源与 Smith 接入。
+> 状态：Phase 0/16 已完成——SourceEngine/SourceFrame、独立 source IPC/SourceService、分析消费者、源工作台、录制/流式录制/回放（暂停/单步/定位/变速/时间戳/循环）、S11 扫频与 Smith 校准、OFDM 源、OutputBackend 抽象、源类型推荐分析。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -48,6 +48,7 @@
 - 双音
 - Noise
 - BPSK / QPSK / 16QAM
+- OFDM（可调有效子载波/CP，适合频谱、持续谱、APD）
 
 每个源有：
 
@@ -59,9 +60,12 @@
     outputModes: ['real','complex'],
     supportsDigital,
     usesSamplesPerSymbol
-  }
+  },
+  analysis: [{ label: '频谱', path: '/signal/spectrum' }, ...]
 }
 ```
+
+工作台会根据源类型显示“推荐分析”入口，例如 Pulse→PowerTime、Digital→Eye/Constellation、OFDM→Persistence/APD。
 
 源类型与分析配置的映射由 `sourceKindOf/sourceKindPatch` 统一，避免页面各自拼 `waveform/modType`。
 
@@ -72,11 +76,13 @@
 - 载波、幅度、AWGN；
 - 采样率、每帧点数；
 - 每符号采样数（数字源）；
+- OFDM 有效子载波 / CP 比例；
 - AM/FM/Pulse/双音参数；
-- 本地端口、启动/停止/单帧、运行中应用参数；
+- 启动/停止/单帧、运行中应用参数；
 - IQ 实时预览；
 - 频谱实时预览（分析消费者生成）；
 - 源帧元数据：seq/outputMode/waveform/carrierHz；
+- 推荐分析入口；
 - 分析配置入口：`/signal/analysis-config`；
 
 ## 五、SourceEngine / SourceFrame（Phase 2）
@@ -110,6 +116,13 @@ interface SourceFrame {
 - 可注入确定性 RNG/时钟；
 - LocalAnalysisSource 现在只消费 `sourceEngine.next().data` 后做 FFT/时频。
 
+OFDM 生成：
+
+- 64 点 IFFT，有效子载波 2~52（默认 32，QPSK）；
+- 循环前缀比例 0~0.5（默认 0.25）；
+- 跨帧连续，输出仍为交织 IQ；
+- real 输出时 Q 严格为 0。
+
 主进程新增 `src/main/source/sourceService.ts` 与独立 IPC：
 
 ```text
@@ -118,6 +131,16 @@ source:frame  →  SourceFrame
 ```
 
 源工作台已切到 `window.api.source`，不再通过分析服务启动源。启动源后同时启动本地 `signalAnalysis` 消费者，分析 UI 页面即可收到 `signal:analysis`。
+
+OutputBackend 层（`src/shared/sourceBackend.ts`）：
+
+```text
+SourceOutputBackend
+  ├─ SimulatedOutputBackend  → SourceEngine
+  └─ PlaybackOutputBackend   → SourcePlayback
+```
+
+硬件 RF/DAC 后端后续按同一接口接入，不改 SourceService 的帧分发。
 
 分析链路：
 
@@ -177,6 +200,15 @@ source-recording-*.json  {
 
 `SourceRecorder` 位于 `src/shared/sourceRecorder.ts`，默认上限 4,000,000 样本。
 
+流式录制：
+
+- 工作台“流式”开关；
+- `SourceStreamRecorder` 将每个 SourceFrame 的 IQ 直接写入临时 `.f32`；
+- 内存只保留帧元数据；
+- 导出时复制临时文件并写 `.json`；
+- 不受内存样本上限约束，适合长时间录制；
+- 导出对话框取消时临时文件保留到下次录制/退出。
+
 回放：
 
 - 源工作台“回放录制”选择 `.f32/.json`；
@@ -198,6 +230,8 @@ Z = R + j(ωL - 1/ωC)
 - 默认 401 点；
 - `SweepService` 以 `sweep:frame` 推送；
 - Smith 圆图“S11 扫频”模式消费，R/L/C 可调；
+- 校准/去嵌入支持端口延时 `calDelayPs` 与补偿损耗 `calLossDb`；
+- Γ 校准：`Γ' = Γ · 10^(calLossDb/20) · e^{j2πf·calDelayPs}`；
 - 与 IQ SourceFrame 属于不同测量域，不混入 `source:frame`。
 
 ## 九、当前边界
@@ -207,11 +241,13 @@ Z = R + j(ωL - 1/ωC)
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 支持“S11 扫频”；
-- 录制在内存中进行（上限后截断），尚不支持流式落盘/无限时长；
-- 回放支持暂停/继续/单步/进度条定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
+- 录制支持内存与流式落盘；流式模式只保留元数据，导出时复制临时 f32；
+- 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
 - 时间戳模式按帧时间差调度，处理耗时会导致轻微漂移；
+- 源目录含 OFDM；有效子载波/CP 可调；
+- 工作台按源类型显示推荐分析入口；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
-- 尚未接入硬件输出/独立模拟后端。
+- 硬件 RF/DAC 后端未接；OutputBackend 目前只有模拟与回放实现。
 
 ## 十、验证
 
@@ -226,8 +262,8 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 ## 十一、后续
 
-1. 新分析组件按源类型自动选择显示模式；
-2. 流式录制/边录边分析；
-3. 真实 RF/DAC 后端与仿真后端；
-4. 数字源扩展 OFDM/任意 IQ；
-5. 录制定时/流式落盘与可重复种子。
+1. 真实 RF/DAC 硬件后端；
+2. Smith 完整 SOLT 校准与夹具去嵌入；
+3. 任意 IQ 文件源（非录制格式）；
+4. 录制可重复种子/定时/流式边录边分析；
+5. 分析组件按源场景自动切换数据源。

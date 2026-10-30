@@ -14,7 +14,7 @@ export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
  */
 export type OutputMode = 'real' | 'complex'
 /** 源波形/调制（digital 时使用 modType） */
-export type SourceWaveform = 'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital'
+export type SourceWaveform = 'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm'
 /**
  * 频谱语义（分析域，与源输出域独立）：
  * - real：只取实信号 I 通道，输出单边谱 0~Fs/2（非 DC 幅度 ×2）
@@ -40,6 +40,10 @@ export interface SignalAnalysisConfig {
   sampleRate: number
   pointsPerFrame: number
   samplesPerSymbol: number // 每个符号占用的采样点数
+  /** OFDM 有效子载波数（2~52） */
+  ofdmSubcarriers: number
+  /** OFDM 循环前缀比例（0~0.5） */
+  ofdmCpRatio: number
   enabled: boolean
   // ── 处理（FFT / 窗 / dB / 重叠）──
   fftSize: number
@@ -121,6 +125,8 @@ export function defaultAnalysisConfig(): SignalAnalysisConfig {
     sampleRate: 4096,
     pointsPerFrame: 2048,
     samplesPerSymbol: 16,
+    ofdmSubcarriers: 32,
+    ofdmCpRatio: 0.25,
     enabled: true,
     fftSize: 1024,
     window: 'hann',
@@ -143,7 +149,16 @@ export interface ConfigPatchResult {
 const MOD_TYPES: readonly string[] = ['sine', 'BPSK', 'QPSK', '16QAM']
 const WINDOW_TYPES: readonly string[] = ['rect', 'hann', 'hamming', 'blackman']
 const OUTPUT_MODES: readonly string[] = ['real', 'complex']
-const WAVEFORMS: readonly string[] = ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital']
+const WAVEFORMS: readonly string[] = [
+  'cw',
+  'am',
+  'fm',
+  'pulse',
+  'twoTone',
+  'noise',
+  'digital',
+  'ofdm'
+]
 
 export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch))
@@ -235,6 +250,17 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
     const n = int('samplesPerSymbol')
     if (n === null || n < 1 || n > 1024) errors.push('samplesPerSymbol 须为 1~1024 的整数')
     else out.samplesPerSymbol = n
+  }
+  if ('ofdmSubcarriers' in src) {
+    const n = int('ofdmSubcarriers')
+    if (n === null || n < 2 || n > 52 || n % 2 !== 0)
+      errors.push('ofdmSubcarriers 须为 2~52 的偶数')
+    else out.ofdmSubcarriers = n
+  }
+  if ('ofdmCpRatio' in src) {
+    const v = num('ofdmCpRatio')
+    if (v === null || v < 0 || v > 0.5) errors.push('ofdmCpRatio 须为 0~0.5')
+    else out.ofdmCpRatio = v
   }
   if ('enabled' in src) {
     if (typeof src.enabled === 'boolean') out.enabled = src.enabled

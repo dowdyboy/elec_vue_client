@@ -448,6 +448,8 @@ export function defaultCfg() {
     sampleRate: 4096,
     pointsPerFrame: 2048,
     samplesPerSymbol: 16,
+    ofdmSubcarriers: 32,
+    ofdmCpRatio: 0.25,
     enabled: true,
     fftSize: 1024,
     window: 'hann',
@@ -478,7 +480,7 @@ export function sanitizePatch(patch) {
   if (['sine', 'BPSK', 'QPSK', '16QAM'].includes(patch.modType)) out.modType = patch.modType
   if (patch.outputMode === 'real' || patch.outputMode === 'complex')
     out.outputMode = patch.outputMode
-  if (['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'].includes(patch.waveform))
+  if (['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital', 'ofdm'].includes(patch.waveform))
     out.waveform = patch.waveform
   const modFreq = num('modFreq')
   if (modFreq !== null && modFreq > 0 && modFreq <= 1_000_000) out.modFreq = modFreq
@@ -501,6 +503,10 @@ export function sanitizePatch(patch) {
   if (ppf !== null && ppf >= 64 && ppf <= 65536) out.pointsPerFrame = ppf
   const sps = int('samplesPerSymbol')
   if (sps !== null && sps >= 1 && sps <= 1024) out.samplesPerSymbol = sps
+  const osc = int('ofdmSubcarriers')
+  if (osc !== null && osc >= 2 && osc <= 52 && osc % 2 === 0) out.ofdmSubcarriers = osc
+  const ocp = num('ofdmCpRatio')
+  if (ocp !== null && ocp >= 0 && ocp <= 0.5) out.ofdmCpRatio = ocp
   if (typeof patch.enabled === 'boolean') out.enabled = patch.enabled
   const fft = int('fftSize')
   if (fft !== null && fft >= 64 && fft <= 65536 && (fft & (fft - 1)) === 0) out.fftSize = fft

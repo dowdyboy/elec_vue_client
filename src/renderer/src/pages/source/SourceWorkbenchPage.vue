@@ -62,6 +62,8 @@ const snrDb = ref(20)
 const sampleRate = ref(4096)
 const pointsPerFrame = ref(2048)
 const samplesPerSymbol = ref(16)
+const ofdmSubcarriers = ref(32)
+const ofdmCpRatio = ref(0.25)
 const modFreq = ref(50)
 const amDepth = ref(0.5)
 const fmDeviation = ref(200)
@@ -75,6 +77,7 @@ const recordFrames = ref(0)
 const recordSamples = ref(0)
 const recordDurationMs = ref(0)
 const recordTruncated = ref(false)
+const streamRecord = ref(false)
 const recordBusy = ref(false)
 let recordPoll: ReturnType<typeof setInterval> | null = null
 const lastFrame = ref<{
@@ -109,6 +112,8 @@ function configWith(patch: Partial<SignalAnalysisConfig>): Partial<SignalAnalysi
     sampleRate: sampleRate.value,
     pointsPerFrame: pointsPerFrame.value,
     samplesPerSymbol: samplesPerSymbol.value,
+    ofdmSubcarriers: ofdmSubcarriers.value,
+    ofdmCpRatio: ofdmCpRatio.value,
     modFreq: modFreq.value,
     amDepth: amDepth.value,
     fmDeviation: fmDeviation.value,
@@ -141,6 +146,8 @@ function hydrate(c: Partial<SignalAnalysisConfig>): void {
   if (typeof c.sampleRate === 'number') sampleRate.value = c.sampleRate
   if (typeof c.pointsPerFrame === 'number') pointsPerFrame.value = c.pointsPerFrame
   if (typeof c.samplesPerSymbol === 'number') samplesPerSymbol.value = c.samplesPerSymbol
+  if (typeof c.ofdmSubcarriers === 'number') ofdmSubcarriers.value = c.ofdmSubcarriers
+  if (typeof c.ofdmCpRatio === 'number') ofdmCpRatio.value = c.ofdmCpRatio
   if (typeof c.modFreq === 'number') modFreq.value = c.modFreq
   if (typeof c.amDepth === 'number') amDepth.value = c.amDepth
   if (typeof c.fmDeviation === 'number') fmDeviation.value = c.fmDeviation
@@ -319,9 +326,9 @@ async function toggleRecord(): Promise<void> {
     message.warning('请先启动源再录制')
     return
   }
-  await window.api.source.recordStart().catch(() => {})
+  await window.api.source.recordStart(streamRecord.value).catch(() => {})
   await refreshRecordStatus()
-  message.success('开始录制源帧')
+  message.success(streamRecord.value ? '开始流式录制源帧' : '开始录制源帧')
 }
 
 async function exportRecord(): Promise<void> {
@@ -435,6 +442,10 @@ onUnmounted(() => {
         <NButton size="small" :type="recording ? 'error' : 'default'" @click="toggleRecord">
           {{ recording ? '停止录制' : '录制' }}
         </NButton>
+        <label class="stream-label">
+          流式
+          <NSwitch v-model:value="streamRecord" size="small" :disabled="recording" />
+        </label>
         <NButton
           size="small"
           :disabled="recordFrames === 0 || recordBusy"
@@ -507,6 +518,16 @@ onUnmounted(() => {
             @update:value="applyKind"
           />
           <div class="source-desc">{{ meta.description }}</div>
+          <div class="scenario-row">
+            <span class="scenario-label">推荐分析</span>
+            <router-link
+              v-for="a in meta.analysis"
+              :key="a.path"
+              :to="a.path"
+              class="scenario-chip"
+              >{{ a.label }}</router-link
+            >
+          </div>
           <NDivider />
           <NForm label-placement="left" label-width="112" size="small">
             <NFormItem label="输出模式">
@@ -575,6 +596,25 @@ onUnmounted(() => {
               </NFormItem>
               <NFormItem v-if="kind === 'twoTone'" label="双音间隔 (Hz)">
                 <NInputNumber v-model:value="toneSpacing" :min="1" :max="10000" />
+              </NFormItem>
+              <NFormItem v-if="kind === 'ofdm'" label="有效子载波">
+                <NSelect
+                  v-model:value="ofdmSubcarriers"
+                  :options="[8, 16, 24, 32, 40, 52].map((v) => ({ label: String(v), value: v }))"
+                  style="width: 120px"
+                />
+              </NFormItem>
+              <NFormItem v-if="kind === 'ofdm'" label="CP 比例">
+                <NSlider
+                  v-model:value="ofdmCpRatio"
+                  :min="0"
+                  :max="0.5"
+                  :step="0.05"
+                  style="width: 180px"
+                />
+                <span style="margin-left: 8px; color: #888"
+                  >{{ (ofdmCpRatio * 100).toFixed(0) }}%</span
+                >
               </NFormItem>
             </template>
             <NFormItem label="源能力">
@@ -697,6 +737,13 @@ onUnmounted(() => {
   font-size: 12px;
   color: #888;
 }
+.stream-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
+}
 .playback-time {
   font-size: 12px;
   color: #888;
@@ -706,6 +753,28 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #888;
+}
+.scenario-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.scenario-label {
+  font-size: 12px;
+  color: #888;
+}
+.scenario-chip {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(79, 195, 247, 0.1);
+  color: #4fc3f7;
+  font-size: 12px;
+  text-decoration: none;
+}
+.scenario-chip:hover {
+  background: rgba(79, 195, 247, 0.2);
 }
 .actions {
   display: flex;

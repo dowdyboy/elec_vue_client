@@ -558,7 +558,8 @@ const api = {
     setConfig: (cfg: unknown) =>
       invoke<{ ok: boolean; config?: unknown; error?: string }>('source:setConfig', cfg),
     trigger: () => invoke<{ ok: boolean; seq?: number }>('source:trigger'),
-    recordStart: () => invoke<{ ok: boolean; status?: unknown }>('source:recordStart'),
+    recordStart: (stream = false) =>
+      invoke<{ ok: boolean; status?: unknown }>('source:recordStart', stream),
     recordStop: () => invoke<{ ok: boolean; status?: unknown }>('source:recordStop'),
     recordStatus: () =>
       invoke<{

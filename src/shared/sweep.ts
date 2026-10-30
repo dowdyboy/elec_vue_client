@@ -13,6 +13,9 @@ export interface SweepConfig {
   rOhm: number
   lHenry: number
   cFarad: number
+  /** 校准/去嵌入：端口延时 ps 与补偿损耗 dB */
+  calDelayPs: number
+  calLossDb: number
 }
 
 export interface SweepFrame {
@@ -33,7 +36,9 @@ export function defaultSweepConfig(): SweepConfig {
     z0: 50,
     rOhm: 25,
     lHenry: 100e-9,
-    cFarad: 5e-12
+    cFarad: 5e-12,
+    calDelayPs: 0,
+    calLossDb: 0
   }
 }
 
@@ -84,6 +89,16 @@ export function sanitizeSweepConfig(patch: unknown): {
     if (v === null || v < 0 || v > 1) return { ok: false, error: 'cFarad 非法' }
     out.cFarad = v
   }
+  if ('calDelayPs' in src) {
+    const v = num('calDelayPs')
+    if (v === null || v < -10000 || v > 10000) return { ok: false, error: 'calDelayPs 非法' }
+    out.calDelayPs = v
+  }
+  if ('calLossDb' in src) {
+    const v = num('calLossDb')
+    if (v === null || v < -20 || v > 20) return { ok: false, error: 'calLossDb 非法' }
+    out.calLossDb = v
+  }
   const merged = { ...defaultSweepConfig(), ...out }
   if (merged.stopHz <= merged.startHz) return { ok: false, error: 'stopHz 须大于 startHz' }
   return { ok: true, value: out }
@@ -109,8 +124,19 @@ export function makeSweepFrame(
     const dr = zr + z0
     const di = zx
     const den = dr * dr + di * di
-    gammaI[k] = ((zr - z0) * dr + zx * di) / den
-    gammaQ[k] = (zx * dr - (zr - z0) * di) / den
+    const gi = ((zr - z0) * dr + zx * di) / den
+    const gq = (zx * dr - (zr - z0) * di) / den
+    if (config.calDelayPs || config.calLossDb) {
+      const gain = Math.pow(10, config.calLossDb / 20)
+      const th = 2 * Math.PI * f * config.calDelayPs * 1e-12
+      const c = Math.cos(th)
+      const s = Math.sin(th)
+      gammaI[k] = (gi * c - gq * s) * gain
+      gammaQ[k] = (gi * s + gq * c) * gain
+    } else {
+      gammaI[k] = gi
+      gammaQ[k] = gq
+    }
     frequencies[k] = f
   }
   return { seq, timestamp, frequencies, gammaI, gammaQ, z0, model: 'series-rlc' }
