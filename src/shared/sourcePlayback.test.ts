@@ -48,6 +48,17 @@ describe('SourcePlayback', () => {
     expect(p.next()?.seq).toBe(1)
   })
 
+  it('可查看下一帧并切换循环', () => {
+    const p = new SourcePlayback([frame(1), frame(2)], { loop: false })
+    p.start()
+    expect(p.peek()?.seq).toBe(1)
+    expect(p.getStatus().index).toBe(0)
+    p.setLoop(true)
+    p.next()
+    p.next()
+    expect(p.peek()?.seq).toBe(1)
+  })
+
   it('拒绝空回放', () => {
     expect(() => new SourcePlayback([])).toThrow(/at least one/)
   })

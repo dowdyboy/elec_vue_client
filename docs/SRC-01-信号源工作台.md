@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/13 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入、源帧录制/导出/回放（暂停/单步/变速），以及 S11 扫频源与 Smith 接入。
+> 状态：Phase 0/14 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入、源帧录制/导出/回放（暂停/单步/变速/时间戳/循环），以及 S11 扫频源与 Smith 接入。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -208,7 +208,7 @@ Z = R + j(ωL - 1/ωC)
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 支持“S11 扫频”；
 - 录制在内存中进行（上限后截断），尚不支持流式落盘/无限时长；
-- 回放支持暂停/继续/单步，以及 0.5x/1x/2x/4x 变速；
+- 回放支持暂停/继续/单步、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/独立模拟后端。
 

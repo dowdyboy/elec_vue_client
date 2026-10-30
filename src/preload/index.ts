@@ -588,6 +588,10 @@ const api = {
     stepPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stepPlayback'),
     setPlaybackSpeed: (speed: number) =>
       invoke<{ ok: boolean; status?: unknown }>('source:setPlaybackSpeed', speed),
+    setPlaybackTiming: (timing: 'fixed' | 'timestamp') =>
+      invoke<{ ok: boolean; status?: unknown }>('source:setPlaybackTiming', timing),
+    setPlaybackLoop: (loop: boolean) =>
+      invoke<{ ok: boolean; status?: unknown }>('source:setPlaybackLoop', loop),
     stopPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stopPlayback'),
     playbackStatus: () =>
       invoke<{
@@ -597,6 +601,7 @@ const api = {
         total: number
         loop: boolean
         speed: number
+        timing: 'fixed' | 'timestamp'
       } | null>('source:playbackStatus'),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },

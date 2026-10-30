@@ -147,7 +147,7 @@ IQ/频谱额外通用：`chartStyle`（外观覆盖，替代原 `style`；原生
 ## 六、验证
 
 ```bash
-npm run typecheck && npm run lint && npm test   # 当前 221 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
+npm run typecheck && npm run lint && npm test   # 当前 222 例（含 real/complex 频谱/瀑布/星座/功率/眼图/持续谱/Smith/APD）
 npm run test:visual   # canvas2d/webgl2 像素级回归（real + complex 双模式）
 npm run test:smoke    # 新组件 Electron 集成冒烟 + 截图（PowerTime/Eye/Persistence/Smith/APD/Quality）
 # 模拟：setInterval(()=> chart.appendData(new Float32Array(4096).map(()=>Math.random()*2-1)), 16)

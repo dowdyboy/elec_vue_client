@@ -65,11 +65,11 @@
 
 ## 信号源（SRC-01）
 
-> 信号源与信号分析 UI 拆分：源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC、纯 IPC 本地 FFT、PowerTime/Eye/APD/Persistence 源数据接入、源帧录制/导出/回放与 S11 扫频 Smith。
+> 信号源与信号分析 UI 拆分：源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC、纯 IPC 本地 FFT、源数据接入、录制/导出/回放（暂停/单步/变速/时间戳/循环）与 S11 扫频 Smith。
 
 | #   | 文档                                     | 对应源码                                                                                                                                          | 状态       |
 | --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/13 |
+| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/14 |
 
 ## 信号分析组件（SIG-00~10）
 

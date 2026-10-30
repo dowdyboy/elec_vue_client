@@ -46,6 +46,8 @@ const sourceMode = ref<'live' | 'playback'>('live')
 const playbackLoaded = ref(false)
 const playbackPaused = ref(false)
 const playbackSpeed = ref(1)
+const playbackTiming = ref<'fixed' | 'timestamp'>('fixed')
+const playbackLoop = ref(true)
 const playbackPath = ref('')
 const playbackIndex = ref(0)
 const playbackTotal = ref(0)
@@ -165,6 +167,8 @@ async function refreshPlaybackStatus(): Promise<void> {
     playbackLoaded.value = true
     playbackPaused.value = p.paused
     playbackSpeed.value = p.speed ?? 1
+    playbackTiming.value = p.timing ?? 'fixed'
+    playbackLoop.value = p.loop
     playbackIndex.value = p.index
     playbackTotal.value = p.total
   } catch {
@@ -214,6 +218,16 @@ async function stepPlayback(): Promise<void> {
 
 async function onPlaybackSpeed(): Promise<void> {
   await window.api.source.setPlaybackSpeed(playbackSpeed.value).catch(() => {})
+  await refreshPlaybackStatus()
+}
+
+async function onPlaybackTiming(): Promise<void> {
+  await window.api.source.setPlaybackTiming(playbackTiming.value).catch(() => {})
+  await refreshPlaybackStatus()
+}
+
+async function onPlaybackLoop(): Promise<void> {
+  await window.api.source.setPlaybackLoop(playbackLoop.value).catch(() => {})
   await refreshPlaybackStatus()
 }
 
@@ -438,6 +452,21 @@ onUnmounted(() => {
         style="width: 80px"
         @update:value="onPlaybackSpeed"
       />
+      <NSelect
+        v-if="sourceMode === 'playback'"
+        v-model:value="playbackTiming"
+        size="tiny"
+        :options="[
+          { label: '固定 60fps', value: 'fixed' },
+          { label: '按时间戳', value: 'timestamp' }
+        ]"
+        style="width: 116px"
+        @update:value="onPlaybackTiming"
+      />
+      <label v-if="sourceMode === 'playback'" class="loop-label">
+        循环
+        <NSwitch v-model:value="playbackLoop" size="small" @update:value="onPlaybackLoop" />
+      </label>
       <span v-if="playbackPath" class="playback-path">{{ playbackPath }}</span>
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
       <span
@@ -638,6 +667,13 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #4fc3f7;
+}
+.loop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
 }
 .source-desc {
   margin-top: 8px;

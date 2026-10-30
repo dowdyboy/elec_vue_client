@@ -28,6 +28,8 @@ export class SourceService {
   private engine: SourceEngine
   private config: SignalAnalysisConfig
   private timer: NodeJS.Timeout | null = null
+  private playbackTimer: NodeJS.Timeout | null = null
+  private playbackTiming: 'fixed' | 'timestamp' = 'fixed'
   private frameSeq = 0
   private subscribers = new Set<(frame: SourceFrame) => void>()
   private recorder = new SourceRecorder()
@@ -41,6 +43,7 @@ export class SourceService {
 
   start(): void {
     this.playback = null
+    this.clearTimers()
     this.startTimer()
   }
 
@@ -50,11 +53,24 @@ export class SourceService {
     this.timer = setInterval(() => this.tick(), interval)
   }
 
+  private clearTimers(): void {
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
+    if (this.playbackTimer) {
+      clearTimeout(this.playbackTimer)
+      this.playbackTimer = null
+    }
+  }
+
   setPlaybackSpeed(speed: number): boolean {
     const allowed = [0.25, 0.5, 1, 2, 4]
     if (!allowed.includes(speed)) return false
     this.playbackSpeed = speed
-    if (this.timer) {
+    if (this.playback && this.playbackTiming === 'timestamp') {
+      this.scheduleTimestampPlayback()
+    } else if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
       this.startTimer()
@@ -62,27 +78,58 @@ export class SourceService {
     return true
   }
 
+  setPlaybackTiming(timing: 'fixed' | 'timestamp'): boolean {
+    if (timing !== 'fixed' && timing !== 'timestamp') return false
+    this.playbackTiming = timing
+    if (this.playback) {
+      this.clearTimers()
+      if (timing === 'fixed') this.startTimer()
+      else this.scheduleTimestampPlayback()
+    }
+    return true
+  }
+
+  setPlaybackLoop(loop: boolean): boolean {
+    if (!this.playback) return false
+    this.playback.setLoop(!!loop)
+    return true
+  }
+
   startPlayback(): boolean {
     if (!this.playback) return false
+    this.clearTimers()
     this.playback.start()
-    this.startTimer()
+    if (this.playbackTiming === 'timestamp') this.scheduleTimestampPlayback()
+    else this.startTimer()
     return true
   }
 
   pausePlayback(): boolean {
     if (!this.playback) return false
     this.playback.pause()
+    if (this.playbackTimer) {
+      clearTimeout(this.playbackTimer)
+      this.playbackTimer = null
+    }
     return true
   }
 
   resumePlayback(): boolean {
     if (!this.playback) return false
     this.playback.resume()
+    if (this.playbackTiming === 'timestamp') this.scheduleTimestampPlayback()
+    else this.startTimer()
     return true
   }
 
   stepPlayback(): boolean {
-    const frame = this.playback?.step()
+    if (!this.playback) return false
+    this.playback.pause()
+    if (this.playbackTimer) {
+      clearTimeout(this.playbackTimer)
+      this.playbackTimer = null
+    }
+    const frame = this.playback.step()
     if (!frame) return false
     this.emitFrame(frame)
     return true
@@ -91,26 +138,28 @@ export class SourceService {
   stopPlayback(): void {
     this.playback?.stop()
     this.playback = null
-    this.stop()
+    this.clearTimers()
   }
 
   loadPlayback(frames: SourceFrame[]): boolean {
     if (frames.length === 0) return false
-    this.stop()
+    this.clearTimers()
     this.playback = new SourcePlayback(frames)
     return true
   }
 
-  playbackStatus(): (ReturnType<SourcePlayback['getStatus']> & { speed: number }) | null {
+  playbackStatus():
+    | (ReturnType<SourcePlayback['getStatus']> & {
+        speed: number
+        timing: 'fixed' | 'timestamp'
+      })
+    | null {
     const st = this.playback?.getStatus()
-    return st ? { ...st, speed: this.playbackSpeed } : null
+    return st ? { ...st, speed: this.playbackSpeed, timing: this.playbackTiming } : null
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+    this.clearTimers()
   }
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
@@ -120,7 +169,7 @@ export class SourceService {
 
   getStatus(): SourceStatus {
     return {
-      running: !!this.timer,
+      running: !!this.timer || !!this.playbackTimer,
       mode: this.playback ? 'playback' : 'live',
       config: { ...this.config }
     }
@@ -155,6 +204,35 @@ export class SourceService {
     this.frameSeq = frame.seq
     this.recorder.push(frame)
     this.broadcast(frame)
+  }
+
+  private scheduleTimestampPlayback(delayMs = 0): void {
+    if (this.playbackTimer) {
+      clearTimeout(this.playbackTimer)
+      this.playbackTimer = null
+    }
+    const st = this.playback?.getStatus()
+    if (!st?.playing || st.paused) return
+    const wait = Math.max(0, Math.min(5000, Math.round(delayMs)))
+    this.playbackTimer = setTimeout(() => this.playbackTick(), wait)
+  }
+
+  private playbackTick(): void {
+    const frame = this.playback?.next()
+    if (!frame) {
+      if (this.playback && !this.playback.getStatus().playing) {
+        this.playbackTimer = null
+      }
+      return
+    }
+    this.emitFrame(frame)
+    const next = this.playback?.peek()
+    if (next) {
+      const dt = (next.timestamp - frame.timestamp) / this.playbackSpeed
+      this.scheduleTimestampPlayback(dt > 0 ? dt : 16)
+    } else {
+      this.playbackTimer = null
+    }
   }
 
   private broadcast(frame: SourceFrame): void {
@@ -435,6 +513,17 @@ export function registerSourceService(): () => void {
     return { ok: service.setPlaybackSpeed(speed), status: service.playbackStatus() }
   })
 
+  ipcMain.handle('source:setPlaybackTiming', (e, timing: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    if (timing !== 'fixed' && timing !== 'timestamp') return { ok: false, error: 'timing 非法' }
+    return { ok: service.setPlaybackTiming(timing), status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:setPlaybackLoop', (e, loop: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return { ok: service.setPlaybackLoop(!!loop), status: service.playbackStatus() }
+  })
+
   ipcMain.handle('source:stopPlayback', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.stopPlayback()
@@ -464,6 +553,8 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:resumePlayback')
     ipcMain.removeHandler('source:stepPlayback')
     ipcMain.removeHandler('source:setPlaybackSpeed')
+    ipcMain.removeHandler('source:setPlaybackTiming')
+    ipcMain.removeHandler('source:setPlaybackLoop')
     ipcMain.removeHandler('source:stopPlayback')
     ipcMain.removeHandler('source:playbackStatus')
   }

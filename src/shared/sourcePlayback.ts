@@ -16,8 +16,8 @@ export class SourcePlayback {
   private index = 0
   private playing = false
   private paused = false
+  private loop: boolean
   private readonly frames: SourceFrame[]
-  private readonly loop: boolean
 
   constructor(frames: SourceFrame[], opts: { loop?: boolean } = {}) {
     if (frames.length === 0) throw new Error('playback needs at least one frame')
@@ -42,6 +42,19 @@ export class SourcePlayback {
 
   resume(): void {
     if (this.playing) this.paused = false
+  }
+
+  setLoop(loop: boolean): void {
+    this.loop = loop
+  }
+
+  /** 查看下一帧但不前进 */
+  peek(): SourceFrame | null {
+    if (!this.playing) return null
+    return (
+      this.frames[this.index >= this.frames.length ? (this.loop ? 0 : this.index) : this.index] ??
+      null
+    )
   }
 
   /** 暂停/播放状态下手工前进一帧 */
