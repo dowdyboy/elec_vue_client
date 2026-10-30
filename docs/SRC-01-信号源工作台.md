@@ -266,12 +266,24 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 含 sourceEngine/source 目录单测
+npm run test          # 230 例，含 sourceEngine/录制/播放/扫频/流式分段
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
+npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E
 ```
 
-`test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃；真实推流仍由 `signalAnalysis` 服务测试覆盖。
+`test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃。
+
+`test:source-ipc` 启动真实的 `SourceService`、`signalAnalysis`、`SweepService`，通过隐藏 BrowserWindow + 最小 preload 验证：
+
+- OFDM 源帧（长度/波形/Q 能量）；
+- `signal:analysis` 的 IQ/频谱帧；
+- 内存录制帧数/样本数；
+- 流式录制分段拼接后的文件大小；
+- 回放暂停/单步/seek/时间戳/倍速/循环；
+- S11 sweep 帧与校准字段。
+
+它不覆盖系统文件选择对话框和导出对话框。
 
 ## 十一、后续
 

@@ -537,7 +537,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 228 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级单测；核心数学/文案有 230 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 

@@ -9,8 +9,13 @@ import path from 'node:path'
 import type { SourceFrame } from '../../shared/sourceEngine'
 import type { RecordedFrameMeta, SourceRecorderStatus } from '../../shared/sourceRecorder'
 
-const SEGMENT_BYTES = 16 * 1024 * 1024
-const MAX_PENDING_BYTES = 64 * 1024 * 1024
+const DEFAULT_SEGMENT_BYTES = 16 * 1024 * 1024
+const DEFAULT_MAX_PENDING_BYTES = 64 * 1024 * 1024
+
+export interface SourceStreamRecorderOptions {
+  segmentBytes?: number
+  maxPendingBytes?: number
+}
 
 export class SourceStreamRecorder {
   private ws: WriteStream | null = null
@@ -25,6 +30,13 @@ export class SourceStreamRecorder {
   private truncated = false
   private pendingBytes = 0
   private closers: Promise<void>[] = []
+  private readonly segmentBytes: number
+  private readonly maxPendingBytes: number
+
+  constructor(opts: SourceStreamRecorderOptions = {}) {
+    this.segmentBytes = Math.max(32, opts.segmentBytes ?? DEFAULT_SEGMENT_BYTES)
+    this.maxPendingBytes = Math.max(1, opts.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES)
+  }
 
   start(): void {
     this.dispose()
@@ -62,7 +74,7 @@ export class SourceStreamRecorder {
     if (!this.active || !this.ws) return
     try {
       const buf = Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength)
-      if (this.pendingBytes + buf.length > MAX_PENDING_BYTES) {
+      if (this.pendingBytes + buf.length > this.maxPendingBytes) {
         this.truncated = true
         this.active = false
         const ws = this.ws
@@ -77,7 +89,7 @@ export class SourceStreamRecorder {
         }
         return
       }
-      if (this.currentBytes > 0 && this.currentBytes + buf.length > SEGMENT_BYTES) {
+      if (this.currentBytes > 0 && this.currentBytes + buf.length > this.segmentBytes) {
         const previous = this.ws
         this.ws = null
         this.closers.push(
