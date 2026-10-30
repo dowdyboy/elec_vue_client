@@ -592,6 +592,8 @@ const api = {
       invoke<{ ok: boolean; status?: unknown }>('source:setPlaybackTiming', timing),
     setPlaybackLoop: (loop: boolean) =>
       invoke<{ ok: boolean; status?: unknown }>('source:setPlaybackLoop', loop),
+    seekPlayback: (index: number) =>
+      invoke<{ ok: boolean; status?: unknown }>('source:seekPlayback', index),
     stopPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stopPlayback'),
     playbackStatus: () =>
       invoke<{
@@ -602,6 +604,8 @@ const api = {
         loop: boolean
         speed: number
         timing: 'fixed' | 'timestamp'
+        durationMs: number
+        positionMs: number
       } | null>('source:playbackStatus'),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },

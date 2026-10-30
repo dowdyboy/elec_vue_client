@@ -59,6 +59,19 @@ describe('SourcePlayback', () => {
     expect(p.peek()?.seq).toBe(1)
   })
 
+  it('按帧/时间戳定位', () => {
+    const p = new SourcePlayback([frame(1), frame(2), frame(3)], { loop: true })
+    p.start()
+    p.seek(2)
+    expect(p.getStatus().index).toBe(2)
+    expect(p.getStatus().positionMs).toBe(2)
+    expect(p.getStatus().durationMs).toBe(2)
+    p.seekTimestamp(3)
+    expect(p.getStatus().index).toBe(2)
+    p.seek(99)
+    expect(p.getStatus().index).toBe(2)
+  })
+
   it('拒绝空回放', () => {
     expect(() => new SourcePlayback([])).toThrow(/at least one/)
   })

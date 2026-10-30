@@ -51,6 +51,8 @@ const playbackLoop = ref(true)
 const playbackPath = ref('')
 const playbackIndex = ref(0)
 const playbackTotal = ref(0)
+const playbackDurationMs = ref(0)
+const playbackPositionMs = ref(0)
 let analysisStartedHere = false
 const kind = ref<SourceKind>('cw')
 const outputMode = ref<'real' | 'complex'>('complex')
@@ -171,6 +173,8 @@ async function refreshPlaybackStatus(): Promise<void> {
     playbackLoop.value = p.loop
     playbackIndex.value = p.index
     playbackTotal.value = p.total
+    playbackDurationMs.value = p.durationMs ?? 0
+    playbackPositionMs.value = p.positionMs ?? 0
   } catch {
     /* ignore */
   }
@@ -228,6 +232,11 @@ async function onPlaybackTiming(): Promise<void> {
 
 async function onPlaybackLoop(): Promise<void> {
   await window.api.source.setPlaybackLoop(playbackLoop.value).catch(() => {})
+  await refreshPlaybackStatus()
+}
+
+async function onSeekPlayback(index: number): Promise<void> {
+  await window.api.source.seekPlayback(index).catch(() => {})
   await refreshPlaybackStatus()
 }
 
@@ -439,6 +448,19 @@ onUnmounted(() => {
       <NTag v-if="sourceMode === 'playback'" type="warning" size="small" :bordered="false">
         回放 {{ playbackIndex }}/{{ playbackTotal }}{{ playbackPaused ? ' · 暂停' : '' }}
       </NTag>
+      <NSlider
+        v-if="sourceMode === 'playback'"
+        :value="playbackIndex"
+        :min="0"
+        :max="Math.max(0, playbackTotal - 1)"
+        :step="1"
+        style="width: 180px"
+        @update:value="onSeekPlayback"
+      />
+      <span v-if="sourceMode === 'playback'" class="playback-time">
+        {{ (playbackPositionMs / 1000).toFixed(1) }}s /
+        {{ (playbackDurationMs / 1000).toFixed(1) }}s
+      </span>
       <NSelect
         v-if="sourceMode === 'playback'"
         v-model:value="playbackSpeed"
@@ -674,6 +696,11 @@ onUnmounted(() => {
   gap: 4px;
   font-size: 12px;
   color: #888;
+}
+.playback-time {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
 }
 .source-desc {
   margin-top: 8px;

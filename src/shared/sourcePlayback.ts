@@ -10,6 +10,8 @@ export interface SourcePlaybackStatus {
   index: number
   total: number
   loop: boolean
+  durationMs: number
+  positionMs: number
 }
 
 export class SourcePlayback {
@@ -48,6 +50,32 @@ export class SourcePlayback {
     this.loop = loop
   }
 
+  /** 跳转到指定帧（越界会夹取） */
+  seek(index: number): boolean {
+    if (!Number.isFinite(index)) return false
+    this.index = Math.max(0, Math.min(this.frames.length - 1, Math.floor(index)))
+    return true
+  }
+
+  /** 跳转到最接近的时间戳 */
+  seekTimestamp(timestamp: number): boolean {
+    if (!Number.isFinite(timestamp)) return false
+    let lo = 0
+    let hi = this.frames.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (this.frames[mid]!.timestamp < timestamp) lo = mid + 1
+      else hi = mid
+    }
+    if (lo > 0) {
+      const prev = this.frames[lo - 1]!
+      const cur = this.frames[lo]!
+      if (Math.abs(prev.timestamp - timestamp) < Math.abs(cur.timestamp - timestamp)) lo--
+    }
+    this.index = lo
+    return true
+  }
+
   /** 查看下一帧但不前进 */
   peek(): SourceFrame | null {
     if (!this.playing) return null
@@ -80,12 +108,17 @@ export class SourcePlayback {
   }
 
   getStatus(): SourcePlaybackStatus {
+    const first = this.frames[0]!
+    const last = this.frames[this.frames.length - 1]!
+    const current = this.frames[Math.min(this.index, this.frames.length - 1)] ?? first
     return {
       playing: this.playing,
       paused: this.paused,
       index: this.index,
       total: this.frames.length,
-      loop: this.loop
+      loop: this.loop,
+      durationMs: Math.max(0, last.timestamp - first.timestamp),
+      positionMs: Math.max(0, current.timestamp - first.timestamp)
     }
   }
 }

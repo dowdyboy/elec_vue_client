@@ -95,6 +95,13 @@ export class SourceService {
     return true
   }
 
+  seekPlayback(index: number): boolean {
+    if (!this.playback) return false
+    const ok = this.playback.seek(index)
+    if (ok && this.playbackTiming === 'timestamp') this.scheduleTimestampPlayback()
+    return ok
+  }
+
   startPlayback(): boolean {
     if (!this.playback) return false
     this.clearTimers()
@@ -524,6 +531,12 @@ export function registerSourceService(): () => void {
     return { ok: service.setPlaybackLoop(!!loop), status: service.playbackStatus() }
   })
 
+  ipcMain.handle('source:seekPlayback', (e, index: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    if (typeof index !== 'number') return { ok: false, error: 'index 非法' }
+    return { ok: service.seekPlayback(index), status: service.playbackStatus() }
+  })
+
   ipcMain.handle('source:stopPlayback', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.stopPlayback()
@@ -555,6 +568,7 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:setPlaybackSpeed')
     ipcMain.removeHandler('source:setPlaybackTiming')
     ipcMain.removeHandler('source:setPlaybackLoop')
+    ipcMain.removeHandler('source:seekPlayback')
     ipcMain.removeHandler('source:stopPlayback')
     ipcMain.removeHandler('source:playbackStatus')
   }
