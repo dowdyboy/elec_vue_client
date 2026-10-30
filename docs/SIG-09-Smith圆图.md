@@ -3,6 +3,8 @@
 > `src/components/signal/SmithChart.vue`
 >
 > 状态：纯显示复反射系数轨迹；Canvas2D；等电阻/等电抗网格、游标、VSWR/回波损耗/阻抗读数。
+>
+> Demo 支持“仿真轨迹 / S11 扫频”数据源：S11 由独立 SweepService 生成串联 RLC 的 Γ(f)，组件本身仍保持纯显示。
 
 ## 一、输入
 
@@ -31,18 +33,18 @@ chart.setData(traces)
 
 ## 二、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `z0` | 50 | 特性阻抗，用于阻抗读数 |
-| `traceWidth` | 1.5 | 轨迹线宽 |
-| `alpha` | 0.9 | 轨迹透明度 |
-| `showGrid` | true | 等电阻/等电抗网格 |
-| `showLabels` | true | Γ 轴/网格标签 |
-| `showCursor` | true | 最近点游标 |
-| `showInfo` | true | 轨迹数/最大 VSWR/最小 RL |
-| `maxPoints` | 2000 | 单条轨迹最多点数 |
-| `freqStartHz/freqStopHz` | — | 预留频率信息 |
-| `theme/chartStyle` | auto | 主题 |
+| 属性                     | 默认 | 说明                     |
+| ------------------------ | ---- | ------------------------ |
+| `z0`                     | 50   | 特性阻抗，用于阻抗读数   |
+| `traceWidth`             | 1.5  | 轨迹线宽                 |
+| `alpha`                  | 0.9  | 轨迹透明度               |
+| `showGrid`               | true | 等电阻/等电抗网格        |
+| `showLabels`             | true | Γ 轴/网格标签            |
+| `showCursor`             | true | 最近点游标               |
+| `showInfo`               | true | 轨迹数/最大 VSWR/最小 RL |
+| `maxPoints`              | 2000 | 单条轨迹最多点数         |
+| `freqStartHz/freqStopHz` | —    | 预留频率信息             |
+| `theme/chartStyle`       | auto | 主题                     |
 
 ## 三、网格/读数
 

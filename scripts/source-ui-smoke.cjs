@@ -67,6 +67,12 @@ async function run() {
     'document.body.innerText.includes("连接高级配置")'
   )
   if (!conn) throw new Error('source advanced route did not render')
+  await win.webContents.executeJavaScript('location.hash = "#/signal/smith"')
+  await wait(400)
+  const smith = await win.webContents.executeJavaScript(
+    'document.body.innerText.includes("Smith 圆图")'
+  )
+  if (!smith) throw new Error('smith page did not render')
   if (errors.length) throw new Error(`console errors: ${errors.join('; ')}`)
   console.log(`[source-ui] PASS ${out}`)
 }

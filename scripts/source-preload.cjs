@@ -29,6 +29,14 @@ const config = {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  sweep: {
+    start: async () => ({ ok: true }),
+    stop: async () => ({ ok: true }),
+    getStatus: async () => ({ running: false, config: {} }),
+    setConfig: async () => ({ ok: true }),
+    trigger: async () => ({ ok: true }),
+    onFrame: noop
+  },
   source: {
     getStatus: async () => ({ running: sourceRunning, config }),
     start: async () => {

@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/12 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入、源帧录制/导出与回放、回放暂停/单步/变速。
+> 状态：Phase 0/13 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入、源帧录制/导出/回放（暂停/单步/变速），以及 S11 扫频源与 Smith 接入。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -146,6 +146,7 @@ SourceService.source:frame
 | Eye         | 仿真眼图 / 源 IQ（按 sps 切窗）        |
 | APD/CCDF    | 仿真 PAPR / 源 IQ 幅度                 |
 | Persistence | 仿真频谱 / 源频谱（重采样到固定 bins） |
+| Smith       | 仿真轨迹 / S11 扫频                    |
 
 Demo 中显式提供“仿真/源数据”切换，组件本身仍是纯显示，不依赖源。
 
@@ -184,19 +185,34 @@ source-recording-*.json  {
 - 回放帧同样进入源工作台预览与分析消费者；
 - `SourcePlayback` 位于 `src/shared/sourcePlayback.ts`。
 
-## 八、当前边界
+## 八、S11 扫频源
+
+`src/shared/sweep.ts` 生成串联 RLC 的复反射系数：
+
+```text
+Z = R + j(ωL - 1/ωC)
+Γ = (Z - Z0) / (Z + Z0)
+```
+
+- 1–500 MHz 等间隔频点；
+- 默认 401 点；
+- `SweepService` 以 `sweep:frame` 推送；
+- Smith 圆图“S11 扫频”模式消费，R/L/C 可调；
+- 与 IQ SourceFrame 属于不同测量域，不混入 `source:frame`。
+
+## 九、当前边界
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
-- PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 仍主要使用静态 Γ 数据；
+- PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 支持“S11 扫频”；
 - 录制在内存中进行（上限后截断），尚不支持流式落盘/无限时长；
 - 回放支持暂停/继续/单步，以及 0.5x/1x/2x/4x 变速；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/独立模拟后端。
 
-## 九、验证
+## 十、验证
 
 ```powershell
 npm run typecheck
@@ -207,10 +223,10 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 
 `test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃；真实推流仍由 `signalAnalysis` 服务测试覆盖。
 
-## 十、后续
+## 十一、后续
 
 1. 新分析组件按源类型自动选择显示模式；
-2. 增加扫频/S11 源并接入 Smith；
+2. 流式录制/边录边分析；
 3. 真实 RF/DAC 后端与仿真后端；
 4. 数字源扩展 OFDM/任意 IQ；
 5. 录制定时/流式落盘与可重复种子。

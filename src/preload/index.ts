@@ -17,6 +17,7 @@ import type { ThemeSource } from '../main/features/theme'
 import type { ShellOpenResult } from '../main/features/shellOps'
 import type { DownloadRecord } from '../main/features/download'
 import type { SourceFrame } from '../shared/sourceEngine'
+import type { SweepFrame } from '../shared/sweep'
 
 /** 事件监听辅助：统一封装"注册监听 + 返回取消函数" */
 function on<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -598,6 +599,17 @@ const api = {
         speed: number
       } | null>('source:playbackStatus'),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
+  },
+
+  /** ── S11 扫频源（Smith 圆图；独立于 IQ 源）── */
+  sweep: {
+    start: () => invoke<{ ok: boolean; status?: unknown }>('sweep:start'),
+    stop: () => invoke<{ ok: boolean; status?: unknown }>('sweep:stop'),
+    getStatus: () => invoke<{ running: boolean; config: unknown }>('sweep:getStatus'),
+    setConfig: (cfg: unknown) =>
+      invoke<{ ok: boolean; config?: unknown; error?: string }>('sweep:setConfig', cfg),
+    trigger: () => invoke<{ ok: boolean }>('sweep:trigger'),
+    onFrame: (cb: (frame: SweepFrame) => void) => on('sweep:frame', cb)
   },
 
   /** ── 信号分析服务端（本地计算 / 远程后端，仅演示；配置重启生效，状态由源/分析配置页统一）── */

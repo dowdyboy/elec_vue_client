@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { NButton, NCard, NTag } from 'naive-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { NButton, NCard, NSelect, NSlider, NTag, useMessage } from 'naive-ui'
 import { SmithChart, type SmithTrace } from '@components/signal'
+import type { SweepFrame } from '../../../../shared/sweep'
 
+const message = useMessage()
 const chartRef = ref<InstanceType<typeof SmithChart> | null>(null)
 const points = ref(0)
 const vswr = ref(0)
+const dataSource = ref<'sim' | 'sweep'>('sim')
+const sourceMode = computed(() => dataSource.value === 'sweep')
+const sweepRunning = ref(false)
+const rOhm = ref(25)
+const lNano = ref(100)
+const cPico = ref(5)
+let disposeSweep: (() => void) | null = null
 
 function makeTraces(): SmithTrace[] {
   const traces: SmithTrace[] = []
@@ -43,7 +52,66 @@ function regenerate(): void {
   vswr.value = s?.maxVswr ?? 0
 }
 
-onMounted(regenerate)
+function updateStats(): void {
+  const s = chartRef.value?.getStats()
+  points.value = s?.points ?? 0
+  vswr.value = s?.maxVswr ?? 0
+}
+
+function onSweepFrame(frame: SweepFrame): void {
+  if (!sourceMode.value) return
+  chartRef.value?.setData([
+    {
+      i: frame.gammaI,
+      q: frame.gammaQ,
+      name: `S11 ${frame.frequencies[0]! / 1e6}–${frame.frequencies[frame.frequencies.length - 1]! / 1e6} MHz`
+    }
+  ])
+  updateStats()
+}
+
+async function startSweep(): Promise<void> {
+  const r = (await window.api.sweep.setConfig({
+    startHz: 1e6,
+    stopHz: 500e6,
+    points: 401,
+    z0: 50,
+    rOhm: rOhm.value,
+    lHenry: lNano.value * 1e-9,
+    cFarad: cPico.value * 1e-12
+  })) as { ok: boolean; error?: string }
+  if (!r.ok) {
+    message.error(r.error || '扫频配置失败')
+    return
+  }
+  await window.api.sweep.start()
+  sweepRunning.value = true
+}
+
+async function stopSweep(): Promise<void> {
+  await window.api.sweep.stop()
+  sweepRunning.value = false
+}
+
+async function onSourceChange(): Promise<void> {
+  chartRef.value?.clear()
+  if (sourceMode.value) {
+    await startSweep()
+  } else {
+    await stopSweep()
+    regenerate()
+  }
+}
+
+onMounted(() => {
+  regenerate()
+  disposeSweep = window.api.sweep.onFrame(onSweepFrame)
+})
+onUnmounted(() => {
+  disposeSweep?.()
+  disposeSweep = null
+  void window.api.sweep.stop()
+})
 </script>
 
 <template>
@@ -53,11 +121,46 @@ onMounted(regenerate)
         <div style="display: flex; gap: 8px">
           <NTag size="small" type="info">{{ points }} 点</NTag>
           <NTag size="small">最大 VSWR {{ vswr.toFixed(2) }}</NTag>
+          <NTag v-if="sourceMode" size="small" :type="sweepRunning ? 'success' : 'default'">
+            {{ sweepRunning ? '扫频中' : '扫频停止' }}
+          </NTag>
         </div>
       </template>
       <div class="sm-controls">
-        <NButton size="small" @click="regenerate">重新生成</NButton>
+        <label>
+          数据源
+          <NSelect
+            v-model:value="dataSource"
+            size="small"
+            :options="[
+              { label: '仿真轨迹', value: 'sim' },
+              { label: 'S11 扫频', value: 'sweep' }
+            ]"
+            style="width: 130px"
+            @update:value="onSourceChange"
+          />
+        </label>
+        <template v-if="sourceMode">
+          <label>
+            R {{ rOhm.toFixed(0) }} Ω
+            <NSlider v-model:value="rOhm" :min="5" :max="100" :step="1" style="width: 110px" />
+          </label>
+          <label>
+            L {{ lNano.toFixed(0) }} nH
+            <NSlider v-model:value="lNano" :min="10" :max="500" :step="5" style="width: 110px" />
+          </label>
+          <label>
+            C {{ cPico.toFixed(1) }} pF
+            <NSlider v-model:value="cPico" :min="1" :max="20" :step="0.5" style="width: 110px" />
+          </label>
+          <NButton size="small" :disabled="sweepRunning" @click="startSweep">启动扫频</NButton>
+          <NButton size="small" :disabled="!sweepRunning" @click="stopSweep">停止</NButton>
+        </template>
+        <NButton v-else size="small" @click="regenerate">重新生成</NButton>
         <NButton size="small" @click="chartRef?.clear()">清空</NButton>
+      </div>
+      <div v-if="sourceMode" class="source-hint">
+        串联 RLC 负载的 S11 扫频（1–500 MHz，401 点）；R/L/C 改变后点“启动扫频”应用。
       </div>
       <SmithChart ref="chartRef" :height="520" :z0="50" theme="spectrum" />
       <div class="sm-hint">
@@ -70,12 +173,29 @@ onMounted(regenerate)
 <style scoped>
 .sm-controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
   margin-bottom: 10px;
+}
+.sm-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 13px;
 }
 .sm-hint {
   margin-top: 8px;
   color: #888;
+  font-size: 12px;
+}
+.source-hint {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(79, 195, 247, 0.08);
+  color: #4fc3f7;
   font-size: 12px;
 }
 </style>

@@ -57,6 +57,7 @@
 - 本地分析为纯 IPC SourceFrame 消费者，不监听端口；socket.io 仅用于远程后端/远端 Mock
 - PowerTime/Eye/APD/Persistence Demo 支持“仿真 / 源数据”数据源切换
 - 源工作台支持录制并导出 `.f32` 原始 IQ + `.json` 元数据索引，也可回放（暂停/单步/变速）
+- S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”模式（串联 RLC）
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
 - 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`
 - 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
