@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { NButton, NCard, NSelect, NSlider, NTag, useMessage } from 'naive-ui'
 import { SmithChart, type SmithTrace } from '@components/signal'
 import type { SweepFrame } from '../../../../shared/sweep'
@@ -8,7 +9,7 @@ const message = useMessage()
 const chartRef = ref<InstanceType<typeof SmithChart> | null>(null)
 const points = ref(0)
 const vswr = ref(0)
-const dataSource = ref<'sim' | 'sweep'>('sim')
+const dataSource = ref<'sim' | 'sweep'>(useRoute().query.src === '1' ? 'sweep' : 'sim')
 const sourceMode = computed(() => dataSource.value === 'sweep')
 const sweepRunning = ref(false)
 const rOhm = ref(25)
@@ -107,8 +108,9 @@ async function onSourceChange(): Promise<void> {
   }
 }
 
-onMounted(() => {
-  regenerate()
+onMounted(async () => {
+  if (sourceMode.value) await startSweep()
+  else regenerate()
   disposeSweep = window.api.sweep.onFrame(onSweepFrame)
 })
 onUnmounted(() => {

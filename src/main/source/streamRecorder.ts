@@ -17,6 +17,8 @@ export class SourceStreamRecorder {
   private startedAt = 0
   private active = false
   private truncated = false
+  private pendingBytes = 0
+  private readonly maxPendingBytes = 64 * 1024 * 1024
 
   start(): void {
     this.dispose()
@@ -30,12 +32,29 @@ export class SourceStreamRecorder {
     this.startedAt = Date.now()
     this.active = true
     this.truncated = false
+    this.pendingBytes = 0
   }
 
   push(frame: SourceFrame): void {
     if (!this.active || !this.ws) return
     try {
-      this.ws.write(Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength))
+      const buf = Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength)
+      if (this.pendingBytes + buf.length > this.maxPendingBytes) {
+        this.truncated = true
+        this.active = false
+        void this.ws.end()
+        this.ws = null
+        return
+      }
+      const queued = this.ws.write(buf)
+      this.pendingBytes += buf.length
+      if (!queued) {
+        this.ws.once('drain', () => {
+          this.pendingBytes = 0
+        })
+      } else {
+        this.pendingBytes = 0
+      }
       this.frames.push({
         seq: frame.seq,
         timestamp: frame.timestamp,

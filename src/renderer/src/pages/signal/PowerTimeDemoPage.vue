@@ -1,5 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { NButton, NCard, NSelect, NSlider, NSwitch, NTag } from 'naive-ui'
 import {
   PowerTimeChart,
@@ -12,7 +13,7 @@ import { iqToPowerDb } from '../../../../shared/sourceAdapters'
 
 const chartRef = ref<InstanceType<typeof PowerTimeChart> | null>(null)
 const sig = useSignalAnalysis({ autoSubscribe: true })
-const dataSource = ref<'sim' | 'source'>('sim')
+const dataSource = ref<'sim' | 'source'>(useRoute().query.src === '1' ? 'source' : 'sim')
 const sourceMode = computed(() => dataSource.value === 'source')
 const running = ref(true)
 const analysisOn = ref(true)

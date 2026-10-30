@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/16 已完成——SourceEngine/SourceFrame、独立 source IPC/SourceService、分析消费者、源工作台、录制/流式录制/回放（暂停/单步/定位/变速/时间戳/循环）、S11 扫频与 Smith 校准、OFDM 源、OutputBackend 抽象、源类型推荐分析。
+> 状态：Phase 0/17 已完成——SourceEngine/SourceFrame、独立 source IPC/SourceService、分析消费者、源工作台、录制（内存/流式背压）/回放（暂停/单步/定位/变速/时间戳/循环）、S11 扫频与 Smith 校准、OFDM 源、OutputBackend 抽象、源类型推荐分析（`?src=1` 自动切源数据）。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -65,7 +65,7 @@
 }
 ```
 
-工作台会根据源类型显示“推荐分析”入口，例如 Pulse→PowerTime、Digital→Eye/Constellation、OFDM→Persistence/APD。
+工作台会根据源类型显示“推荐分析”入口，例如 Pulse→PowerTime、Digital→Eye/Constellation、OFDM→Persistence/APD。推荐链接带 `?src=1`，Demo 打开后自动切到“源数据”模式。
 
 源类型与分析配置的映射由 `sourceKindOf/sourceKindPatch` 统一，避免页面各自拼 `waveform/modType`。
 
@@ -207,6 +207,7 @@ source-recording-*.json  {
 - 内存只保留帧元数据；
 - 导出时复制临时文件并写 `.json`；
 - 不受内存样本上限约束，适合长时间录制；
+- 写队列超过 64MB 会标记截断并停止；
 - 导出对话框取消时临时文件保留到下次录制/退出。
 
 回放：
@@ -244,8 +245,8 @@ Z = R + j(ωL - 1/ωC)
 - 录制支持内存与流式落盘；流式模式只保留元数据，导出时复制临时 f32；
 - 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
 - 时间戳模式按帧时间差调度，处理耗时会导致轻微漂移；
-- 源目录含 OFDM；有效子载波/CP 可调；
-- 工作台按源类型显示推荐分析入口；
+- 源目录含 OFDM；有效子载波/CP 可调；远端 Mock 配置可接收 OFDM 字段，但独立脚本尚未实现 OFDM 波形生成；
+- 工作台按源类型显示推荐分析入口，推荐链接自动切源数据；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 硬件 RF/DAC 后端未接；OutputBackend 目前只有模拟与回放实现。
 
@@ -265,5 +266,5 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 1. 真实 RF/DAC 硬件后端；
 2. Smith 完整 SOLT 校准与夹具去嵌入；
 3. 任意 IQ 文件源（非录制格式）；
-4. 录制可重复种子/定时/流式边录边分析；
-5. 分析组件按源场景自动切换数据源。
+4. 录制可重复种子/定时与远端 Mock OFDM；
+5. 流式录制分段轮转与边录边分析仪表。

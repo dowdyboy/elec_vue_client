@@ -58,7 +58,7 @@
 - PowerTime/Eye/APD/Persistence Demo 支持“仿真 / 源数据”数据源切换
 - 源工作台支持录制（内存/流式）并导出 `.f32` 原始 IQ + `.json` 元数据索引，也可回放（暂停/单步/定位/变速/时间戳/循环）
 - S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”与延时/损耗校准
-- 源目录含 OFDM（有效子载波/CP 可调），按源类型显示推荐分析入口
+- 源目录含 OFDM（有效子载波/CP 可调），按源类型显示推荐分析入口（自动切源数据）
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
 - 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`
 - 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
