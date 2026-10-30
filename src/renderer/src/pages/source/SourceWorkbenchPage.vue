@@ -45,6 +45,7 @@ const running = ref(false)
 const sourceMode = ref<'live' | 'playback'>('live')
 const playbackLoaded = ref(false)
 const playbackPaused = ref(false)
+const playbackSpeed = ref(1)
 const playbackPath = ref('')
 const playbackIndex = ref(0)
 const playbackTotal = ref(0)
@@ -163,6 +164,7 @@ async function refreshPlaybackStatus(): Promise<void> {
     }
     playbackLoaded.value = true
     playbackPaused.value = p.paused
+    playbackSpeed.value = p.speed ?? 1
     playbackIndex.value = p.index
     playbackTotal.value = p.total
   } catch {
@@ -207,6 +209,11 @@ async function togglePlaybackPause(): Promise<void> {
 
 async function stepPlayback(): Promise<void> {
   await window.api.source.stepPlayback().catch(() => {})
+  await refreshPlaybackStatus()
+}
+
+async function onPlaybackSpeed(): Promise<void> {
+  await window.api.source.setPlaybackSpeed(playbackSpeed.value).catch(() => {})
   await refreshPlaybackStatus()
 }
 
@@ -418,6 +425,19 @@ onUnmounted(() => {
       <NTag v-if="sourceMode === 'playback'" type="warning" size="small" :bordered="false">
         回放 {{ playbackIndex }}/{{ playbackTotal }}{{ playbackPaused ? ' · 暂停' : '' }}
       </NTag>
+      <NSelect
+        v-if="sourceMode === 'playback'"
+        v-model:value="playbackSpeed"
+        size="tiny"
+        :options="[
+          { label: '0.5x', value: 0.5 },
+          { label: '1x', value: 1 },
+          { label: '2x', value: 2 },
+          { label: '4x', value: 4 }
+        ]"
+        style="width: 80px"
+        @update:value="onPlaybackSpeed"
+      />
       <span v-if="playbackPath" class="playback-path">{{ playbackPath }}</span>
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
       <span

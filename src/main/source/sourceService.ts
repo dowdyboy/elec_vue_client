@@ -32,6 +32,7 @@ export class SourceService {
   private subscribers = new Set<(frame: SourceFrame) => void>()
   private recorder = new SourceRecorder()
   private playback: SourcePlayback | null = null
+  private playbackSpeed = 1
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
@@ -45,8 +46,20 @@ export class SourceService {
 
   private startTimer(): void {
     if (this.timer) return
-    const interval = Math.max(16, Math.floor(1000 / 60))
+    const interval = Math.max(4, Math.round(1000 / 60 / this.playbackSpeed))
     this.timer = setInterval(() => this.tick(), interval)
+  }
+
+  setPlaybackSpeed(speed: number): boolean {
+    const allowed = [0.25, 0.5, 1, 2, 4]
+    if (!allowed.includes(speed)) return false
+    this.playbackSpeed = speed
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+      this.startTimer()
+    }
+    return true
   }
 
   startPlayback(): boolean {
@@ -88,8 +101,9 @@ export class SourceService {
     return true
   }
 
-  playbackStatus(): ReturnType<SourcePlayback['getStatus']> | null {
-    return this.playback?.getStatus() ?? null
+  playbackStatus(): (ReturnType<SourcePlayback['getStatus']> & { speed: number }) | null {
+    const st = this.playback?.getStatus()
+    return st ? { ...st, speed: this.playbackSpeed } : null
   }
 
   stop(): void {
@@ -415,6 +429,12 @@ export function registerSourceService(): () => void {
     return { ok: service.stepPlayback(), status: service.playbackStatus() }
   })
 
+  ipcMain.handle('source:setPlaybackSpeed', (e, speed: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    if (typeof speed !== 'number') return { ok: false, error: 'speed 非法' }
+    return { ok: service.setPlaybackSpeed(speed), status: service.playbackStatus() }
+  })
+
   ipcMain.handle('source:stopPlayback', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.stopPlayback()
@@ -443,6 +463,7 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:pausePlayback')
     ipcMain.removeHandler('source:resumePlayback')
     ipcMain.removeHandler('source:stepPlayback')
+    ipcMain.removeHandler('source:setPlaybackSpeed')
     ipcMain.removeHandler('source:stopPlayback')
     ipcMain.removeHandler('source:playbackStatus')
   }

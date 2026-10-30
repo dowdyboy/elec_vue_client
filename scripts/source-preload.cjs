@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('api', {
     pausePlayback: async () => ({ ok: false }),
     resumePlayback: async () => ({ ok: false }),
     stepPlayback: async () => ({ ok: false }),
+    setPlaybackSpeed: async () => ({ ok: false }),
     stopPlayback: async () => ({ ok: true }),
     playbackStatus: async () => null,
     onFrame: () => () => {}
