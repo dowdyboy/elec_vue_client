@@ -10,6 +10,8 @@ import type { MenuOption } from 'naive-ui'
 declare module 'vue-router' {
   interface RouteMeta {
     title: string
+    /** 菜单短标题（侧栏宽度有限时使用；缺省回退 title） */
+    menuTitle?: string
     icon?: string
     hidden?: boolean
     group?: string
@@ -301,7 +303,12 @@ export const routes: RouteRecordRaw[] = [
     path: '/source/advanced',
     name: 'source-advanced',
     component: () => import('../pages/source/SourceAdvancedPage.vue'),
-    meta: { title: '源/连接高级配置', icon: '🔌', group: '信号源' }
+    meta: {
+      title: '源/连接高级配置',
+      menuTitle: '源/连接配置',
+      icon: '🔌',
+      group: '信号源'
+    }
   },
   {
     path: '/signal',
@@ -390,7 +397,7 @@ export function menuOptions(): MenuOption[] {
     if (route.meta?.hidden) continue
     const item: MenuOption = {
       key: route.path,
-      label: `${route.meta?.icon ?? ''} ${route.meta?.title ?? ''}`,
+      label: `${route.meta?.icon ?? ''} ${route.meta?.menuTitle ?? route.meta?.title ?? ''}`,
       type: 'item'
     }
     const group = route.meta?.group

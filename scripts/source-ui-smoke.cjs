@@ -16,6 +16,7 @@ const root = path.resolve(__dirname, '..')
 const renderer = path.join(root, 'out/renderer/index.html')
 const preload = path.join(root, 'scripts/source-preload.cjs')
 const out = path.join(root, 'playground/dist/source-workbench.png')
+const outAdvanced = path.join(root, 'playground/dist/source-advanced.png')
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
@@ -40,9 +41,19 @@ async function run() {
   })
   await win.loadFile(renderer, { hash: '/source' })
   await wait(1200)
+  const headerText = () =>
+    win.webContents.executeJavaScript('document.querySelector(".header")?.innerText || ""')
+  const waitHeader = async (title) => {
+    for (let i = 0; i < 30; i++) {
+      if ((await headerText()).includes(title)) return
+      await wait(100)
+    }
+    throw new Error(`header did not switch to ${title}`)
+  }
   const text = await win.webContents.executeJavaScript('document.body.innerText || ""')
   if (!text.includes('信号源工作台'))
     throw new Error(`source page text missing: ${text.slice(0, 300)}`)
+  await waitHeader('信号源工作台')
   await win.webContents.executeJavaScript(`
     (() => {
       const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('启动'))
@@ -57,23 +68,22 @@ async function run() {
   const img = await win.webContents.capturePage()
   fs.writeFileSync(out, img.toPNG())
   await win.webContents.executeJavaScript('location.hash = "#/signal/analysis-config"')
-  await wait(400)
-  const cfg = await win.webContents.executeJavaScript(
-    'document.body.innerText.includes("分析配置")'
-  )
-  if (!cfg) throw new Error('analysis config route did not render')
+  await waitHeader('分析配置')
   await win.webContents.executeJavaScript('location.hash = "#/source/advanced"')
-  await wait(400)
-  const conn = await win.webContents.executeJavaScript(
-    'document.body.innerText.includes("连接高级配置")'
-  )
-  if (!conn) throw new Error('source advanced route did not render')
+  await waitHeader('源/连接高级配置')
+  const menuFit = await win.webContents.executeJavaScript(`
+    (() => {
+      const el = [...document.querySelectorAll('.n-menu-item-content-header')].find((x) =>
+        x.textContent.includes('源/连接配置')
+      )
+      return !!el && el.scrollWidth <= el.clientWidth + 1
+    })()
+  `)
+  if (!menuFit) throw new Error('source advanced menu label is missing or truncated')
+  const advancedImg = await win.webContents.capturePage()
+  fs.writeFileSync(outAdvanced, advancedImg.toPNG())
   await win.webContents.executeJavaScript('location.hash = "#/signal/smith"')
-  await wait(400)
-  const smith = await win.webContents.executeJavaScript(
-    'document.body.innerText.includes("Smith 圆图")'
-  )
-  if (!smith) throw new Error('smith page did not render')
+  await waitHeader('Smith 圆图')
   if (errors.length) throw new Error(`console errors: ${errors.join('; ')}`)
   console.log(`[source-ui] PASS ${out}`)
 }

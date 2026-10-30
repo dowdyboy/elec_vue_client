@@ -35,6 +35,17 @@ const route = useRoute()
 
 const activeKey = computed(() => route.path)
 const options = computed(() => menuOptions())
+// 当前路由所属分组自动展开；用户手动展开的其他分组保留
+const expandedKeys = ref<string[]>(typeof route.meta.group === 'string' ? [route.meta.group] : [])
+watch(
+  () => route.path,
+  () => {
+    const group = route.meta.group
+    if (typeof group === 'string' && !expandedKeys.value.includes(group)) {
+      expandedKeys.value = [...expandedKeys.value, group]
+    }
+  }
+)
 
 /** 最外层 n-layout（滚动复位的作用范围，见下方 watch 注释） */
 const layoutRef = ref<InstanceType<typeof NLayout> | null>(null)
@@ -95,6 +106,7 @@ const themeButtons = [
               <n-text depth="3" class="brand-sub">教学 + 模板项目</n-text>
             </div>
             <n-menu
+              v-model:expanded-keys="expandedKeys"
               :value="activeKey"
               :options="options"
               @update:value="(key: string) => router.push(key)"
