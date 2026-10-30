@@ -159,8 +159,12 @@ export class SourceService {
     this.clearTimers()
   }
 
-  loadPlayback(frames: SourceFrame[]): boolean {
+  async loadPlayback(frames: SourceFrame[]): Promise<boolean> {
     if (frames.length === 0) return false
+    await this.recordStop()
+    this.recorder.reset()
+    this.streamRecorder.dispose()
+    this.recordMode = 'memory'
     this.clearTimers()
     this.playback = new SourcePlayback(frames)
     this.playbackBackend = new PlaybackOutputBackend(this.playback)
@@ -250,6 +254,7 @@ export class SourceService {
       const dt = (next.timestamp - frame.timestamp) / this.playbackSpeed
       this.scheduleTimestampPlayback(dt > 0 ? dt : 16)
     } else {
+      if (this.playback && !this.playback.getStatus().loop) this.playback.stop()
       this.playbackTimer = null
     }
   }
@@ -425,11 +430,22 @@ async function pickArbitraryIq(
   if (ret.canceled || ret.filePaths.length === 0) return { ok: false, canceled: true }
   const path = ret.filePaths[0]!
   try {
-    const buf = await fs.readFile(path)
-    const totalSamples = Math.floor(buf.length / 8)
-    if (totalSamples < 2) return { ok: false, error: 'IQ 文件过短' }
+    const stat = await fs.stat(path)
     const maxSamples = 8_000_000
-    const samples = Math.min(totalSamples, maxSamples)
+    const readBytes = Math.min(stat.size, maxSamples * 8)
+    if (readBytes < 16) return { ok: false, error: 'IQ 文件过短' }
+    const fh = await fs.open(path, 'r')
+    let buf: Buffer
+    try {
+      buf = Buffer.alloc(readBytes)
+      const { bytesRead } = await fh.read(buf, 0, readBytes, 0)
+      if (bytesRead < 16) return { ok: false, error: 'IQ 文件过短' }
+      buf = buf.subarray(0, bytesRead)
+    } finally {
+      await fh.close()
+    }
+    const totalSamples = Math.floor(stat.size / 8)
+    const samples = Math.floor(buf.length / 8)
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + samples * 8)
     const all = new Float32Array(ab)
     const perFrame = Math.max(1, Math.floor(config.pointsPerFrame))
@@ -581,7 +597,7 @@ export function registerSourceService(): () => void {
     if (!isTrustedSender(e)) return FORBIDDEN
     const r = await pickArbitraryIq(service.getStatus().config)
     if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
-    service.loadPlayback(r.frames)
+    await service.loadPlayback(r.frames)
     service.startPlayback()
     return { ok: true, path: r.path, truncated: r.truncated, status: service.playbackStatus() }
   })
@@ -590,7 +606,7 @@ export function registerSourceService(): () => void {
     if (!isTrustedSender(e)) return FORBIDDEN
     const r = await pickRecording()
     if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
-    service.loadPlayback(r.frames)
+    await service.loadPlayback(r.frames)
     service.startPlayback()
     return { ok: true, path: r.path, status: service.playbackStatus() }
   })

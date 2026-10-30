@@ -202,6 +202,7 @@ async function importIq(): Promise<void> {
       return
     }
     playbackPath.value = r.path ?? ''
+    await ensureAnalysisConsumer()
     await refreshStatus()
     await refreshPlaybackStatus()
     if (r.truncated) message.warning('IQ 文件超过 8M 样本，仅导入前 8M')
@@ -225,6 +226,7 @@ async function loadPlayback(): Promise<void> {
       return
     }
     playbackPath.value = r.path ?? ''
+    await ensureAnalysisConsumer()
     await refreshStatus()
     await refreshPlaybackStatus()
     message.success('开始回放录制')
@@ -282,6 +284,22 @@ async function applyConfig(): Promise<boolean> {
   return true
 }
 
+async function ensureAnalysisConsumer(): Promise<boolean> {
+  if (analysisStartedHere) return true
+  const ar = (await window.api.signalAnalysis.start({ mode: 'local' }).catch(() => null)) as {
+    ok?: boolean
+    error?: string
+  } | null
+  if (ar?.ok) {
+    analysisStartedHere = true
+    return true
+  }
+  if (ar?.error && !ar.error.includes('已运行')) {
+    message.warning(`分析消费者未启动：${ar.error}`)
+  }
+  return false
+}
+
 async function startSource(): Promise<void> {
   if (!(await applyConfig())) return
   const r = (await window.api.source.start()) as { ok: boolean; error?: string }
@@ -290,18 +308,8 @@ async function startSource(): Promise<void> {
     await refreshStatus()
     return
   }
-  // 源启动后顺带启动本地分析消费者，分析 UI 页面才能收到 signal:analysis 帧。
-  // 已运行（例如高级配置页）则保持原状态。
-  const ar = (await window.api.signalAnalysis.start({ mode: 'local' }).catch(() => null)) as {
-    ok?: boolean
-    error?: string
-  } | null
-  analysisStartedHere = !!ar?.ok
-  if (!ar?.ok && ar?.error && !ar.error.includes('已运行')) {
-    message.warning(`源已启动，但分析消费者未启动：${ar.error}`)
-  } else {
-    message.success('信号源已启动')
-  }
+  await ensureAnalysisConsumer()
+  message.success('信号源已启动')
   await refreshStatus()
 }
 
@@ -314,9 +322,11 @@ async function stopSource(): Promise<void> {
     await window.api.source.recordStop().catch(() => {})
     recording.value = false
   }
-  await window.api.source.stop()
+  if (sourceMode.value === 'playback') await window.api.source.stopPlayback().catch(() => {})
+  else await window.api.source.stop()
   await refreshStatus()
   await refreshRecordStatus()
+  await refreshPlaybackStatus()
   message.success('信号源已停止')
 }
 
@@ -731,11 +741,14 @@ onUnmounted(() => {
 }
 .source-status {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 }
 .record-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin: -4px 0 10px;

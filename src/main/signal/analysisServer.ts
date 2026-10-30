@@ -71,6 +71,8 @@ function sourceFields(c: SignalAnalysisConfig): Partial<SignalAnalysisConfig> {
     sampleRate: c.sampleRate,
     pointsPerFrame: c.pointsPerFrame,
     samplesPerSymbol: c.samplesPerSymbol,
+    ofdmSubcarriers: c.ofdmSubcarriers,
+    ofdmCpRatio: c.ofdmCpRatio,
     enabled: c.enabled,
     imageDb: c.imageDb
   }

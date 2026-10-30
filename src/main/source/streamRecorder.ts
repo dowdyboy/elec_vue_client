@@ -46,7 +46,14 @@ export class SourceStreamRecorder {
 
   private openSegment(): void {
     const p = `${this.basePath}-${this.segmentIndex++}.f32`
-    this.ws = createWriteStream(p)
+    const ws = createWriteStream(p)
+    ws.on('error', (e) => {
+      console.error('[source] stream error', e)
+      this.truncated = true
+      this.active = false
+      if (this.ws === ws) this.ws = null
+    })
+    this.ws = ws
     this.segments.push(p)
     this.currentBytes = 0
   }
@@ -58,8 +65,16 @@ export class SourceStreamRecorder {
       if (this.pendingBytes + buf.length > MAX_PENDING_BYTES) {
         this.truncated = true
         this.active = false
-        void this.ws.end()
+        const ws = this.ws
         this.ws = null
+        if (ws) {
+          this.closers.push(
+            new Promise<void>((resolve) => {
+              ws.once('close', () => resolve())
+            })
+          )
+          ws.end()
+        }
         return
       }
       if (this.currentBytes > 0 && this.currentBytes + buf.length > SEGMENT_BYTES) {
@@ -106,12 +121,13 @@ export class SourceStreamRecorder {
   async stop(): Promise<void> {
     const ws = this.ws
     this.active = false
-    if (!ws) return
-    this.ws = null
-    await new Promise<void>((resolve) => {
-      ws.once('close', () => resolve())
-      ws.end()
-    })
+    if (ws) {
+      this.ws = null
+      await new Promise<void>((resolve) => {
+        ws.once('close', () => resolve())
+        ws.end()
+      })
+    }
     await Promise.all(this.closers)
     this.closers = []
   }
