@@ -134,6 +134,18 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 
 > UI 演示页依赖 Naive UI；主进程 + preload 部分无 UI 依赖，可直接复用。
 
+## 质量校验
+
+```powershell
+npm test                 # 核心数学/源/录制/播放/扫频单测
+npm run test:source-ipc  # 真实主进程 source/analysis/sweep IPC E2E
+npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
+npm run test:smoke       # 组件 Playground + 截图
+npm run test:visual      # Canvas2D/WebGL2 像素回归
+```
+
+`test:sections` 会构建真实应用并启动隐藏窗口，逐页验证 30 个 Electron 教学页、13 个 TypeScript 惯用法页的标题、菜单、页面内容和 renderer 异常，并执行 IPC、safeStorage、主题切换和 TS 示例运行等交互。
+
 ## 技术栈
 
 Electron 39 · Vue 3.5 · TypeScript 5.9 · electron-vite 5 · Naive UI 2 · vue-router 5 · axios · socket.io-client

@@ -21,6 +21,7 @@
     "test:smoke": "npm run build:playground && node scripts/run-smoke.mjs",
     "test:source": "npm run build && node scripts/run-source-ui-smoke.mjs",
     "test:source-ipc": "node scripts/run-source-ipc-e2e.mjs",
+    "test:sections": "npm run build && node scripts/run-section-sweep.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",

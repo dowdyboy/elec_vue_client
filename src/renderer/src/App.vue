@@ -100,7 +100,7 @@ const themeButtons = [
       <n-dialog-provider>
         <n-layout ref="layoutRef" has-sider style="height: 100vh">
           <!-- ── 左侧：特性导航 ── -->
-          <n-layout-sider bordered :width="200" :native-scrollbar="false">
+          <n-layout-sider bordered :width="220" :native-scrollbar="false">
             <div class="brand">
               <n-text strong>⚡ Electron 教学</n-text>
               <n-text depth="3" class="brand-sub">教学 + 模板项目</n-text>
