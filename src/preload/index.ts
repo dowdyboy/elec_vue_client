@@ -577,6 +577,16 @@ const api = {
         canceled?: boolean
         error?: string
       }>('source:recordExport'),
+    loadPlayback: () =>
+      invoke<{ ok: boolean; path?: string; canceled?: boolean; error?: string; status?: unknown }>(
+        'source:loadPlayback'
+      ),
+    startPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:startPlayback'),
+    stopPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stopPlayback'),
+    playbackStatus: () =>
+      invoke<{ playing: boolean; index: number; total: number; loop: boolean } | null>(
+        'source:playbackStatus'
+      ),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },
 

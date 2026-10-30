@@ -42,6 +42,11 @@ const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
 
 const running = ref(false)
+const sourceMode = ref<'live' | 'playback'>('live')
+const playbackLoaded = ref(false)
+const playbackPath = ref('')
+const playbackIndex = ref(0)
+const playbackTotal = ref(0)
 let analysisStartedHere = false
 const kind = ref<SourceKind>('cw')
 const outputMode = ref<'real' | 'complex'>('complex')
@@ -142,7 +147,54 @@ function hydrate(c: Partial<SignalAnalysisConfig>): void {
 async function refreshStatus(sync = false): Promise<void> {
   const st = await window.api.source.getStatus()
   running.value = st.running
+  sourceMode.value = (st as { mode?: 'live' | 'playback' }).mode ?? 'live'
   if (sync && st.config) hydrate(st.config as Partial<SignalAnalysisConfig>)
+}
+
+async function refreshPlaybackStatus(): Promise<void> {
+  try {
+    const p = await window.api.source.playbackStatus()
+    if (!p) {
+      playbackLoaded.value = false
+      playbackIndex.value = 0
+      playbackTotal.value = 0
+      return
+    }
+    playbackLoaded.value = true
+    playbackIndex.value = p.index
+    playbackTotal.value = p.total
+  } catch {
+    /* ignore */
+  }
+}
+
+async function loadPlayback(): Promise<void> {
+  try {
+    const r = (await window.api.source.loadPlayback()) as {
+      ok: boolean
+      path?: string
+      canceled?: boolean
+      error?: string
+    }
+    if (r.canceled) return
+    if (!r.ok) {
+      message.error(r.error || '回放加载失败')
+      return
+    }
+    playbackPath.value = r.path ?? ''
+    await refreshStatus()
+    await refreshPlaybackStatus()
+    message.success('开始回放录制')
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function stopPlayback(): Promise<void> {
+  await window.api.source.stopPlayback().catch(() => {})
+  await refreshStatus()
+  await refreshPlaybackStatus()
+  message.success('回放已停止')
 }
 
 async function applyConfig(): Promise<boolean> {
@@ -273,7 +325,11 @@ let disposeSourceFrame: (() => void) | null = null
 onMounted(async () => {
   await refreshStatus(true)
   await refreshRecordStatus()
-  recordPoll = setInterval(() => void refreshRecordStatus(), 1000)
+  await refreshPlaybackStatus()
+  recordPoll = setInterval(() => {
+    void refreshRecordStatus()
+    void refreshPlaybackStatus()
+  }, 1000)
   disposeSourceFrame = window.api.source.onFrame((frame: SourceFrame) => {
     frameCount.value++
     lastFrame.value = {
@@ -318,7 +374,12 @@ onUnmounted(() => {
         <NTag :type="running ? 'success' : 'default'" :bordered="false">
           {{ running ? '运行中' : '未运行' }}
         </NTag>
+        <NTag v-if="sourceMode === 'playback'" type="warning" :bordered="false">回放</NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
+        <NButton size="small" @click="loadPlayback">回放录制</NButton>
+        <NButton v-if="sourceMode === 'playback'" size="small" @click="stopPlayback">
+          停止回放
+        </NButton>
         <NButton size="small" :type="recording ? 'error' : 'default'" @click="toggleRecord">
           {{ recording ? '停止录制' : '录制' }}
         </NButton>
@@ -331,7 +392,11 @@ onUnmounted(() => {
         >
       </div>
     </div>
-    <div v-if="recording || recordFrames > 0" class="record-bar">
+    <div v-if="sourceMode === 'playback' || recording || recordFrames > 0" class="record-bar">
+      <NTag v-if="sourceMode === 'playback'" type="warning" size="small" :bordered="false">
+        回放 {{ playbackIndex }}/{{ playbackTotal }}
+      </NTag>
+      <span v-if="playbackPath" class="playback-path">{{ playbackPath }}</span>
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
       <span
         >{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
@@ -524,6 +589,13 @@ onUnmounted(() => {
 }
 .record-warn {
   color: #e6a23c;
+}
+.playback-path {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #4fc3f7;
 }
 .source-desc {
   margin-top: 8px;

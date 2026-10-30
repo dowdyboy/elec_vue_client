@@ -14,11 +14,13 @@ import {
   type SignalAnalysisConfig
 } from '../../shared/signal'
 import { SourceEngine, type SourceFrame } from '../../shared/sourceEngine'
+import { SourcePlayback } from '../../shared/sourcePlayback'
 import { SourceRecorder } from '../../shared/sourceRecorder'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export interface SourceStatus {
   running: boolean
+  mode: 'live' | 'playback'
   config: SignalAnalysisConfig
 }
 
@@ -29,6 +31,7 @@ export class SourceService {
   private frameSeq = 0
   private subscribers = new Set<(frame: SourceFrame) => void>()
   private recorder = new SourceRecorder()
+  private playback: SourcePlayback | null = null
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
@@ -36,9 +39,38 @@ export class SourceService {
   }
 
   start(): void {
+    this.playback = null
+    this.startTimer()
+  }
+
+  private startTimer(): void {
     if (this.timer) return
     const interval = Math.max(16, Math.floor(1000 / 60))
     this.timer = setInterval(() => this.tick(), interval)
+  }
+
+  startPlayback(): boolean {
+    if (!this.playback) return false
+    this.playback.start()
+    this.startTimer()
+    return true
+  }
+
+  stopPlayback(): void {
+    this.playback?.stop()
+    this.playback = null
+    this.stop()
+  }
+
+  loadPlayback(frames: SourceFrame[]): boolean {
+    if (frames.length === 0) return false
+    this.stop()
+    this.playback = new SourcePlayback(frames)
+    return true
+  }
+
+  playbackStatus(): ReturnType<SourcePlayback['getStatus']> | null {
+    return this.playback?.getStatus() ?? null
   }
 
   stop(): void {
@@ -54,7 +86,11 @@ export class SourceService {
   }
 
   getStatus(): SourceStatus {
-    return { running: !!this.timer, config: { ...this.config } }
+    return {
+      running: !!this.timer,
+      mode: this.playback ? 'playback' : 'live',
+      config: { ...this.config }
+    }
   }
 
   subscribe(cb: (frame: SourceFrame) => void): () => void {
@@ -69,7 +105,13 @@ export class SourceService {
   private tick(force = false): void {
     if (!force && !this.config.enabled) return
     try {
-      const frame = this.engine.next(this.config.pointsPerFrame)
+      const frame = this.playback
+        ? this.playback.next()
+        : this.engine.next(this.config.pointsPerFrame)
+      if (!frame) {
+        if (this.playback && !this.playback.getStatus().playing) this.stop()
+        return
+      }
       // SourceEngine.seq 是源域序号；service 额外保留帧计数用于诊断
       this.frameSeq = frame.seq
       this.recorder.push(frame)
@@ -125,6 +167,86 @@ let sourceServiceInstance: SourceService | null = null
 export function getSourceService(): SourceService {
   if (!sourceServiceInstance) sourceServiceInstance = new SourceService()
   return sourceServiceInstance
+}
+
+interface LoadRecordingResult {
+  ok: boolean
+  canceled?: boolean
+  error?: string
+  path?: string
+  frames?: SourceFrame[]
+}
+
+/** 选择 .f32/.json 录制文件并重建 SourceFrame */
+async function pickRecording(): Promise<LoadRecordingResult> {
+  const focused = BrowserWindow.getFocusedWindow()
+  const opts = {
+    title: '打开源录制（.f32 + .json）',
+    properties: ['openFile'] as Array<'openFile'>,
+    filters: [
+      { name: 'Source IQ', extensions: ['f32', 'json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  }
+  const ret = focused
+    ? await dialog.showOpenDialog(focused, opts)
+    : await dialog.showOpenDialog(opts)
+  if (ret.canceled || ret.filePaths.length === 0) return { ok: false, canceled: true }
+  const selected = ret.filePaths[0]!
+  const f32Path = selected.toLowerCase().endsWith('.f32')
+    ? selected
+    : selected.replace(/\.json$/i, '.f32')
+  const jsonPath = selected.toLowerCase().endsWith('.json')
+    ? selected
+    : selected.replace(/\.f32$/i, '.json')
+  try {
+    const metaRaw = JSON.parse(await fs.readFile(jsonPath, 'utf8')) as {
+      format?: string
+      frames?: Array<{
+        seq: number
+        timestamp: number
+        sampleRate: number
+        centerFrequencyHz: number
+        outputMode: 'real' | 'complex'
+        waveform: SourceFrame['waveform']
+        modType: SourceFrame['modType']
+        samplesPerSymbol: number
+        amplitude: number
+        sampleCount: number
+      }>
+    }
+    if (metaRaw.format !== 'source-iq-f32-v1' || !Array.isArray(metaRaw.frames))
+      return { ok: false, error: '元数据格式不是 source-iq-f32-v1' }
+    const buf = await fs.readFile(f32Path)
+    const frames: SourceFrame[] = []
+    let off = 0
+    for (const m of metaRaw.frames) {
+      const n = m.sampleCount >>> 0
+      if (n === 0 || off + n * 8 > buf.length)
+        return { ok: false, error: 'IQ 文件与元数据长度不匹配' }
+      const data = new Float32Array(n * 2)
+      for (let k = 0; k < n * 2; k++) {
+        data[k] = buf.readFloatLE(off + k * 4)
+      }
+      off += n * 8
+      frames.push({
+        seq: m.seq,
+        timestamp: m.timestamp,
+        sampleRate: m.sampleRate,
+        centerFrequencyHz: m.centerFrequencyHz,
+        outputMode: m.outputMode,
+        waveform: m.waveform,
+        modType: m.modType,
+        samplesPerSymbol: m.samplesPerSymbol,
+        amplitude: m.amplitude,
+        data
+      })
+    }
+    if (frames.length === 0) return { ok: false, error: '录制文件没有帧' }
+    return { ok: true, path: f32Path, frames }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 export function registerSourceService(): () => void {
@@ -242,6 +364,31 @@ export function registerSourceService(): () => void {
     }
   })
 
+  ipcMain.handle('source:loadPlayback', async (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const r = await pickRecording()
+    if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
+    service.loadPlayback(r.frames)
+    service.startPlayback()
+    return { ok: true, path: r.path, status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:startPlayback', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return { ok: service.startPlayback(), status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:stopPlayback', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    service.stopPlayback()
+    return { ok: true, status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:playbackStatus', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return service.playbackStatus()
+  })
+
   return () => {
     service.dispose()
     sourceServiceInstance = null
@@ -254,5 +401,9 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:recordStop')
     ipcMain.removeHandler('source:recordStatus')
     ipcMain.removeHandler('source:recordExport')
+    ipcMain.removeHandler('source:loadPlayback')
+    ipcMain.removeHandler('source:startPlayback')
+    ipcMain.removeHandler('source:stopPlayback')
+    ipcMain.removeHandler('source:playbackStatus')
   }
 }

@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/9 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入，以及源帧录制/导出。
+> 状态：Phase 0/10 已完成——信息架构拆分、源类型目录、源工作台、IQ/频谱预览、SourceEngine/SourceFrame、独立 source IPC/SourceService、分析侧消费 SourceFrame、独立分析配置页、本地分析去 HTTP/socket 依赖、PowerTime/Eye/APD/Persistence 的源数据接入、源帧录制/导出，以及录制回放。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -176,6 +176,14 @@ source-recording-*.json  {
 
 `SourceRecorder` 位于 `src/shared/sourceRecorder.ts`，默认上限 4,000,000 样本。
 
+回放：
+
+- 源工作台“回放录制”选择 `.f32/.json`；
+- 主进程解析并重建 SourceFrame；
+- 按 60fps 顺序循环回放；
+- 回放帧同样进入源工作台预览与分析消费者；
+- `SourcePlayback` 位于 `src/shared/sourcePlayback.ts`。
+
 ## 八、当前边界
 
 - `LocalAnalysisSource` 已不再自产 IQ，但分析页仍通过旧 `signal:analysis` 事件接收显示帧；
@@ -184,6 +192,7 @@ source-recording-*.json  {
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 仍主要使用静态 Γ 数据；
 - 录制在内存中进行（上限后截断），尚不支持流式落盘/无限时长；
+- 回放按固定 60fps 循环，暂不支持原时间戳变速/暂停；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 尚未接入硬件输出/独立模拟后端。
 
@@ -204,4 +213,4 @@ npm run test:source   # mock preload 加载 /source，截图检查页面可渲�
 2. 增加扫频/S11 源并接入 Smith；
 3. 真实 RF/DAC 后端与仿真后端；
 4. 数字源扩展 OFDM/任意 IQ；
-5. 录制定时/流式落盘与可重复种子。
+5. 录制定时/流式落盘、回放变速/暂停与可重复种子。

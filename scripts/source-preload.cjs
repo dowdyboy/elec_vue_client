@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('api', {
       truncated: false
     }),
     recordExport: async () => ({ ok: false, canceled: true }),
+    loadPlayback: async () => ({ ok: false, canceled: true }),
+    startPlayback: async () => ({ ok: false }),
+    stopPlayback: async () => ({ ok: true }),
+    playbackStatus: async () => null,
     onFrame: () => () => {}
   },
   signalAnalysis: {
