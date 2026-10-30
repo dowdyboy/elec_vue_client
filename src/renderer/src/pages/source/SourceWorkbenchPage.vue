@@ -44,6 +44,7 @@ const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const running = ref(false)
 const sourceMode = ref<'live' | 'playback'>('live')
 const playbackLoaded = ref(false)
+const playbackPaused = ref(false)
 const playbackPath = ref('')
 const playbackIndex = ref(0)
 const playbackTotal = ref(0)
@@ -161,6 +162,7 @@ async function refreshPlaybackStatus(): Promise<void> {
       return
     }
     playbackLoaded.value = true
+    playbackPaused.value = p.paused
     playbackIndex.value = p.index
     playbackTotal.value = p.total
   } catch {
@@ -195,6 +197,17 @@ async function stopPlayback(): Promise<void> {
   await refreshStatus()
   await refreshPlaybackStatus()
   message.success('回放已停止')
+}
+
+async function togglePlaybackPause(): Promise<void> {
+  if (playbackPaused.value) await window.api.source.resumePlayback().catch(() => {})
+  else await window.api.source.pausePlayback().catch(() => {})
+  await refreshPlaybackStatus()
+}
+
+async function stepPlayback(): Promise<void> {
+  await window.api.source.stepPlayback().catch(() => {})
+  await refreshPlaybackStatus()
 }
 
 async function applyConfig(): Promise<boolean> {
@@ -377,6 +390,15 @@ onUnmounted(() => {
         <NTag v-if="sourceMode === 'playback'" type="warning" :bordered="false">回放</NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
         <NButton size="small" @click="loadPlayback">回放录制</NButton>
+        <NButton v-if="sourceMode === 'playback'" size="small" @click="togglePlaybackPause">
+          {{ playbackPaused ? '继续' : '暂停' }}
+        </NButton>
+        <NButton
+          v-if="sourceMode === 'playback' && playbackPaused"
+          size="small"
+          @click="stepPlayback"
+          >单步</NButton
+        >
         <NButton v-if="sourceMode === 'playback'" size="small" @click="stopPlayback">
           停止回放
         </NButton>
@@ -394,7 +416,7 @@ onUnmounted(() => {
     </div>
     <div v-if="sourceMode === 'playback' || recording || recordFrames > 0" class="record-bar">
       <NTag v-if="sourceMode === 'playback'" type="warning" size="small" :bordered="false">
-        回放 {{ playbackIndex }}/{{ playbackTotal }}
+        回放 {{ playbackIndex }}/{{ playbackTotal }}{{ playbackPaused ? ' · 暂停' : '' }}
       </NTag>
       <span v-if="playbackPath" class="playback-path">{{ playbackPath }}</span>
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>

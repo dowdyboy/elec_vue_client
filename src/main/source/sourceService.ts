@@ -56,6 +56,25 @@ export class SourceService {
     return true
   }
 
+  pausePlayback(): boolean {
+    if (!this.playback) return false
+    this.playback.pause()
+    return true
+  }
+
+  resumePlayback(): boolean {
+    if (!this.playback) return false
+    this.playback.resume()
+    return true
+  }
+
+  stepPlayback(): boolean {
+    const frame = this.playback?.step()
+    if (!frame) return false
+    this.emitFrame(frame)
+    return true
+  }
+
   stopPlayback(): void {
     this.playback?.stop()
     this.playback = null
@@ -112,13 +131,16 @@ export class SourceService {
         if (this.playback && !this.playback.getStatus().playing) this.stop()
         return
       }
-      // SourceEngine.seq 是源域序号；service 额外保留帧计数用于诊断
-      this.frameSeq = frame.seq
-      this.recorder.push(frame)
-      this.broadcast(frame)
+      this.emitFrame(frame)
     } catch (e) {
       console.error('[source] tick failed', e)
     }
+  }
+
+  private emitFrame(frame: SourceFrame): void {
+    this.frameSeq = frame.seq
+    this.recorder.push(frame)
+    this.broadcast(frame)
   }
 
   private broadcast(frame: SourceFrame): void {
@@ -378,6 +400,21 @@ export function registerSourceService(): () => void {
     return { ok: service.startPlayback(), status: service.playbackStatus() }
   })
 
+  ipcMain.handle('source:pausePlayback', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return { ok: service.pausePlayback(), status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:resumePlayback', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return { ok: service.resumePlayback(), status: service.playbackStatus() }
+  })
+
+  ipcMain.handle('source:stepPlayback', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return { ok: service.stepPlayback(), status: service.playbackStatus() }
+  })
+
   ipcMain.handle('source:stopPlayback', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.stopPlayback()
@@ -403,6 +440,9 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:recordExport')
     ipcMain.removeHandler('source:loadPlayback')
     ipcMain.removeHandler('source:startPlayback')
+    ipcMain.removeHandler('source:pausePlayback')
+    ipcMain.removeHandler('source:resumePlayback')
+    ipcMain.removeHandler('source:stepPlayback')
     ipcMain.removeHandler('source:stopPlayback')
     ipcMain.removeHandler('source:playbackStatus')
   }

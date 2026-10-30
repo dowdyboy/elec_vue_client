@@ -6,6 +6,7 @@ import type { SourceFrame } from './sourceEngine'
 
 export interface SourcePlaybackStatus {
   playing: boolean
+  paused: boolean
   index: number
   total: number
   loop: boolean
@@ -14,6 +15,7 @@ export interface SourcePlaybackStatus {
 export class SourcePlayback {
   private index = 0
   private playing = false
+  private paused = false
   private readonly frames: SourceFrame[]
   private readonly loop: boolean
 
@@ -26,14 +28,34 @@ export class SourcePlayback {
   start(): void {
     this.index = 0
     this.playing = true
+    this.paused = false
   }
 
   stop(): void {
     this.playing = false
+    this.paused = false
+  }
+
+  pause(): void {
+    if (this.playing) this.paused = true
+  }
+
+  resume(): void {
+    if (this.playing) this.paused = false
+  }
+
+  /** 暂停/播放状态下手工前进一帧 */
+  step(): SourceFrame | null {
+    if (!this.playing) return null
+    return this.advance()
   }
 
   next(): SourceFrame | null {
-    if (!this.playing) return null
+    if (!this.playing || this.paused) return null
+    return this.advance()
+  }
+
+  private advance(): SourceFrame | null {
     if (this.index >= this.frames.length) {
       if (!this.loop) {
         this.playing = false
@@ -47,6 +69,7 @@ export class SourcePlayback {
   getStatus(): SourcePlaybackStatus {
     return {
       playing: this.playing,
+      paused: this.paused,
       index: this.index,
       total: this.frames.length,
       loop: this.loop

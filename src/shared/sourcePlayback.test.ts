@@ -36,6 +36,18 @@ describe('SourcePlayback', () => {
     expect(p.getStatus().playing).toBe(false)
   })
 
+  it('暂停后可单步', () => {
+    const p = new SourcePlayback([frame(1), frame(2)], { loop: true })
+    p.start()
+    p.pause()
+    expect(p.next()).toBeNull()
+    expect(p.getStatus().paused).toBe(true)
+    expect(p.step()?.seq).toBe(1)
+    expect(p.step()?.seq).toBe(2)
+    p.resume()
+    expect(p.next()?.seq).toBe(1)
+  })
+
   it('拒绝空回放', () => {
     expect(() => new SourcePlayback([])).toThrow(/at least one/)
   })

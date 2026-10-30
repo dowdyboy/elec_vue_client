@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('api', {
     recordExport: async () => ({ ok: false, canceled: true }),
     loadPlayback: async () => ({ ok: false, canceled: true }),
     startPlayback: async () => ({ ok: false }),
+    pausePlayback: async () => ({ ok: false }),
+    resumePlayback: async () => ({ ok: false }),
+    stepPlayback: async () => ({ ok: false }),
     stopPlayback: async () => ({ ok: true }),
     playbackStatus: async () => null,
     onFrame: () => () => {}

@@ -582,11 +582,18 @@ const api = {
         'source:loadPlayback'
       ),
     startPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:startPlayback'),
+    pausePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:pausePlayback'),
+    resumePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:resumePlayback'),
+    stepPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stepPlayback'),
     stopPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:stopPlayback'),
     playbackStatus: () =>
-      invoke<{ playing: boolean; index: number; total: number; loop: boolean } | null>(
-        'source:playbackStatus'
-      ),
+      invoke<{
+        playing: boolean
+        paused: boolean
+        index: number
+        total: number
+        loop: boolean
+      } | null>('source:playbackStatus'),
     onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
   },
 
