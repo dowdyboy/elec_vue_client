@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
       truncated: false
     }),
     recordExport: async () => ({ ok: false, canceled: true }),
+    importIq: async () => ({ ok: false, canceled: true }),
     loadPlayback: async () => ({ ok: false, canceled: true }),
     startPlayback: async () => ({ ok: false }),
     pausePlayback: async () => ({ ok: false }),

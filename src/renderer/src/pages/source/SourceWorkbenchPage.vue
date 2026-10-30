@@ -187,6 +187,30 @@ async function refreshPlaybackStatus(): Promise<void> {
   }
 }
 
+async function importIq(): Promise<void> {
+  try {
+    const r = (await window.api.source.importIq()) as {
+      ok: boolean
+      path?: string
+      truncated?: boolean
+      canceled?: boolean
+      error?: string
+    }
+    if (r.canceled) return
+    if (!r.ok) {
+      message.error(r.error || 'IQ 导入失败')
+      return
+    }
+    playbackPath.value = r.path ?? ''
+    await refreshStatus()
+    await refreshPlaybackStatus()
+    if (r.truncated) message.warning('IQ 文件超过 8M 样本，仅导入前 8M')
+    else message.success('IQ 文件已导入并开始回放')
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 async function loadPlayback(): Promise<void> {
   try {
     const r = (await window.api.source.loadPlayback()) as {
@@ -427,6 +451,7 @@ onUnmounted(() => {
         <NTag v-if="sourceMode === 'playback'" type="warning" :bordered="false">回放</NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
         <NButton size="small" @click="loadPlayback">回放录制</NButton>
+        <NButton size="small" @click="importIq">导入 IQ</NButton>
         <NButton v-if="sourceMode === 'playback'" size="small" @click="togglePlaybackPause">
           {{ playbackPaused ? '继续' : '暂停' }}
         </NButton>

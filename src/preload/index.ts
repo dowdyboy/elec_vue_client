@@ -579,6 +579,15 @@ const api = {
         canceled?: boolean
         error?: string
       }>('source:recordExport'),
+    importIq: () =>
+      invoke<{
+        ok: boolean
+        path?: string
+        truncated?: boolean
+        canceled?: boolean
+        error?: string
+        status?: unknown
+      }>('source:importIq'),
     loadPlayback: () =>
       invoke<{ ok: boolean; path?: string; canceled?: boolean; error?: string; status?: unknown }>(
         'source:loadPlayback'

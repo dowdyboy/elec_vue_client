@@ -406,6 +406,55 @@ async function pickRecording(): Promise<LoadRecordingResult> {
   }
 }
 
+/** 任意原始 IQ 文件（little-endian interleaved f32）→ SourceFrame */
+async function pickArbitraryIq(
+  config: SignalAnalysisConfig
+): Promise<LoadRecordingResult & { truncated?: boolean }> {
+  const focused = BrowserWindow.getFocusedWindow()
+  const opts = {
+    title: '导入任意 IQ（little-endian interleaved f32）',
+    properties: ['openFile'] as Array<'openFile'>,
+    filters: [
+      { name: 'Raw IQ', extensions: ['f32', 'bin', 'raw'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  }
+  const ret = focused
+    ? await dialog.showOpenDialog(focused, opts)
+    : await dialog.showOpenDialog(opts)
+  if (ret.canceled || ret.filePaths.length === 0) return { ok: false, canceled: true }
+  const path = ret.filePaths[0]!
+  try {
+    const buf = await fs.readFile(path)
+    const totalSamples = Math.floor(buf.length / 8)
+    if (totalSamples < 2) return { ok: false, error: 'IQ 文件过短' }
+    const maxSamples = 8_000_000
+    const samples = Math.min(totalSamples, maxSamples)
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + samples * 8)
+    const all = new Float32Array(ab)
+    const perFrame = Math.max(1, Math.floor(config.pointsPerFrame))
+    const frames: SourceFrame[] = []
+    for (let start = 0, seq = 1; start < samples; start += perFrame, seq++) {
+      const count = Math.min(perFrame, samples - start)
+      frames.push({
+        seq,
+        timestamp: (start / config.sampleRate) * 1000,
+        sampleRate: config.sampleRate,
+        centerFrequencyHz: config.freq,
+        outputMode: config.outputMode,
+        waveform: 'file',
+        modType: 'sine',
+        samplesPerSymbol: config.samplesPerSymbol,
+        amplitude: config.amplitude,
+        data: all.slice(start * 2, (start + count) * 2)
+      })
+    }
+    return { ok: true, path, frames, truncated: samples < totalSamples }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export function registerSourceService(): () => void {
   const service = getSourceService()
 
@@ -528,6 +577,15 @@ export function registerSourceService(): () => void {
     }
   })
 
+  ipcMain.handle('source:importIq', async (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const r = await pickArbitraryIq(service.getStatus().config)
+    if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
+    service.loadPlayback(r.frames)
+    service.startPlayback()
+    return { ok: true, path: r.path, truncated: r.truncated, status: service.playbackStatus() }
+  })
+
   ipcMain.handle('source:loadPlayback', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     const r = await pickRecording()
@@ -603,6 +661,7 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:recordStop')
     ipcMain.removeHandler('source:recordStatus')
     ipcMain.removeHandler('source:recordExport')
+    ipcMain.removeHandler('source:importIq')
     ipcMain.removeHandler('source:loadPlayback')
     ipcMain.removeHandler('source:startPlayback')
     ipcMain.removeHandler('source:pausePlayback')

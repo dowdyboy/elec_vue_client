@@ -14,7 +14,8 @@ export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
  */
 export type OutputMode = 'real' | 'complex'
 /** 源波形/调制（digital 时使用 modType） */
-export type SourceWaveform = 'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm'
+export type SourceWaveform =
+  'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm' | 'file'
 /**
  * 频谱语义（分析域，与源输出域独立）：
  * - real：只取实信号 I 通道，输出单边谱 0~Fs/2（非 DC 幅度 ×2）
@@ -157,7 +158,8 @@ const WAVEFORMS: readonly string[] = [
   'twoTone',
   'noise',
   'digital',
-  'ofdm'
+  'ofdm',
+  'file'
 ]
 
 export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {

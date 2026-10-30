@@ -67,7 +67,16 @@ describe('独立脚本 Mock 与共享实现保持一致', () => {
 
   it('专业源波形与输出模式逐样本一致', () => {
     for (const outputMode of ['real', 'complex'] as const) {
-      for (const waveform of ['cw', 'am', 'fm', 'pulse', 'twoTone', 'noise', 'digital'] as const) {
+      for (const waveform of [
+        'cw',
+        'am',
+        'fm',
+        'pulse',
+        'twoTone',
+        'noise',
+        'digital',
+        'ofdm'
+      ] as const) {
         const cfg: SignalAnalysisConfig = {
           ...defaultAnalysisConfig(),
           outputMode,

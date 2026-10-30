@@ -1,5 +1,5 @@
 /**
- * SourceStreamRecorder：把 SourceFrame 原始 IQ 顺序写入临时 .f32 文件，
+ * SourceStreamRecorder：把 SourceFrame 原始 IQ 顺序写入临时 .f32 分段文件，
  * 元数据保存在内存；用于长时间录制，避免主进程堆积全部样本。
  */
 import { createWriteStream, type WriteStream } from 'node:fs'
@@ -9,47 +9,75 @@ import path from 'node:path'
 import type { SourceFrame } from '../../shared/sourceEngine'
 import type { RecordedFrameMeta, SourceRecorderStatus } from '../../shared/sourceRecorder'
 
+const SEGMENT_BYTES = 16 * 1024 * 1024
+const MAX_PENDING_BYTES = 64 * 1024 * 1024
+
 export class SourceStreamRecorder {
   private ws: WriteStream | null = null
-  private filePath = ''
+  private basePath = ''
+  private segments: string[] = []
+  private segmentIndex = 0
+  private currentBytes = 0
   private frames: RecordedFrameMeta[] = []
   private samples = 0
   private startedAt = 0
   private active = false
   private truncated = false
   private pendingBytes = 0
-  private readonly maxPendingBytes = 64 * 1024 * 1024
+  private closers: Promise<void>[] = []
 
   start(): void {
     this.dispose()
-    this.filePath = path.join(
+    this.basePath = path.join(
       os.tmpdir(),
-      `dsh-source-${Date.now()}-${Math.random().toString(36).slice(2)}.f32`
+      `dsh-source-${Date.now()}-${Math.random().toString(36).slice(2)}`
     )
-    this.ws = createWriteStream(this.filePath)
+    this.segments = []
+    this.segmentIndex = 0
     this.frames = []
     this.samples = 0
     this.startedAt = Date.now()
     this.active = true
     this.truncated = false
     this.pendingBytes = 0
+    this.closers = []
+    this.openSegment()
+  }
+
+  private openSegment(): void {
+    const p = `${this.basePath}-${this.segmentIndex++}.f32`
+    this.ws = createWriteStream(p)
+    this.segments.push(p)
+    this.currentBytes = 0
   }
 
   push(frame: SourceFrame): void {
     if (!this.active || !this.ws) return
     try {
       const buf = Buffer.from(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength)
-      if (this.pendingBytes + buf.length > this.maxPendingBytes) {
+      if (this.pendingBytes + buf.length > MAX_PENDING_BYTES) {
         this.truncated = true
         this.active = false
         void this.ws.end()
         this.ws = null
         return
       }
-      const queued = this.ws.write(buf)
+      if (this.currentBytes > 0 && this.currentBytes + buf.length > SEGMENT_BYTES) {
+        const previous = this.ws
+        this.ws = null
+        this.closers.push(
+          new Promise<void>((resolve) => {
+            previous.once('close', () => resolve())
+          })
+        )
+        previous.end()
+        this.openSegment()
+      }
+      const queued = this.ws!.write(buf)
+      this.currentBytes += buf.length
       this.pendingBytes += buf.length
       if (!queued) {
-        this.ws.once('drain', () => {
+        this.ws!.once('drain', () => {
           this.pendingBytes = 0
         })
       } else {
@@ -84,6 +112,8 @@ export class SourceStreamRecorder {
       ws.once('close', () => resolve())
       ws.end()
     })
+    await Promise.all(this.closers)
+    this.closers = []
   }
 
   getStatus(): SourceRecorderStatus {
@@ -101,13 +131,16 @@ export class SourceStreamRecorder {
   }
 
   getPath(): string {
-    return this.filePath
+    return this.segments[0] ?? ''
   }
 
   async copyTo(target: string): Promise<void> {
     if (this.active) await this.stop()
-    if (!this.filePath) throw new Error('没有流式录制文件')
-    await fs.copyFile(this.filePath, target)
+    if (this.segments.length === 0) throw new Error('没有流式录制文件')
+    await fs.copyFile(this.segments[0]!, target)
+    for (let i = 1; i < this.segments.length; i++) {
+      await fs.appendFile(target, await fs.readFile(this.segments[i]!))
+    }
   }
 
   dispose(): void {
@@ -115,13 +148,16 @@ export class SourceStreamRecorder {
       this.ws.destroy()
       this.ws = null
     }
-    if (this.filePath) {
-      void fs.unlink(this.filePath).catch(() => {})
-    }
-    this.filePath = ''
+    for (const p of this.segments) void fs.unlink(p).catch(() => {})
+    this.basePath = ''
+    this.segments = []
+    this.segmentIndex = 0
+    this.currentBytes = 0
     this.frames = []
     this.samples = 0
     this.active = false
     this.truncated = false
+    this.pendingBytes = 0
+    this.closers = []
   }
 }
