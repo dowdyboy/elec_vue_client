@@ -2,7 +2,8 @@
 /**
  * SourceWorkbenchPage（信号源工作台）
  * - 源领域页面：波形/输出/损伤/录制/回放，不包含 FFT/窗等分析配置
- * - 使用独立 window.api.source；启动源后确保本地分析消费者运行
+ * - 使用独立 window.api.source；频谱预览由源帧本地计算，固定参数，不受分析配置影响
+ * - 启动源后确保本地分析消费者运行，供分析 UI 页面订阅
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
@@ -24,9 +25,9 @@ import {
   useMessage
 } from 'naive-ui'
 import { IqChart, SpectrumChart } from '@components/signal'
-import { useSignalAnalysis } from '../../composables/useSignalAnalysis'
 import type { SourceFrame } from '../../../../shared/sourceEngine'
 import type { SignalAnalysisConfig } from '../../../../shared/signal'
+import { buildSourcePreviewSpectrum } from '../../../../shared/sourcePreview'
 import {
   SOURCE_CATALOG,
   sourceKindMeta,
@@ -37,9 +38,10 @@ import {
 } from '../../../../shared/source'
 
 const message = useMessage()
-const analysis = useSignalAnalysis({ autoSubscribe: true })
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
+const previewSpectrumMode = ref<'real' | 'complex'>('complex')
+const previewFftSize = ref(0)
 
 const running = ref(false)
 const sourceMode = ref<'live' | 'playback'>('live')
@@ -426,17 +428,23 @@ onMounted(async () => {
     iqRef.value?.appendData(frame.data, {
       sampleRate: frame.sampleRate ?? sampleRate.value
     })
-  })
-  analysis.onSpectrum((data, frame) => {
-    spectrumRef.value?.appendData(data, {
-      fftSize: frame.fftSize,
-      sampleRate: frame.sampleRate,
-      dbScale: frame.dbScale,
-      spectrumMode: frame.spectrumMode,
-      freqStartHz: frame.freqStartHz,
-      binHz: frame.binHz,
-      fftShift: frame.fftShift
-    })
+    // 源频谱预览独立于分析配置：固定 Hann + 自动 real/complex，不受 FFT/窗/频谱语义设置影响
+    if (frameCount.value % 2 === 0) {
+      const preview = buildSourcePreviewSpectrum(frame)
+      if (preview) {
+        previewSpectrumMode.value = preview.spectrumMode
+        previewFftSize.value = preview.fftSize
+        spectrumRef.value?.appendData(preview.data, {
+          fftSize: preview.fftSize,
+          sampleRate: preview.sampleRate,
+          dbScale: preview.dbScale,
+          spectrumMode: preview.spectrumMode,
+          freqStartHz: preview.freqStartHz,
+          binHz: preview.binHz,
+          fftShift: preview.fftShift
+        })
+      }
+    }
   })
 })
 onUnmounted(() => {
@@ -699,6 +707,11 @@ onUnmounted(() => {
               />
             </NTabPane>
             <NTabPane name="spectrum" tab="频谱">
+              <div class="preview-note">
+                源独立预览 · {{ previewSpectrumMode === 'complex' ? '复谱双边' : '实谱单边' }}
+                <template v-if="previewFftSize"> · FFT {{ previewFftSize }} · Hann</template>
+                <span>（不受「分析配置」影响）</span>
+              </div>
               <SpectrumChart ref="spectrumRef" :height="380" theme="spectrum" />
             </NTabPane>
           </NTabs>
@@ -790,6 +803,14 @@ onUnmounted(() => {
 .source-desc {
   margin-top: 8px;
   font-size: 12px;
+  color: #888;
+}
+.preview-note {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #4fc3f7;
+}
+.preview-note span {
   color: #888;
 }
 .scenario-row {

@@ -82,7 +82,7 @@
 - 导入任意 little-endian interleaved f32 IQ（最多 8M 样本）；
 - 回放录制 / 导入 IQ / 流式录制；
 - IQ 实时预览；
-- 频谱实时预览（分析消费者生成）；
+- 源频谱独立预览（固定 Hann/FFT，不读取分析配置）；
 - 源帧元数据：seq/outputMode/waveform/carrierHz；
 - 推荐分析入口；
 - 分析配置入口：`/signal/analysis-config`；
@@ -124,6 +124,13 @@ OFDM 生成：
 - 循环前缀比例 0~0.5（默认 0.25）；
 - 跨帧连续，输出仍为交织 IQ；
 - real 输出时 Q 严格为 0。
+
+源频谱预览与分析配置解耦：
+
+- 源工作台直接从 `SourceFrame` 计算频谱（`src/shared/sourcePreview.ts`）；
+- 固定 Hann 窗与固定上限 FFT（1024），按 `outputMode` 自动选择实谱单边/复谱双边；
+- **不读取** `/signal/analysis-config` 的 FFT/窗/重叠/`spectrumMode`；
+- 因此分析配置只影响分析 UI 页，不会改变源工作台的频谱展示。
 
 主进程新增 `src/main/source/sourceService.ts` 与独立 IPC：
 
@@ -266,10 +273,11 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 230 例，含 sourceEngine/录制/播放/扫频/流式分段
+npm run test          # 233 例，含 sourceEngine/录制/播放/扫频/流式分段
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E
+npm run test:source-preview  # complex 源预览不受分析 spectrumMode 影响
 ```
 
 `test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃。

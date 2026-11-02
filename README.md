@@ -139,6 +139,7 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 ```powershell
 npm test                 # 核心数学/源/录制/播放/扫频单测
 npm run test:source-ipc  # 真实主进程 source/analysis/sweep IPC E2E
+npm run test:source-preview # 源工作台频谱预览不受分析配置影响
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
 npm run test:smoke       # 组件 Playground + 截图
 npm run test:visual      # Canvas2D/WebGL2 像素回归
