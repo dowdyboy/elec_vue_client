@@ -566,7 +566,7 @@ onUnmounted(() => {
             <router-link
               v-for="a in meta.analysis"
               :key="a.path"
-              :to="{ path: a.path, query: { src: '1' } }"
+              :to="a.path"
               class="scenario-chip"
               >{{ a.label }}</router-link
             >

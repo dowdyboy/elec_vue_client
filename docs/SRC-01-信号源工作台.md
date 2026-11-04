@@ -2,7 +2,7 @@
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
-> 状态：Phase 0/18 已完成——SourceEngine/SourceFrame、独立 source IPC/SourceService、OutputBackend、源工作台、OFDM（含远端 Mock）、任意 IQ 文件源、录制（内存/流式分段与背压）/回放、S11 扫频与 Smith 端口校准、源类型推荐并自动切源数据。
+> 状态：Phase 0/18 已完成——SourceEngine/SourceFrame、独立 source IPC/SourceService、OutputBackend、源工作台、OFDM（含远端 Mock）、任意 IQ 文件源、录制（内存/流式分段与背压）/回放、S11 扫频与 Smith 端口校准、源类型推荐并固定使用源数据。
 > 本地分析现在只通过主进程 SourceFrame → FFT → `signal:analysis` IPC；socket.io 只用于远程后端客户端与独立远端 Mock。
 
 ## 一、为什么拆
@@ -65,7 +65,7 @@
 }
 ```
 
-工作台会根据源类型显示“推荐分析”入口，例如 Pulse→PowerTime、Digital→Eye/Constellation、OFDM→Persistence/APD。推荐链接带 `?src=1`，Demo 打开后自动切到“源数据”模式。
+工作台会根据源类型显示“推荐分析”入口，例如 Pulse→PowerTime、Digital→Eye/Constellation、OFDM→Persistence/APD。推荐链接直接打开对应分析页；这些页面固定使用源工作台数据。
 
 源类型与分析配置的映射由 `sourceKindOf/sourceKindPatch` 统一，避免页面各自拼 `waveform/modType`。
 
@@ -172,15 +172,15 @@ SourceService.source:frame
 
 已接入：
 
-| 组件        | 数据源                                 |
-| ----------- | -------------------------------------- |
-| PowerTime   | 仿真脉冲 / 源 IQ 功率                  |
-| Eye         | 仿真眼图 / 源 IQ（按 sps 切窗）        |
-| APD/CCDF    | 仿真 PAPR / 源 IQ 幅度                 |
-| Persistence | 仿真频谱 / 源频谱（重采样到固定 bins） |
-| Smith       | 仿真轨迹 / S11 扫频                    |
+| 组件        | 数据源                                      |
+| ----------- | ------------------------------------------- |
+| PowerTime   | 源 IQ 功率（固定）                          |
+| Eye         | 源 IQ（按 sps 切窗，固定）                  |
+| APD/CCDF    | 源 IQ 幅度（固定）                          |
+| Persistence | 源频谱（重采样到固定 bins，固定）           |
+| Smith       | 仿真轨迹 / S11 扫频（独立测量域，仍可切换） |
 
-Demo 中显式提供“仿真/源数据”切换，组件本身仍是纯显示，不依赖源。
+PowerTime/Eye/APD/Persistence Demo 固定使用信号源工作台的数据，不再提供仿真切换；Smith 保留仿真/S11 切换，因为 S11 是独立的扫频测量域。组件本身仍是纯显示，不依赖源。
 
 ## 七、源帧录制 / 导出
 
@@ -260,12 +260,12 @@ Z = R + j(ωL - 1/ωC)
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
 - 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
-- PowerTime/Eye/APD/Persistence Demo 支持“源数据”数据源；Smith 支持“S11 扫频”；
+- PowerTime/Eye/APD/Persistence Demo 固定使用源工作台数据，不再提供仿真切换；Smith 支持“S11 扫频”；
 - 录制支持内存与流式落盘；流式模式只保留元数据，导出时复制临时 f32；
 - 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
 - 时间戳模式按帧时间差调度，处理耗时会导致轻微漂移；
 - 源目录含 OFDM；有效子载波/CP 可调；远端 Mock 也实现了同一 OFDM 生成；
-- 工作台按源类型显示推荐分析入口，推荐链接自动切源数据；
+- 工作台按源类型显示推荐分析入口，分析页固定使用源数据；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 硬件 RF/DAC 后端未接；OutputBackend 目前只有模拟与回放实现。
 
@@ -278,6 +278,7 @@ npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E
 npm run test:source-preview  # complex 源预览不受分析 spectrumMode 影响
+npm run test:signal-pages  # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
 ```
 
 `test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃。

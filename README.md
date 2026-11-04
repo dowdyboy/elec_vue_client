@@ -55,10 +55,10 @@
 - **源/连接高级配置**：`/source/advanced`，本地/远程连接、端口、远端 Mock；不再含 FFT
 - **信号分析 UI 组件**：`/signal/*`，不再承担源波形参数
 - 本地分析为纯 IPC SourceFrame 消费者，不监听端口；socket.io 仅用于远程后端/远端 Mock
-- PowerTime/Eye/APD/Persistence Demo 支持“仿真 / 源数据”数据源切换
+- PowerTime/Eye/APD/Persistence Demo 固定使用“信号源工作台”的源数据
 - 源工作台支持录制（内存/流式分段）、回放与任意 IQ 导入（`.f32/.bin/.raw`）
 - S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”与延时/损耗校准
-- 源目录含 OFDM（有效子载波/CP 可调，远端 Mock 同样支持），按源类型显示推荐分析入口并自动切源数据
+- 源目录含 OFDM（有效子载波/CP 可调，远端 Mock 同样支持），按源类型显示推荐分析入口，分析页固定使用源数据
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
 - 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`
 - 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
@@ -140,6 +140,7 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 npm test                 # 核心数学/源/录制/播放/扫频单测
 npm run test:source-ipc  # 真实主进程 source/analysis/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响
+npm run test:signal-pages # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
 npm run test:smoke       # 组件 Playground + 截图
 npm run test:visual      # Canvas2D/WebGL2 像素回归
