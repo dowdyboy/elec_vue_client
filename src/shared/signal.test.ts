@@ -40,6 +40,16 @@ describe('信号配置：频谱模式', () => {
     expect(sanitizeConfigPatch({ pulseDuty: 1.2 }).ok).toBe(false)
   })
 
+  it('载波频率允许 0（复基带），拒绝负数与 Nyquist', () => {
+    expect(sanitizeConfigPatch({ freq: 0 }).value).toEqual({ freq: 0 })
+    expect(sanitizeConfigPatch({ freq: 0, sampleRate: 4096 }).value).toEqual({
+      freq: 0,
+      sampleRate: 4096
+    })
+    expect(sanitizeConfigPatch({ freq: -1 }).ok).toBe(false)
+    expect(sanitizeConfigPatch({ freq: 2048, sampleRate: 4096 }).ok).toBe(false)
+  })
+
   it('OFDM 配置校验', () => {
     expect(sanitizeConfigPatch({ ofdmSubcarriers: 32 }).value).toEqual({ ofdmSubcarriers: 32 })
     expect(sanitizeConfigPatch({ ofdmCpRatio: 0.25 }).value).toEqual({ ofdmCpRatio: 0.25 })

@@ -73,7 +73,7 @@
 
 - 源类型选择；
 - real/complex 输出；
-- 载波、幅度、AWGN；
+- 载波（0 表示复基带/DC，允许 0）、幅度、AWGN；
 - 采样率、每帧点数；
 - 每符号采样数（数字源）；
 - OFDM 有效子载波 / CP 比例；
@@ -273,7 +273,7 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 233 例，含 sourceEngine/录制/播放/扫频/流式分段
+npm run test          # 234 例，含 sourceEngine/录制/播放/扫频/流式分段
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E

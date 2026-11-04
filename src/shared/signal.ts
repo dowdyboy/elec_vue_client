@@ -178,7 +178,7 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
   if ('freq' in src) {
     const freq = num('freq')
     const srInPatch = num('sampleRate')
-    if (freq === null || freq <= 0) errors.push('freq 必须为正数')
+    if (freq === null || freq < 0) errors.push('freq 须为非负数')
     else if (srInPatch !== null && srInPatch > 0 && freq >= srInPatch / 2)
       errors.push(`freq(${freq}) 须小于 sampleRate/2(${srInPatch / 2})`)
     else out.freq = freq

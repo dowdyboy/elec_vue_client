@@ -22,9 +22,9 @@ app.whenReady().then(async () => {
 
     await js(`location.hash = '#/source'`)
     await wait(600)
-    await js(`window.api.source.setConfig({ outputMode: 'complex' })`)
+    await js(`window.api.source.setConfig({ outputMode: 'complex', freq: 0 })`)
     await wait(200)
-    // 重新进入页面以回填 complex
+    // 重新进入页面以回填 complex / freq 0
     await js(`location.hash = '#/'`)
     await wait(300)
     await js(`location.hash = '#/source'`)
@@ -49,6 +49,8 @@ app.whenReady().then(async () => {
     const before = await js(`document.querySelector('.preview-note')?.innerText || ''`)
     assert(before.includes('复谱双边'), `source preview not complex: ${before}`)
     assert(before.includes('不受「分析配置」影响'), 'source preview independence hint missing')
+    const frameMeta = await js(`document.querySelector('.frame-meta')?.innerText || ''`)
+    assert(frameMeta.includes('0 Hz'), `carrier 0 Hz not applied: ${frameMeta}`)
 
     await js(`window.api.signalAnalysis.setConfig({ spectrumMode: 'real' })`)
     await wait(500)

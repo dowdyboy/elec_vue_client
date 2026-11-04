@@ -583,7 +583,7 @@ onUnmounted(() => {
               />
             </NFormItem>
             <NFormItem label="载波频率 (Hz)">
-              <NInputNumber v-model:value="carrierHz" :min="1" :max="sampleRate / 2 - 1" />
+              <NInputNumber v-model:value="carrierHz" :min="0" :max="sampleRate / 2 - 1" />
             </NFormItem>
             <NFormItem label="幅度">
               <NSlider v-model:value="amplitude" :min="0.01" :max="5" :step="0.01" />

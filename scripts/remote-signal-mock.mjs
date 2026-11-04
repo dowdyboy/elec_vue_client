@@ -539,7 +539,7 @@ export function sanitizePatch(patch) {
   }
   const freq = num('freq')
   const srInPatch = num('sampleRate')
-  if (freq !== null && freq > 0 && !(srInPatch !== null && srInPatch > 0 && freq >= srInPatch / 2))
+  if (freq !== null && freq >= 0 && !(srInPatch !== null && srInPatch > 0 && freq >= srInPatch / 2))
     out.freq = freq
   const snr = num('snr')
   if (snr !== null && snr >= 0 && snr <= 100) out.snr = snr
@@ -682,9 +682,9 @@ export function startServer(opts = {}) {
         return
       }
       const merged = { ...cfg, ...clean }
-      if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2)) {
+      if (!(merged.freq >= 0 && merged.freq < merged.sampleRate / 2)) {
         console.warn(
-          `[remote-mock] freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})，配置忽略`
+          `[remote-mock] freq(${merged.freq}) 须满足 0 <= freq < sampleRate/2(${merged.sampleRate / 2})，配置忽略`
         )
         return
       }
