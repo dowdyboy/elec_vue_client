@@ -104,6 +104,20 @@ const summary = computed(() =>
 )
 const isDigital = computed(() => meta.value.waveform === 'digital')
 
+// 源工作台 IQ 预览固定 Y 量程：流式随机调制/OFDM 的峰值逐帧变化，
+// 自动量程会不断换档，导致刻度和网格跳动；固定量程仍可用 Shift+滚轮手动缩放。
+const iqYHalfSpan = computed(() => {
+  const waveform = meta.value.waveform
+  const factor =
+    waveform === 'ofdm' ? 5 : waveform === 'noise' ? 5 : waveform === 'digital' ? 3 : 1.5
+  return Math.ceil(Math.max(1.5, amplitude.value * factor) * 2) / 2
+})
+const iqViewport = computed(() => ({
+  autoScale: false,
+  yMin: -iqYHalfSpan.value,
+  yMax: iqYHalfSpan.value
+}))
+
 function configWith(patch: Partial<SignalAnalysisConfig>): Partial<SignalAnalysisConfig> {
   return {
     ...sourceKindPatch(kind.value),
@@ -698,16 +712,21 @@ onUnmounted(() => {
           </NAlert>
           <NTabs type="line" size="small" animated>
             <NTabPane name="iq" tab="IQ 时域">
+              <div class="preview-note iq-note">
+                IQ 预览 · Y 固定 ±{{ iqYHalfSpan.toFixed(1) }}（Shift+滚轮缩放）
+                <span>OFDM/数字调制的时域起伏是随机符号，不是量程不稳</span>
+              </div>
               <IqChart
                 ref="iqRef"
                 :height="380"
                 :sample-rate="sampleRate"
                 :trigger="{ enabled: false }"
+                :viewport="iqViewport"
                 theme="spectrum"
               />
             </NTabPane>
             <NTabPane name="spectrum" tab="频谱">
-              <div class="preview-note">
+              <div class="preview-note spectrum-note">
                 源独立预览 · {{ previewSpectrumMode === 'complex' ? '复谱双边' : '实谱单边' }}
                 <template v-if="previewFftSize"> · FFT {{ previewFftSize }} · Hann</template>
                 <span>（不受「分析配置」影响）</span>

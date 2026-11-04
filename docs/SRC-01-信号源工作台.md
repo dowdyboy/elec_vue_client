@@ -81,7 +81,7 @@
 - 启动/停止/单帧、运行中应用参数；
 - 导入任意 little-endian interleaved f32 IQ（最多 8M 样本）；
 - 回放录制 / 导入 IQ / 流式录制；
-- IQ 实时预览；
+- IQ 实时预览（固定 Y 量程，避免随机 OFDM/数字符号峰值导致刻度跳动）；
 - 源频谱独立预览（固定 Hann/FFT，不读取分析配置）；
 - 源帧元数据：seq/outputMode/waveform/carrierHz；
 - 推荐分析入口；

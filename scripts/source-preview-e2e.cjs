@@ -37,6 +37,8 @@ app.whenReady().then(async () => {
     })()`)
     assert(started, 'start button not found')
     await wait(1000)
+    const iqNote = await js(`document.querySelector('.iq-note')?.innerText || ''`)
+    assert(iqNote.includes('Y 固定'), `IQ Y range hint missing: ${iqNote}`)
     const tabbed = await js(`(() => {
       const tab = [...document.querySelectorAll('.n-tabs-tab')].find((x) => x.textContent.trim() === '频谱')
       if (!tab) return false
@@ -46,7 +48,7 @@ app.whenReady().then(async () => {
     assert(tabbed, 'spectrum tab not found')
     await wait(400)
 
-    const before = await js(`document.querySelector('.preview-note')?.innerText || ''`)
+    const before = await js(`document.querySelector('.spectrum-note')?.innerText || ''`)
     assert(before.includes('复谱双边'), `source preview not complex: ${before}`)
     assert(before.includes('不受「分析配置」影响'), 'source preview independence hint missing')
     const frameMeta = await js(`document.querySelector('.frame-meta')?.innerText || ''`)
@@ -54,7 +56,7 @@ app.whenReady().then(async () => {
 
     await js(`window.api.signalAnalysis.setConfig({ spectrumMode: 'real' })`)
     await wait(500)
-    const after = await js(`document.querySelector('.preview-note')?.innerText || ''`)
+    const after = await js(`document.querySelector('.spectrum-note')?.innerText || ''`)
     const analysis = await js(`window.api.signalAnalysis.getStatus()`)
     assert(analysis.config?.spectrumMode === 'real', 'analysis spectrumMode did not become real')
     assert(after.includes('复谱双边'), `analysis config changed source preview: ${after}`)
