@@ -26,6 +26,8 @@ export function pickPreviewFftSize(samples: number, preferred = 1024): number | 
 export interface SourcePreviewOptions {
   fftSize?: number
   db?: boolean
+  /** 显示域：缺省按 outputMode 自动；real=单边，complex=完整双边 */
+  spectrumMode?: 'real' | 'complex'
 }
 
 export function buildSourcePreviewSpectrum(
@@ -44,14 +46,15 @@ export function buildSourcePreviewSpectrum(
   const win = getWindow('hann', fftSize)
   applyWindow(re, win)
   applyWindow(im, win)
-  const complex = frame.outputMode === 'complex'
+  const spectrumMode = opts.spectrumMode ?? (frame.outputMode === 'complex' ? 'complex' : 'real')
+  const complex = spectrumMode === 'complex'
   const mag = magnitudeSpectrum(re, im, complex ? { full: true, fftShift: true } : {})
   const db = opts.db !== false
   return {
     data: db ? toDB(mag) : mag,
     fftSize,
     sampleRate: frame.sampleRate,
-    spectrumMode: complex ? 'complex' : 'real',
+    spectrumMode,
     freqStartHz: complex ? -frame.sampleRate / 2 : 0,
     binHz: frame.sampleRate / fftSize,
     fftShift: complex,

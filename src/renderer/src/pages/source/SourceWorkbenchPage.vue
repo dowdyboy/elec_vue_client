@@ -41,6 +41,12 @@ const message = useMessage()
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const previewSpectrumMode = ref<'real' | 'complex'>('complex')
+const previewSpectrumSetting = ref<'auto' | 'real' | 'complex'>('auto')
+const previewSpectrumOptions = [
+  { label: '自动（按输出域）', value: 'auto' },
+  { label: '单边', value: 'real' },
+  { label: '双边', value: 'complex' }
+]
 const previewFftSize = ref(0)
 
 const running = ref(false)
@@ -442,9 +448,15 @@ onMounted(async () => {
     iqRef.value?.appendData(frame.data, {
       sampleRate: frame.sampleRate ?? sampleRate.value
     })
-    // 源频谱预览独立于分析配置：固定 Hann + 自动 real/complex，不受 FFT/窗/频谱语义设置影响
+    // 源频谱预览独立于分析配置：固定 Hann，显示域由本页“自动/单边/双边”决定
     if (frameCount.value % 2 === 0) {
-      const preview = buildSourcePreviewSpectrum(frame)
+      const requested =
+        previewSpectrumSetting.value === 'auto'
+          ? frame.outputMode === 'complex'
+            ? 'complex'
+            : 'real'
+          : previewSpectrumSetting.value
+      const preview = buildSourcePreviewSpectrum(frame, { spectrumMode: requested })
       if (preview) {
         previewSpectrumMode.value = preview.spectrumMode
         previewFftSize.value = preview.fftSize
@@ -726,6 +738,16 @@ onUnmounted(() => {
               />
             </NTabPane>
             <NTabPane name="spectrum" tab="频谱">
+              <div class="spectrum-mode-row">
+                <span>频谱显示</span>
+                <NSelect
+                  v-model:value="previewSpectrumSetting"
+                  size="tiny"
+                  :options="previewSpectrumOptions"
+                  style="width: 130px"
+                />
+                <span v-if="previewSpectrumSetting === 'auto'">自动：实信号→单边，复数→双边</span>
+              </div>
               <div class="preview-note spectrum-note">
                 源独立预览 · {{ previewSpectrumMode === 'complex' ? '复谱双边' : '实谱单边' }}
                 <template v-if="previewFftSize"> · FFT {{ previewFftSize }} · Hann</template>
@@ -830,6 +852,15 @@ onUnmounted(() => {
   color: #4fc3f7;
 }
 .preview-note span {
+  color: #888;
+}
+.spectrum-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
   color: #888;
 }
 .scenario-row {

@@ -62,9 +62,53 @@ app.whenReady().then(async () => {
     assert(after.includes('复谱双边'), `analysis config changed source preview: ${after}`)
     assert(after === before, 'source preview note changed after analysis config')
 
+    // real 输出：自动单边；用户可手动切双边
+    await js(`window.api.source.stop()`)
+    await js(`window.api.source.setConfig({ outputMode: 'real', freq: 512 })`)
+    await wait(200)
+    await js(`location.hash = '#/'`)
+    await wait(300)
+    await js(`location.hash = '#/source'`)
+    await wait(700)
+    await js(`(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('启动'))
+      if (b) b.click()
+    })()`)
+    await wait(800)
+    await js(`(() => {
+      const tab = [...document.querySelectorAll('.n-tabs-tab')].find((x) => x.textContent.trim() === '频谱')
+      if (tab) tab.click()
+    })()`)
+    await wait(400)
+    const realAuto = await js(`document.querySelector('.spectrum-note')?.innerText || ''`)
+    assert(realAuto.includes('实谱单边'), `real output auto mode not single-sided: ${realAuto}`)
+
+    const opened = await js(`(() => {
+      const el = document.querySelector('.spectrum-mode-row .n-base-selection')
+      if (!el) return false
+      el.click()
+      return true
+    })()`)
+    assert(opened, 'spectrum mode selector not found')
+    await wait(300)
+    const picked = await js(`(() => {
+      const el = [...document.querySelectorAll('.n-base-select-option')].find(
+        (x) => x.textContent.trim() === '双边'
+      )
+      if (!el) return false
+      el.click()
+      return true
+    })()`)
+    assert(picked, '双边 option not found')
+    await wait(600)
+    const realDouble = await js(`document.querySelector('.spectrum-note')?.innerText || ''`)
+    assert(realDouble.includes('复谱双边'), `real output double-sided switch failed: ${realDouble}`)
+
     await js(`window.api.signalAnalysis.stop()`)
     await js(`window.api.source.stop()`)
-    console.log(`[source-preview] PASS before=${JSON.stringify(before)}`)
+    console.log(
+      `[source-preview] PASS complex="${JSON.stringify(before)}" realAuto=${JSON.stringify(realAuto)} realDouble=${JSON.stringify(realDouble)}`
+    )
     app.exit(0)
   } catch (e) {
     console.error('[source-preview] FAIL', e)

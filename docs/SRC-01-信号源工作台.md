@@ -1,4 +1,4 @@
-# SRC-01 - 信号源工作台
+﻿# SRC-01 - 信号源工作台
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
@@ -82,7 +82,7 @@
 - 导入任意 little-endian interleaved f32 IQ（最多 8M 样本）；
 - 回放录制 / 导入 IQ / 流式录制；
 - IQ 实时预览（固定 Y 量程，避免随机 OFDM/数字符号峰值导致刻度跳动）；
-- 源频谱独立预览（固定 Hann/FFT，不读取分析配置）；
+- 源频谱独立预览（固定 Hann/FFT，不读取分析配置；可自动/单边/双边显示）；
 - 源帧元数据：seq/outputMode/waveform/carrierHz；
 - 推荐分析入口；
 - 分析配置入口：`/signal/analysis-config`；
@@ -128,7 +128,7 @@ OFDM 生成：
 源频谱预览与分析配置解耦：
 
 - 源工作台直接从 `SourceFrame` 计算频谱（`src/shared/sourcePreview.ts`）；
-- 固定 Hann 窗与固定上限 FFT（1024），按 `outputMode` 自动选择实谱单边/复谱双边；
+- 固定 Hann 窗与固定上限 FFT（1024），默认按 `outputMode` 自动选择实谱单边/复谱双边，也可手动强制单边/双边；
 - **不读取** `/signal/analysis-config` 的 FFT/窗/重叠/`spectrumMode`；
 - 因此分析配置只影响分析 UI 页，不会改变源工作台的频谱展示。
 
@@ -273,7 +273,7 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 234 例，含 sourceEngine/录制/播放/扫频/流式分段
+npm run test          # 235 例，含 sourceEngine/录制/播放/扫频/流式分段
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E

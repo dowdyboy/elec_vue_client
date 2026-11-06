@@ -42,6 +42,22 @@ describe('源工作台独立频谱预览', () => {
     expect(p!.fftShift).toBe(false)
   })
 
+  it('允许手动覆盖单边/双边显示域', () => {
+    const realAsComplex = buildSourcePreviewSpectrum(frame('real', 256, 32), {
+      spectrumMode: 'complex'
+    })
+    expect(realAsComplex!.spectrumMode).toBe('complex')
+    expect(realAsComplex!.data.length).toBe(256)
+    expect(realAsComplex!.freqStartHz).toBe(-2048)
+
+    const complexAsReal = buildSourcePreviewSpectrum(frame('complex', 256, 32), {
+      spectrumMode: 'real'
+    })
+    expect(complexAsReal!.spectrumMode).toBe('real')
+    expect(complexAsReal!.data.length).toBe(128)
+    expect(complexAsReal!.freqStartHz).toBe(0)
+  })
+
   it('FFT 选择与分析配置无关，且样本不足返回 null', () => {
     expect(pickPreviewFftSize(100)).toBe(64)
     expect(pickPreviewFftSize(256)).toBe(256)
