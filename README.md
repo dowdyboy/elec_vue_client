@@ -1,5 +1,7 @@
 # ⚡ Electron 教学与模板项目
 
+[![CI](https://github.com/dowdyboy/elec_vue_client/actions/workflows/ci.yml/badge.svg)](https://github.com/dowdyboy/elec_vue_client/actions/workflows/ci.yml)
+
 基于 **Electron 39 + Vue 3 + TypeScript + Naive UI** 的教学与模板项目。
 
 - **教学**：运行后从左侧菜单进入各特性演示页，直观看到 Electron 各项能力
@@ -82,12 +84,12 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 - 时频瀑布：WebGL2 R8 纹理 + LUT、频率缩放/冻结/色标/游标、PNG/CSV 导出
 - 中英文 i18n（`locale`/`messages`）、`chartStyle`、尺寸字符串、ARIA/触摸、离屏暂停
 - 独立 `dist-signal` 包（ESM/CSS/d.ts）与 Vite Playground + Worker 示例
-- 像素级视觉回归（Canvas2D/WebGL2 双基线，覆盖 IQ/频谱/时频/星座）
-- 新组件 Electron smoke：PowerTime/Eye/Persistence/Smith/APD/Quality 的 API/统计/渲染检查
+- 像素级视觉回归（Canvas2D/WebGL2 双基线，覆盖全部 10 个组件）
+- 组件 Electron smoke：10 个组件的 API/统计/渲染检查 + PNG 导出管线（dataURL 与 exportHandler 两条路径）
 
 文档：[SRC-01 信号源](./docs/SRC-01-信号源工作台.md) · [SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 10 个组件均已完成库化；IQ/频谱/时频/星座含 Canvas2D 降级与像素回归，其余以核心单测 + Demo 覆盖。
+> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 252 个单测。
 
 ## 快速开始
 
@@ -137,14 +139,19 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 ## 质量校验
 
 ```powershell
-npm test                 # 核心数学/源/录制/播放/扫频单测
-npm run test:source-ipc  # 真实主进程 source/analysis/sweep IPC E2E
+npm test                 # 纯逻辑单测（当前 252 例）
+npm run test:coverage    # 覆盖率（v8，含阈值；报告在 coverage/）
+npm run test:source-ipc  # 真实主进程 source/analysis/remote/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响
 npm run test:signal-pages # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
-npm run test:smoke       # 组件 Playground + 截图
-npm run test:visual      # Canvas2D/WebGL2 像素回归
+npm run test:smoke       # 组件 Playground + API + PNG 导出管线 + 截图
+npm run test:visual      # Canvas2D/WebGL2 像素回归（10 个组件）
+npm run test:e2e         # 4 套 Electron E2E 串联
+npm run check:signal     # 组件库 dist-signal 发布产物校验
 ```
+
+CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建与 5 套 Electron E2E；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
 
 `test:sections` 会构建真实应用并启动隐藏窗口，逐页验证 30 个 Electron 教学页、13 个 TypeScript 惯用法页的标题、菜单、页面内容和 renderer 异常，并执行 IPC、safeStorage、主题切换和 TS 示例运行等交互。
 

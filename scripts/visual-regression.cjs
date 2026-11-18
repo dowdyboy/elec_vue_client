@@ -10,8 +10,9 @@
  *   node scripts/visual-run-all.mjs --update
  *
  * 说明：
- * - 页面 playground/visual.html 使用固定种子数据、固定尺寸（IQ 360 + real 频谱 360 + complex 频谱 280 + real 瀑布 300 + complex 瀑布 240 + 星座 320）、dark 主题、en-US 文案；
- *   ready 后窗口内容区固定为 1200×2000，避免 Windows 初始窗口被屏幕工作区钳位导致底部星座被裁掉。
+ * - 页面 playground/visual.html 使用固定种子数据、固定尺寸（IQ 360 + real 频谱 360 + complex 频谱 280 + real 瀑布 300 + complex 瀑布 240 + 星座 320，
+ *   以及两列网格的 PowerTime/Eye/Persistence/Smith/APD/Quality 6×240）、dark 主题、en-US 文案；
+ *   ready 后窗口内容区固定为 1200×2800，避免 Windows 初始窗口被屏幕工作区钳位导致底部网格被裁掉。
  *   force-device-scale-factor=1，避免 DPR 差异。
  * - 分别回归 canvas2d 与 webgl2 两套基线；每像素通道差 > VISUAL_PIXEL_DELTA（默认 16）
  *   记为差异像素，差异占比 > VISUAL_MAX_DIFF_RATIO（默认 0.4%）判失败。
@@ -105,7 +106,7 @@ async function runMode(mode) {
     await win.loadURL(url)
     await waitForReady(win)
     // Windows 会把初始 2100 高窗口钳到屏幕工作区；ready 后显式放大到完整页面高度
-    win.setContentSize(1200, 2000)
+    win.setContentSize(1200, 2800)
     await wait(100)
     await wait(500) // 自动量程/平滑稳定；<3s 避免 stale 角标
     const img = await win.webContents.capturePage()

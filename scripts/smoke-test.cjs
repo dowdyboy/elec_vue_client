@@ -27,7 +27,7 @@ function fail(msg) {
 async function run() {
   const win = new BrowserWindow({
     width: 1400,
-    height: 1000,
+    height: 1600,
     useContentSize: true,
     show: false,
     webPreferences: { backgroundThrottling: false }
@@ -70,6 +70,19 @@ async function run() {
     if (!r.info?.smith?.includes('轨迹')) fail('Smith info not rendered')
     if (!r.info?.apd?.includes('样本')) fail('APD info not rendered')
 
+    // PNG 导出管线：5 个 dataURL 返回型 + 4 个 exportHandler 型都必须产出非空负载
+    const exports = r.exports || {}
+    for (const key of ['power', 'eye', 'persistence', 'smith', 'apd']) {
+      const item = exports[key]
+      if (!item || item.kind !== 'png' || !(item.size > 1000))
+        fail(`export ${key} invalid: ${JSON.stringify(item)}`)
+    }
+    for (const key of ['iq', 'spectrum', 'spectrogram', 'constellation']) {
+      const item = exports[key]
+      if (!item || item.kind !== 'png' || !(item.size > 1000))
+        fail(`export ${key} invalid: ${JSON.stringify(item)}`)
+    }
+
     const img = await win.webContents.capturePage()
     fs.writeFileSync(path.join(dist, 'smoke.png'), img.toPNG())
     console.log('[smoke] PASS')
@@ -85,6 +98,9 @@ async function run() {
           },
           smith: { points: r.smith.points, maxGamma: r.smith.maxGamma },
           apd: { samples: r.apd.sampleCount, papr: r.apd.paprDb, p01: r.apd.p01Db },
+          exports: Object.fromEntries(
+            Object.entries(r.exports || {}).map(([k, v]) => [k, { kind: v.kind, size: v.size }])
+          ),
           qualityRows: r.qualityRows,
           screenshot: path.join(dist, 'smoke.png')
         },

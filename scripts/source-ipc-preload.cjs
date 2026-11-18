@@ -52,8 +52,15 @@ contextBridge.exposeInMainWorld('api', {
     stop: () => invoke('signalAnalysis:stop'),
     getStatus: () => invoke('signalAnalysis:getStatus'),
     setConfig: (cfg) => invoke('signalAnalysis:setConfig', cfg),
+    trigger: () => invoke('signalAnalysis:trigger'),
     subscribe: () => invoke('signalAnalysis:subscribe'),
     unsubscribe: () => invoke('signalAnalysis:unsubscribe'),
-    onFrame: (cb) => on('signal:analysis', cb)
+    onFrame: (cb) => on('signal:analysis', cb),
+    onStatus: (cb) => on('signal:analysis:status', cb)
+  },
+  remoteMock: {
+    start: (opts) => invoke('remoteMock:start', opts),
+    stop: () => invoke('remoteMock:stop'),
+    getStatus: () => invoke('remoteMock:getStatus')
   }
 })

@@ -65,7 +65,7 @@ import { IqChart, SpectrumChart, SpectrogramChart } from 'elec-signal-charts'
 import 'elec-signal-charts/style.css'
 ```
 
-> 包名/版本在 `scripts/write-signal-package.mjs` 中可改；未发布 npm 时可直接从 `dist-signal` 安装或拷贝。
+> 包名/版本在 [`package.meta.json`](./package.meta.json) 中单点维护（`npm run build:signal` 会写入 `dist-signal/package.json` 并同步运行时 `SIGNAL_CHARTS_VERSION`）；未发布 npm 时可直接从 `dist-signal` 安装或拷贝。
 
 ### 最小显示预设
 
@@ -538,7 +538,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级单测；核心数学/文案有 235 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端（含 real/complex 时频、频谱与星座，见下节）。
+- 无浏览器级组件单测；核心数学/文案/DOM 面板有 252 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端，且已覆盖全部 10 个组件（见下节）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -549,7 +549,7 @@ npm run playground          # 开发服务器
 npm run build:playground    # 生产构建（index + visual + smoke 三个入口）
 ```
 
-**像素级视觉回归**（固定种子、1200×2000 页面、dark、en-US、DPR=1；real + complex 频谱/瀑布 + QPSK 星座，分别回归 canvas2d/webgl2）：
+**像素级视觉回归**（固定种子、1200×2800 页面、dark、en-US、DPR=1；IQ/real+complex 频谱/瀑布/星座/PowerTime/Eye/Persistence/Smith/APD/Quality 共 10 个组件，分别回归 canvas2d/webgl2）：
 
 ```powershell
 npm run test:visual          # 构建 + canvas2d/webgl2 双后端像素对比
@@ -584,4 +584,4 @@ npx electron scripts/screenshot-playground.cjs
 
 ## 9. 版本
 
-`SIGNAL_CHARTS_VERSION = '2.4.2'`（公共 API 变更时按语义化版本维护）。
+`SIGNAL_CHARTS_VERSION = '2.5.0'`（公共 API 变更时按语义化版本维护，需同步 `package.meta.json`；`npm run check:signal` 会校验两者一致）。

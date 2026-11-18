@@ -2,12 +2,17 @@
 import { nextTick, onMounted, ref } from 'vue'
 import {
   ApdCcdfChart,
+  ConstellationChart,
   EyeDiagramChart,
+  IqChart,
   PersistenceSpectrumChart,
   PowerTimeChart,
   SignalQualityPanel,
   SmithChart,
+  SpectrogramChart,
+  SpectrumChart,
   type ApdCcdfData,
+  type ExportPayload,
   type EyeStats,
   type PersistenceStats,
   type PulseAnalysis,
@@ -29,6 +34,32 @@ const eyeRef = ref<InstanceType<typeof EyeDiagramChart> | null>(null)
 const persistenceRef = ref<InstanceType<typeof PersistenceSpectrumChart> | null>(null)
 const smithRef = ref<InstanceType<typeof SmithChart> | null>(null)
 const apdRef = ref<InstanceType<typeof ApdCcdfChart> | null>(null)
+const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
+const specRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
+const spectrogramRef = ref<InstanceType<typeof SpectrogramChart> | null>(null)
+const constellationRef = ref<InstanceType<typeof ConstellationChart> | null>(null)
+
+/** 导出 smoke：验证 PNG 管线能产出非空负载（含 exportHandler 路径与 dataURL 路径） */
+interface ExportRecord {
+  kind: 'png' | 'csv'
+  filename: string
+  size: number
+}
+const exportResults: Record<string, ExportRecord> = {}
+function recordExport(key: string) {
+  return (p: ExportPayload): void => {
+    const size = p.kind === 'png' ? (p.dataUrl?.length ?? p.blob?.size ?? 0) : (p.text?.length ?? 0)
+    exportResults[key] = { kind: p.kind, filename: p.filename, size }
+  }
+}
+const exportIq = recordExport('iq')
+const exportSpectrum = recordExport('spectrum')
+const exportSpectrogram = recordExport('spectrogram')
+const exportConstellation = recordExport('constellation')
+function recordDataUrl(key: string, dataUrl: string | null | undefined): void {
+  const size = dataUrl?.length ?? 0
+  exportResults[key] = { kind: 'png', filename: `${key}.png`, size }
+}
 
 const qualityMetrics = ref<SignalQualityMetrics>({
   evmPercent: 2.4,
@@ -116,6 +147,41 @@ function makeApdSamples(): Float32Array {
   return v
 }
 
+/** 确定性伪噪声（禁止 Math.random，保证 smoke 可复现） */
+function pseudoNoise(i: number): number {
+  const s = Math.sin(i * 12.9898) * 43758.5453
+  return (s - Math.floor(s)) * 2 - 1
+}
+
+function makeIq(): Float32Array {
+  const n = 2048
+  const v = new Float32Array(n * 2)
+  for (let k = 0; k < n; k++) {
+    const t = k * 0.01
+    v[2 * k] = Math.sin(t) * 0.6 + pseudoNoise(k) * 0.01
+    v[2 * k + 1] = Math.cos(t) * 0.4 + pseudoNoise(k + 7) * 0.01
+  }
+  return v
+}
+
+function makeConstellationIq(): Float32Array {
+  const n = 2048
+  const sps = 16
+  const v = new Float32Array(n * 2)
+  const levels = [-0.7, 0.7]
+  let bi = 0
+  let bq = 0
+  for (let k = 0; k < n; k++) {
+    if (k % sps === 0) {
+      bi = levels[(k * 7) % 2]!
+      bq = levels[(k * 11) % 2]!
+    }
+    v[2 * k] = bi + pseudoNoise(k) * 0.02
+    v[2 * k + 1] = bq + pseudoNoise(k + 3) * 0.02
+  }
+  return v
+}
+
 onMounted(async () => {
   await nextTick()
   const power = makePower()
@@ -149,7 +215,42 @@ onMounted(async () => {
   apdRef.value?.appendData(makeApdSamples())
   const apdStats: ApdCcdfData | null | undefined = apdRef.value?.getStats()
 
+  // 导出管线数据（iq/spectrum/spectrogram/constellation 走 exportHandler）
+  iqRef.value?.appendData(makeIq(), { sampleRate: 4096 })
+  specRef.value?.appendData(makeSpectrum(), {
+    sampleRate: 4096,
+    fftSize: 128,
+    dbScale: true,
+    spectrumMode: 'real',
+    freqStartHz: 0,
+    binHz: 32,
+    fftShift: false
+  })
+  for (let r = 0; r < 32; r++) {
+    const row = makeSpectrum()
+    for (let i = 0; i < row.length; i++) row[i] += Math.sin((i + r) * 0.2) * 2
+    spectrogramRef.value?.appendData(row, {
+      sampleRate: 4096,
+      fftSize: 128,
+      timeStepSec: 0.01
+    })
+  }
+  constellationRef.value?.appendData(makeConstellationIq())
+
   await sleep(900)
+  // PNG 导出 smoke：5 个 dataURL 返回型 + 4 个 exportHandler 型
+  recordDataUrl('power', powerRef.value?.exportPNG())
+  recordDataUrl('eye', eyeRef.value?.exportPNG())
+  recordDataUrl('persistence', persistenceRef.value?.exportPNG())
+  recordDataUrl('smith', smithRef.value?.exportPNG())
+  recordDataUrl('apd', apdRef.value?.exportPNG())
+  await Promise.all([
+    iqRef.value?.exportPNGAsync(),
+    specRef.value?.exportPNGAsync(),
+    spectrogramRef.value?.exportPNGAsync(),
+    constellationRef.value?.exportPNGAsync()
+  ])
+
   const qualityRows = document.querySelectorAll('.sig-quality-item').length
   const info = {
     power: document.querySelector('.sig-power-info')?.textContent?.trim() ?? '',
@@ -164,6 +265,7 @@ onMounted(async () => {
     persistence: { matrix: persistenceMatrixStats, analysis: persistenceAnalysisStats },
     smith: smithStats,
     apd: apdStats,
+    exports: exportResults,
     qualityRows,
     info,
     errors
@@ -219,6 +321,42 @@ onMounted(async () => {
       />
     </section>
     <section class="cell">
+      <h3>IQ / Spectrum / Spectrogram / Constellation export</h3>
+      <div class="export-grid">
+        <IqChart
+          ref="iqRef"
+          :height="200"
+          :sample-rate="4096"
+          :export-handler="exportIq"
+          theme="spectrum"
+        />
+        <SpectrumChart
+          ref="specRef"
+          :height="200"
+          :sample-rate="4096"
+          :fft-size="128"
+          :export-handler="exportSpectrum"
+          theme="spectrum"
+        />
+        <SpectrogramChart
+          ref="spectrogramRef"
+          :height="200"
+          :time-span="32"
+          :sample-rate="4096"
+          :fft-size="128"
+          :export-handler="exportSpectrogram"
+          theme="spectrum"
+        />
+        <ConstellationChart
+          ref="constellationRef"
+          :height="200"
+          :point-size="2"
+          :export-handler="exportConstellation"
+          theme="spectrum"
+        />
+      </div>
+    </section>
+    <section class="cell">
       <h3>Quality</h3>
       <SignalQualityPanel
         :metrics="qualityMetrics"
@@ -235,6 +373,11 @@ onMounted(async () => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   width: 1380px;
+}
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 .cell {
   border: 1px solid #30363d;

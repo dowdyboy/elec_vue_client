@@ -14,12 +14,14 @@
       window.__sourceFrames = []
       window.__analysisFrames = []
       window.__sweepFrames = []
+      window.__remoteStatus = []
       window.api.source.onFrame((f) => {
         if (window.__sourceFrames.length < 20) window.__sourceFrames.push(f)
       })
       window.api.signalAnalysis.onFrame((f) => {
         if (window.__analysisFrames.length < 40) window.__analysisFrames.push(f)
       })
+      window.api.signalAnalysis.onStatus((s) => window.__remoteStatus.push(s))
       window.api.sweep.onFrame((f) => window.__sweepFrames.push(f))
     </script>
   </body>

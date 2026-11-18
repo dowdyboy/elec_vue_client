@@ -8,6 +8,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { registerSignalAnalysisServer } from '../src/main/signal/analysisServer'
+import { registerRemoteMockServer } from '../src/main/signal/remoteMockServer'
 import { getSourceService, registerSourceService } from '../src/main/source/sourceService'
 import { registerSweepService } from '../src/main/sweep/sweepService'
 import type { SourceFrame } from '../src/shared/sourceEngine'
@@ -23,7 +24,8 @@ async function run(): Promise<void> {
   const disposers = [
     registerSourceService(),
     registerSignalAnalysisServer(),
-    registerSweepService()
+    registerSweepService(),
+    registerRemoteMockServer()
   ]
   const service = getSourceService()
   const win = new BrowserWindow({
@@ -117,6 +119,51 @@ async function run(): Promise<void> {
     af.some((f) => f.type === 'spectrum'),
     'no analysis spectrum frames'
   )
+
+  // 2b) 远程分析链路：内置 remoteMock(socket.io) → RemoteAnalysisSource → signal:analysis
+  await js('window.api.signalAnalysis.stop()')
+  await js('window.__analysisFrames = []')
+  await js('window.__remoteStatus = []')
+  const remotePort = 18799
+  const mockStart = await js<{ ok: boolean; port?: number; error?: string }>(
+    `window.api.remoteMock.start({ port: ${remotePort} })`
+  )
+  assert(mockStart.ok, `remote mock start failed: ${mockStart.error}`)
+  const remoteStart = await js<{ ok: boolean; mode?: string; error?: string }>(
+    `window.api.signalAnalysis.start({ mode: 'remote', remoteUrl: 'http://127.0.0.1:${remotePort}' })`
+  )
+  assert(
+    remoteStart.ok && remoteStart.mode === 'remote',
+    `remote analysis start failed: ${remoteStart.error}`
+  )
+  await wait(900)
+  const remoteFrames = await js<Array<{ type: string; dataLength: number }>>(
+    `window.__analysisFrames.map((f) => ({ type: f.type, dataLength: f.data.length }))`
+  )
+  assert(
+    remoteFrames.some((f) => f.type === 'iq'),
+    'remote analysis produced no IQ frames'
+  )
+  assert(
+    remoteFrames.some((f) => f.type === 'spectrum'),
+    'remote analysis produced no spectrum frames'
+  )
+  const remoteStatuses =
+    await js<Array<{ connected: boolean; error?: string }>>('window.__remoteStatus')
+  assert(
+    remoteStatuses.some((s) => s.connected === true),
+    'remote analysis never reported connected'
+  )
+  const remoteInfo = await js<{ mode?: string }>('window.api.signalAnalysis.getStatus()')
+  assert(remoteInfo.mode === 'remote', `remote analysis mode=${remoteInfo.mode}`)
+  await js('window.api.signalAnalysis.stop()')
+  await wait(250)
+  const stoppedStatuses =
+    await js<Array<{ connected: boolean; error?: string }>>('window.__remoteStatus')
+  const lastStatus = stoppedStatuses[stoppedStatuses.length - 1]
+  assert(lastStatus && lastStatus.connected === false, 'remote stop was not reported')
+  assert(!lastStatus.error, `remote stop reported an error: ${lastStatus.error}`)
+  await js('window.api.remoteMock.stop()')
 
   // 3) memory recording
   await js('window.api.source.recordStart(false)')

@@ -2,6 +2,7 @@ node_modules
 dist
 dist-signal
 playground/dist
+coverage
 out
 .DS_Store
 .eslintcache

@@ -1,0 +1,9 @@
+{
+  "name": "elec-signal-charts",
+  "version": "2.5.0",
+  "description": "Reusable IQ time-domain / spectrum / spectrogram Vue 3 components (WebGL2 + Canvas2D fallback)",
+  "keywords": ["vue", "iq", "spectrum", "signal", "webgl", "canvas"],
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  }
+}

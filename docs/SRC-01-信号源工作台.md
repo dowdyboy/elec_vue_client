@@ -289,26 +289,30 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 249 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁
+npm run test          # 252 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁/DOM 面板
+npm run test:coverage # 覆盖率（v8，含阈值；CI 在 Linux 上跑）
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
-npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E
+npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E（本地 + 远程分析）
 npm run test:source-preview  # complex 源预览不受分析 spectrumMode 影响
 npm run test:signal-pages  # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
+npm run check:signal  # dist-signal 发布产物校验（配合 npm run build:signal）
 ```
 
 `test:source` 输出：`playground/dist/source-workbench.png`。它不启动主进程信号服务，只验证源工作台启动/运行状态、`/signal/analysis-config` 路由、布局/无同步崩溃。
 
-`test:source-ipc` 启动真实的 `SourceService`、`signalAnalysis`、`SweepService`，通过隐藏 BrowserWindow + 最小 preload 验证：
+`test:source-ipc` 启动真实的 `SourceService`、`signalAnalysis`、`RemoteMockServer`、`SweepService`，通过隐藏 BrowserWindow + 最小 preload 验证：
 
 - OFDM 源帧（长度/波形/Q 能量）；
-- `signal:analysis` 的 IQ/频谱帧；
-- 内存录制帧数/样本数；
-- 流式录制分段拼接后的文件大小；
+- `signal:analysis` 的 IQ/频谱帧（本地模式）；
+- `source:frame` 只投递订阅窗口（退订/重订阅）；
+- 内置 remoteMock(socket.io) + `RemoteAnalysisSource` 远程链路（连接状态、IQ/频谱帧、停止无 error）；
+- 内存录制帧数/样本数、未导出保护、流式录制分段拼接后的文件大小；
 - 回放暂停/单步/seek/时间戳/倍速/循环；
+- 0 Hz 基带配置、回放倍速不泄漏到直播；
 - S11 sweep 帧与校准字段。
 
-它不覆盖系统文件选择对话框和导出对话框。
+它不覆盖系统文件选择对话框和导出对话框（组件 PNG 导出由 `test:smoke` 覆盖）。
 
 ## 十一、后续
 
