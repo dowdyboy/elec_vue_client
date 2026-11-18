@@ -83,7 +83,8 @@
 - 回放录制 / 导入 IQ / 流式录制；
 - IQ 实时预览（固定 Y 量程，避免随机 OFDM/数字符号峰值导致刻度跳动）；
 - 源频谱独立预览（固定 Hann/FFT，不读取分析配置；可自动/单边/双边显示）；
-- 源帧元数据：seq/outputMode/waveform/carrierHz；
+- 源帧元数据：seq/outputMode/waveform/carrierHz/信号时间/wallTimestamp；
+- 场景预设：保存/加载/删除/导入导出「源参数 + 分析配置 + 预览显示选项」（localStorage，纯函数校验）；
 - 推荐分析入口；
 - 分析配置入口：`/signal/analysis-config`；
 
@@ -205,9 +206,11 @@ source-recording-*.json  {
   format: 'source-iq-f32-v1',
   endianness: 'little',
   layout: 'interleaved IQ',
+  timebase: 'signal',        // 旧文件缺省按 wall，加载时用累计采样时间换算成信号时间
   sampleRate,
   totalSamples,
-  frames: [{ seq, timestamp, sampleRate, centerFrequencyHz,
+  frames: [{ seq, timestamp /* 信号时间 ms */, wallTimestamp /* 采集墙钟 */,
+             sampleRate, centerFrequencyHz,
              outputMode, waveform, modType, samplesPerSymbol,
              amplitude, sampleCount }]
 }
@@ -277,11 +280,13 @@ Z = R + j(ωL - 1/ωC)
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 固定使用源工作台数据，不再提供仿真切换；Smith 支持“S11 扫频”；
 - 录制支持内存与流式落盘；流式模式只保留元数据，导出时复制临时 f32；
-- 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
-- 时间戳模式按帧时间差调度，处理耗时会导致轻微漂移；
-- 直播源按帧定时器推进（默认 60fps × pointsPerFrame），不是按采样时钟实时输出；时间轴以 `sampleRate` 做样本↔时间换算，与墙钟存在倍率差，演示场景有意如此；
+- 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按信号时间调度，以及循环开关；
+- **时间语义**：`SourceFrame.timestamp` 是信号时间（sampleIndex/sampleRate×1000），`wallTimestamp` 是采集墙钟；录制时长、按时间戳回放、瀑布时间轴统一使用信号时间。旧录制（无 `timebase`）加载时按累计采样时间换算成信号时间，按时间戳回放仍是信号实时；
+- 直播源仍按帧定时器 60fps 推进（演示加速，默认 2048 点 @4096 Sa/s ≈ 30× 实时），因此信号时间与墙钟存在倍率差；但录制/回放/时间轴不再混用墙钟；
+- 时间戳回放按信号时间差调度，处理耗时会导致轻微漂移；
 - 源目录含 OFDM；有效子载波/CP 可调；远端 Mock 也实现了同一 OFDM 生成；
 - 工作台按源类型显示推荐分析入口，分析页固定使用源数据；
+- 场景预设保存源参数 + 分析配置 + 预览显示选项，导入导出走同一套 `validateSourcePreset` 校验（坏条目跳过，不污染本地存储）；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
 - 硬件 RF/DAC 后端未接；OutputBackend 目前只有模拟与回放实现。
 
@@ -289,7 +294,7 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 252 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁/DOM 面板
+npm run test          # 255 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁/DOM 面板
 npm run test:coverage # 覆盖率（v8，含阈值；CI 在 Linux 上跑）
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染

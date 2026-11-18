@@ -59,10 +59,12 @@
 - 本地分析为纯 IPC SourceFrame 消费者，不监听端口；socket.io 仅用于远程后端/远端 Mock
 - PowerTime/Eye/APD/Persistence Demo 固定使用“信号源工作台”的源数据
 - 源工作台支持录制（内存/流式分段，未导出录制在加载回放/导入 IQ/新录制前需确认）、回放与任意 IQ 导入（`.f32/.bin/.raw`）
+- **时间语义**：`SourceFrame.timestamp` 为信号时间（sampleIndex/sampleRate），`wallTimestamp` 为采集墙钟；录制时长/按时间戳回放/瀑布时间轴统一用信号时间
+- **场景预设**：保存/加载/导入导出源参数 + 分析配置（FFT/窗/dB/重叠/频谱语义）
 - S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”与延时/损耗校准
 - 源目录含 OFDM（有效子载波/CP 可调，远端 Mock 同样支持），按源类型显示推荐分析入口，分析页固定使用源数据
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
-- 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger` + `source:frame`
+- 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger/subscribe/unsubscribe` + `source:frame`（只投递给订阅窗口）
 - 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
 
 ## 信号分析组件
@@ -89,7 +91,7 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 
 文档：[SRC-01 信号源](./docs/SRC-01-信号源工作台.md) · [SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 252 个单测。
+> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 255 个单测。
 
 ## 快速开始
 
@@ -139,7 +141,7 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 ## 质量校验
 
 ```powershell
-npm test                 # 纯逻辑单测（当前 252 例）
+npm test                 # 纯逻辑单测（当前 255 例）
 npm run test:coverage    # 覆盖率（v8，含阈值；报告在 coverage/）
 npm run test:source-ipc  # 真实主进程 source/analysis/remote/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响

@@ -449,10 +449,13 @@ async function pickRecording(): Promise<LoadRecordingResult> {
   try {
     const metaRaw = JSON.parse(await fs.readFile(jsonPath, 'utf8')) as {
       format?: string
+      /** 新录制写 signal；旧录制缺省按 wall（用累计采样时间换算成信号时间） */
+      timebase?: 'signal' | 'wall'
       sampleRate?: number | null
       frames?: Array<{
         seq: number
         timestamp: number
+        wallTimestamp?: number
         sampleRate: number | null
         centerFrequencyHz: number | null
         outputMode: 'real' | 'complex'
@@ -478,20 +481,27 @@ async function pickRecording(): Promise<LoadRecordingResult> {
           })()
     const fallbackRate =
       typeof metaRaw.sampleRate === 'number' && metaRaw.sampleRate > 0 ? metaRaw.sampleRate : 4096
+    const wallTimebase = metaRaw.timebase !== 'signal'
     const frames: SourceFrame[] = []
     let off = 0
+    let signalMs = 0
     for (const m of metaRaw.frames) {
       const n = m.sampleCount >>> 0
       if (n === 0 || off + n * 8 > buf.length)
         return { ok: false, error: 'IQ 文件与元数据长度不匹配' }
       const data = all.subarray(off / 4, off / 4 + n * 2)
       off += n * 8
+      // 录制中途改过采样率时元数据顶层的 sampleRate 为 null，逐帧优先、再回退顶层/默认
+      const frameSampleRate =
+        typeof m.sampleRate === 'number' && m.sampleRate > 0 ? m.sampleRate : fallbackRate
+      // 旧录制只有墙钟 timestamp：按累计采样时间重算信号时间，保证按时间戳回放是信号实时
+      const timestamp = wallTimebase ? signalMs : m.timestamp
+      signalMs += (n / frameSampleRate) * 1000
       frames.push({
         seq: m.seq,
-        timestamp: m.timestamp,
-        // 录制中途改过采样率时元数据顶层的 sampleRate 为 null，逐帧优先、再回退顶层/默认
-        sampleRate:
-          typeof m.sampleRate === 'number' && m.sampleRate > 0 ? m.sampleRate : fallbackRate,
+        timestamp,
+        wallTimestamp: m.wallTimestamp ?? (wallTimebase ? m.timestamp : undefined),
+        sampleRate: frameSampleRate,
         centerFrequencyHz:
           typeof m.centerFrequencyHz === 'number' && Number.isFinite(m.centerFrequencyHz)
             ? m.centerFrequencyHz
@@ -550,11 +560,14 @@ async function pickArbitraryIq(
     const all = new Float32Array(ab)
     const perFrame = Math.max(1, Math.floor(config.pointsPerFrame))
     const frames: SourceFrame[] = []
+    const wallNow = Date.now()
     for (let start = 0, seq = 1; start < samples; start += perFrame, seq++) {
       const count = Math.min(perFrame, samples - start)
       frames.push({
         seq,
+        // 文件回放的信号时间由采样位置推导（与 sampleRate 一致）
         timestamp: (start / config.sampleRate) * 1000,
+        wallTimestamp: wallNow,
         sampleRate: config.sampleRate,
         centerFrequencyHz: config.freq,
         outputMode: config.outputMode,
@@ -701,12 +714,15 @@ export function registerSourceService(): () => void {
         format: 'source-iq-f32-v1',
         endianness: 'little',
         layout: 'interleaved IQ',
+        // 新录制时间基：timestamp 为信号时间；wallTimestamp 保留真实采集时刻
+        timebase: 'signal' as const,
         createdAt: new Date().toISOString(),
         sampleRate: sampleRates.size === 1 ? frames[0]!.sampleRate : null,
         totalSamples,
         frames: frames.map((f) => ({
           seq: f.seq,
           timestamp: f.timestamp,
+          wallTimestamp: f.wallTimestamp,
           sampleRate: f.sampleRate,
           centerFrequencyHz: f.centerFrequencyHz,
           outputMode: f.outputMode,

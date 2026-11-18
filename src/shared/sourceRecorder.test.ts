@@ -19,6 +19,8 @@ describe('SourceRecorder', () => {
     expect(s.recording).toBe(false)
     expect(s.frames).toBe(2)
     expect(s.samples).toBe(96)
+    // 信号时长 = 帧时间差（64 样本 @4096 Sa/s = 15.625ms）
+    expect(s.durationMs).toBeCloseTo(15.625, 6)
     const frames = r.getFrames()
     expect(frames[0]?.sampleCount).toBe(64)
     expect(frames[0]?.centerFrequencyHz).toBe(512)

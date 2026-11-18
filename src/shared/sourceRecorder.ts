@@ -6,7 +6,10 @@ import type { SourceFrame } from './sourceEngine'
 
 export interface RecordedFrameMeta {
   seq: number
+  /** 信号时间（ms，自录制首帧起累计） */
   timestamp: number
+  /** 采集墙钟（Unix ms，可选；用于还原真实采集时刻） */
+  wallTimestamp?: number
   sampleRate: number
   centerFrequencyHz: number
   outputMode: 'real' | 'complex'
@@ -73,6 +76,7 @@ export class SourceRecorder {
     this.frames.push({
       seq: frame.seq,
       timestamp: frame.timestamp,
+      wallTimestamp: frame.wallTimestamp,
       sampleRate: frame.sampleRate,
       centerFrequencyHz: frame.centerFrequencyHz,
       outputMode: frame.outputMode,
@@ -94,6 +98,7 @@ export class SourceRecorder {
       recording: this.active,
       frames: this.frames.length,
       samples: this.sampleCount,
+      // 信号时长（不是墙钟时长）：按帧信号时间差累计
       durationMs: first && last ? Math.max(0, last.timestamp - first.timestamp) : 0,
       truncated: this.truncated
     }

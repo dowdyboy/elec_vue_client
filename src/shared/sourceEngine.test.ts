@@ -13,7 +13,10 @@ describe('SourceEngine', () => {
     const e = new SourceEngine(cfg, { rng: lcg(1), now: () => 123 })
     const f = e.next(64)
     expect(f.seq).toBe(1)
-    expect(f.timestamp).toBe(123)
+    // timestamp 是信号时间（sampleIndex/sampleRate），wallTimestamp 才是墙钟
+    expect(f.timestamp).toBe(0)
+    expect(f.wallTimestamp).toBe(123)
+    expect(e.next(64).timestamp).toBeCloseTo((64 / cfg.sampleRate) * 1000, 6)
     expect(f.sampleRate).toBe(cfg.sampleRate)
     expect(f.centerFrequencyHz).toBe(1000)
     expect(f.outputMode).toBe('complex')
@@ -43,7 +46,9 @@ describe('SourceEngine', () => {
     )
     expect(e.next(16).modType).toBe('QPSK')
     e.reset()
-    expect(e.next(16).seq).toBe(1)
+    const first = e.next(16)
+    expect(first.seq).toBe(1)
+    expect(first.timestamp).toBe(0)
   })
 
   it('分析参数变更不重建生成器（相位/数字符号历史保持连续）', () => {

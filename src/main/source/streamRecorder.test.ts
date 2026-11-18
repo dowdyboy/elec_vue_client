@@ -47,15 +47,17 @@ describe('SourceStreamRecorder', () => {
     r.dispose()
   })
 
-  it('停止后时长冻结，不随状态轮询增长', async () => {
+  it('停止后信号时长冻结，不随状态轮询增长', async () => {
     const r = new SourceStreamRecorder()
     r.start()
-    r.push(frame(1))
+    for (let i = 1; i <= 3; i++) r.push(frame(i))
     await r.stop()
     const first = r.getStatus().durationMs
     await new Promise((resolve) => setTimeout(resolve, 80))
     const later = r.getStatus().durationMs
     expect(later).toBe(first)
+    // 帧 timestamp 为 10/20/30ms → 信号时长 20ms（不再用墙钟）
+    expect(first).toBe(20)
     r.dispose()
   })
 })

@@ -24,6 +24,7 @@ import {
   NFormItem,
   NGrid,
   NGi,
+  NInput,
   NInputNumber,
   NSelect,
   NSlider,
@@ -38,6 +39,15 @@ import { IqChart, SpectrumChart } from '@components/signal'
 import type { SourceFrame } from '../../../../shared/sourceEngine'
 import type { SignalAnalysisConfig } from '../../../../shared/signal'
 import { buildSourcePreviewSpectrum } from '../../../../shared/sourcePreview'
+import {
+  SOURCE_PRESET_STORAGE_KEY,
+  buildSourcePreset,
+  parsePresets,
+  presetToConfig,
+  serializePresets,
+  validatePresetMap,
+  type SourcePreset
+} from '../../../../shared/sourcePresets'
 import {
   SOURCE_CATALOG,
   sourceKindMeta,
@@ -59,6 +69,15 @@ const previewSpectrumOptions = [
   { label: '双边', value: 'complex' }
 ]
 const previewFftSize = ref(0)
+
+// ── 场景预设（源 + 分析配置 + 预览显示选项）──
+const presets = ref<Record<string, SourcePreset>>(readStoredPresets())
+const presetName = ref('')
+const presetKey = ref<string | null>(null)
+const presetImportRef = ref<HTMLInputElement | null>(null)
+const presetOptions = computed(() =>
+  Object.keys(presets.value).map((name) => ({ label: name, value: name }))
+)
 
 const running = ref(false)
 const sourceMode = ref<'live' | 'playback'>('live')
@@ -189,6 +208,129 @@ function hydrate(c: Partial<SignalAnalysisConfig>): void {
   if (typeof c.pulseDuty === 'number') pulseDuty.value = c.pulseDuty
   if (typeof c.toneSpacing === 'number') toneSpacing.value = c.toneSpacing
   if (typeof c.enabled === 'boolean') enabled.value = c.enabled
+}
+
+function readStoredPresets(): Record<string, SourcePreset> {
+  try {
+    const raw = localStorage.getItem(SOURCE_PRESET_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    const container =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'presets' in parsed
+        ? (parsed as { presets: unknown }).presets
+        : parsed
+    return validatePresetMap(container).presets
+  } catch {
+    return {}
+  }
+}
+
+function persistPresets(): void {
+  localStorage.setItem(SOURCE_PRESET_STORAGE_KEY, serializePresets(presets.value))
+}
+
+async function savePreset(): Promise<void> {
+  try {
+    const st = (await window.api.signalAnalysis.getStatus()) as {
+      config?: Partial<SignalAnalysisConfig>
+    }
+    const full = { ...(st.config ?? {}), ...configWith({}) } as SignalAnalysisConfig
+    const name = presetName.value.trim() || `场景 ${new Date().toLocaleString()}`
+    const preset = buildSourcePreset(name, full, {
+      previewSpectrum: previewSpectrumSetting.value
+    })
+    presets.value = { ...presets.value, [preset.name]: preset }
+    presetKey.value = preset.name
+    presetName.value = ''
+    persistPresets()
+    message.success(`已保存预设「${preset.name}」`)
+  } catch (e) {
+    message.error(`保存预设失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+async function loadPreset(): Promise<void> {
+  const preset = presetKey.value ? presets.value[presetKey.value] : null
+  if (!preset) {
+    message.warning('请先选择预设')
+    return
+  }
+  const r = (await window.api.source.setConfig(
+    presetToConfig(preset) as unknown as Record<string, unknown>
+  )) as { ok: boolean; error?: string }
+  if (!r.ok) {
+    message.error(r.error || '预设应用失败')
+    return
+  }
+  const a = (await window.api.signalAnalysis.setConfig(
+    preset.analysis as unknown as Record<string, unknown>
+  )) as { ok: boolean; error?: string }
+  if (!a.ok) message.warning(`源参数已应用，分析配置失败：${a.error || '未知错误'}`)
+  hydrate(preset.source as Partial<SignalAnalysisConfig>)
+  if (preset.ui.previewSpectrum) previewSpectrumSetting.value = preset.ui.previewSpectrum
+  await refreshStatus()
+  await refreshPlaybackStatus()
+  message.success(`已加载预设「${preset.name}」`)
+}
+
+function deletePreset(): void {
+  const key = presetKey.value
+  if (!key) return
+  dialog.warning({
+    title: '删除预设',
+    content: `确定删除「${key}」？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      const next = { ...presets.value }
+      delete next[key]
+      presets.value = next
+      presetKey.value = null
+      persistPresets()
+      message.success(`已删除预设「${key}」`)
+    }
+  })
+}
+
+function exportPresets(): void {
+  if (Object.keys(presets.value).length === 0) {
+    message.warning('当前没有预设可导出')
+    return
+  }
+  const blob = new Blob([serializePresets(presets.value)], {
+    type: 'application/json;charset=utf-8'
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `source-presets-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function triggerPresetImport(): void {
+  presetImportRef.value?.click()
+}
+
+async function onPresetImportFile(evt: Event): Promise<void> {
+  const input = evt.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const parsed = parsePresets(await file.text())
+    if (!parsed.ok || !parsed.presets) {
+      message.error(parsed.error || '预设文件解析失败')
+      return
+    }
+    const count = Object.keys(parsed.presets).length
+    presets.value = { ...presets.value, ...parsed.presets }
+    persistPresets()
+    message.success(`已导入 ${count} 个预设`)
+  } catch (e) {
+    message.error(`导入失败：${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    input.value = ''
+  }
 }
 
 async function refreshStatus(sync = false): Promise<void> {
@@ -623,7 +765,7 @@ onUnmounted(() => {
       :bordered="false"
       style="margin-bottom: 10px"
     >
-      有未导出的录制（{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
+      有未导出的录制（{{ recordFrames }} 帧 / {{ recordSamples }} 样本 / 信号时长
       {{ formatDuration(recordDurationMs) }}）。加载回放、导入 IQ 或开始新录制会丢弃它，请先导出。
     </NAlert>
     <div v-if="sourceMode === 'playback' || recording || recordFrames > 0" class="record-bar">
@@ -640,7 +782,7 @@ onUnmounted(() => {
         @update:value="onSeekPlayback"
       />
       <span v-if="sourceMode === 'playback'" class="playback-time">
-        {{ (playbackPositionMs / 1000).toFixed(1) }}s /
+        信号 {{ (playbackPositionMs / 1000).toFixed(1) }}s /
         {{ (playbackDurationMs / 1000).toFixed(1) }}s
       </span>
       <NSelect
@@ -662,7 +804,7 @@ onUnmounted(() => {
         size="tiny"
         :options="[
           { label: '固定 60fps', value: 'fixed' },
-          { label: '按时间戳', value: 'timestamp' }
+          { label: '按信号时间', value: 'timestamp' }
         ]"
         style="width: 116px"
         @update:value="onPlaybackTiming"
@@ -675,7 +817,7 @@ onUnmounted(() => {
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
       <NTag size="small" :bordered="false">{{ recordMode === 'stream' ? '流式' : '内存' }}</NTag>
       <span
-        >{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
+        >{{ recordFrames }} 帧 / {{ recordSamples }} 样本 / 信号
         {{ formatDuration(recordDurationMs) }}</span
       >
       <span v-if="recordTruncated" class="record-warn">已达录制上限，后续帧未记录</span>
@@ -804,6 +946,41 @@ onUnmounted(() => {
               </div>
             </NFormItem>
           </NForm>
+        </NCard>
+
+        <NCard size="small" title="场景预设" style="margin-top: 12px">
+          <div class="preset-row">
+            <NSelect
+              v-model:value="presetKey"
+              :options="presetOptions"
+              size="small"
+              placeholder="选择预设"
+              style="width: 160px"
+            />
+            <NButton size="small" :disabled="!presetKey" @click="loadPreset()">加载</NButton>
+            <NButton size="small" :disabled="!presetKey" @click="deletePreset()">删除</NButton>
+          </div>
+          <div class="preset-row">
+            <NInput
+              v-model:value="presetName"
+              size="small"
+              placeholder="预设名称（可空）"
+              style="width: 170px"
+            />
+            <NButton size="small" type="primary" @click="savePreset()">保存当前</NButton>
+            <NButton size="small" @click="exportPresets">导出 JSON</NButton>
+            <NButton size="small" @click="triggerPresetImport">导入 JSON</NButton>
+            <input
+              ref="presetImportRef"
+              type="file"
+              accept="application/json,.json"
+              class="preset-file"
+              @change="onPresetImportFile"
+            />
+          </div>
+          <div class="preset-hint">
+            保存源参数 + 分析配置（FFT/窗/dB/重叠/频谱语义）；源运行时加载会即时生效。
+          </div>
         </NCard>
       </NGi>
 
@@ -973,6 +1150,20 @@ onUnmounted(() => {
 }
 .source-desc {
   margin-top: 8px;
+  font-size: 12px;
+  color: #888;
+}
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.preset-file {
+  display: none;
+}
+.preset-hint {
   font-size: 12px;
   color: #888;
 }

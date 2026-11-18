@@ -19,8 +19,13 @@ import { createSignalGenerator, type SignalGenerator } from './signalDsp'
 
 export interface SourceFrame {
   seq: number
-  /** 生成时刻（Unix ms） */
+  /**
+   * 信号时间（ms，自源启动/回放首帧起累计）：sampleIndex / sampleRate × 1000。
+   * 录制时长、按时间戳回放、瀑布时间轴都用它，避免“帧定时器 60fps”与信号时间混用。
+   */
   timestamp: number
+  /** 生成时刻（Unix ms，墙钟；可选，旧录制/手工构造帧可能没有） */
+  wallTimestamp?: number
   sampleRate: number
   centerFrequencyHz: number
   outputMode: OutputMode
@@ -68,6 +73,8 @@ export class SourceEngine {
   private config: SignalAnalysisConfig
   private gen: SignalGenerator
   private seq = 0
+  /** 已产出的信号时间（ms）：跨帧累计，sampleRate 变更不会倒流/跳变 */
+  private signalTimeMs = 0
   private readonly rng?: () => number
   private readonly now: () => number
 
@@ -93,15 +100,20 @@ export class SourceEngine {
   reset(): void {
     this.gen = createSignalGenerator(this.config, { rng: this.rng })
     this.seq = 0
+    this.signalTimeMs = 0
   }
 
   next(n: number): SourceFrame {
     const count = Math.max(1, Math.floor(n))
     const data = this.gen.next(count)
     this.seq++
+    const signalTimestamp = this.signalTimeMs
+    const sampleRate = this.config.sampleRate > 0 ? this.config.sampleRate : 1
+    this.signalTimeMs += (count / sampleRate) * 1000
     return {
       seq: this.seq,
-      timestamp: this.now(),
+      timestamp: signalTimestamp,
+      wallTimestamp: this.now(),
       sampleRate: this.config.sampleRate,
       centerFrequencyHz: this.config.freq,
       outputMode: this.config.outputMode,
