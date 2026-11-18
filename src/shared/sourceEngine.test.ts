@@ -45,4 +45,32 @@ describe('SourceEngine', () => {
     e.reset()
     expect(e.next(16).seq).toBe(1)
   })
+
+  it('分析参数变更不重建生成器（相位/数字符号历史保持连续）', () => {
+    const cfg = {
+      ...defaultAnalysisConfig(),
+      waveform: 'digital' as const,
+      modType: 'QPSK' as const,
+      outputMode: 'complex' as const
+    }
+    const a = new SourceEngine(cfg, { rng: lcg(7) })
+    const b = new SourceEngine(cfg, { rng: lcg(7) })
+    a.next(256)
+    b.next(256)
+    // 只改分析/控制参数：不应重置相位与符号时钟
+    a.setConfig({
+      fftSize: 2048,
+      window: 'blackman',
+      overlap: 0.8,
+      dbScale: false,
+      spectrumMode: 'complex',
+      enabled: true
+    })
+    const fa = a.next(256)
+    const fb = b.next(256)
+    expect(Array.from(fa.data)).toEqual(Array.from(fb.data))
+    // 波形参数变更仍应重建（相位从 0 重新开始）
+    a.setConfig({ freq: 700 })
+    expect(a.next(64).centerFrequencyHz).toBe(700)
+  })
 })

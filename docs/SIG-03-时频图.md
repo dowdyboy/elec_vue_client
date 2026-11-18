@@ -42,6 +42,7 @@ ws.onmessage = (e) => {
 - **real 模式（默认）**：长度 = `fftSize/2`，单边 `0~Fs/2`，非 DC 已 ×2。
 - **complex 模式**：长度 = `fftSize`，完整复谱，通常 fftShift 后覆盖 `-Fs/2~+Fs/2`；负频是独立信息。
 - 行长度是强契约：行长变化（如 fftSize/模式调整）会清空旧瀑布并重建，避免混行黑条。
+- **帧元数据 `fftSize` 优先**：帧已给出时即使行长与之不符也保留帧值（允许服务端抽稀，频率轴/`timeStepSec` 仍按帧值换算），仅 dev 控制台告警一次；只有帧未给出时才按行长推导 `real→cols×2` / `complex→cols`。
 - 非有限值（NaN/Inf）在入口填 `-160 dB`。
 - 行元数据（均可选，帧优先于 props）：
 
@@ -124,15 +125,18 @@ interface SpectrogramProps {
 
 ## 四、交互
 
-| 操作                      | 行为                                            |
-| ------------------------- | ----------------------------------------------- |
-| 滚轮                      | 以光标为锚点缩放频率轴（≥8 bin）                |
-| 拖拽                      | 平移频率轴                                      |
-| 双击 / 右键「冻结」       | 冻结当前画面（数据继续累积，恢复后无缝续接）    |
-| 右键菜单                  | 冻结/恢复、复位频率、清空、导出 PNG/CSV         |
-| 悬停                      | 十字光标 + 频率/时间/电平读数（`cursorChange`） |
-| 触摸双指                  | 以双指中点为锚点缩放频率轴                      |
-| `f` / `0` / `Esc`（聚焦） | 冻结切换 / 复位频率 / 关闭菜单                  |
+| 操作                | 行为                                            |
+| ------------------- | ----------------------------------------------- |
+| 滚轮                | 以光标为锚点缩放频率轴（≥8 bin）                |
+| 拖拽                | 平移频率轴                                      |
+| 双击 / 右键「冻结」 | 冻结当前画面（数据继续累积，恢复后无缝续接）    |
+| 右键菜单            | 冻结/恢复、复位频率、清空、导出 PNG/CSV         |
+| 悬停                | 十字光标 + 频率/时间/电平读数（`cursorChange`） |
+| 触摸双指            | 以双指中点为锚点缩放频率轴                      |
+| `f` / `0` / `Esc`   | 冻结切换 / 复位频率 / 关闭菜单（悬停或聚焦时）  |
+
+- 键盘只在**最近悬停或聚焦的那一张图**上生效（同页多实例不互相抢键）；`Ctrl/Meta/Alt` 组合键与按住重复（`repeat`）不响应，焦点在输入框内时不响应。
+- 频率视图变化（缩放/平移/复位）同时 emit `frequencyChange` 与 `viewportChange`，载荷均为 `{ startBin, endBin, fullSpan }`。
 
 ## 五、暴露 API
 
@@ -153,7 +157,7 @@ exportPNG() / exportPNGAsync() / exportCSV({ maxRows? })
 dispose()
 ```
 
-**事件**：`ready`、`error`、`errorDetail({code,message})`、`cursorChange`、`contextmenu`、`update:paused`、`update:dbMin`/`update:dbMax`、`levelChange`、`frequencyChange`、`metaChange`、`exported`、`contextLost/contextRestored`。
+**事件**：`ready`、`error`、`errorDetail({code,message})`、`cursorChange`、`contextmenu`、`update:paused`、`update:dbMin`/`update:dbMax`、`levelChange`、`frequencyChange`、`viewportChange({startBin,endBin,fullSpan})`、`metaChange`、`exported`、`contextLost/contextRestored`。
 
 **插槽**：`<template #overlay>…</template>` 宿主自定义标注/告警框。
 

@@ -56,7 +56,7 @@
 - **信号分析 UI 组件**：`/signal/*`，不再承担源波形参数
 - 本地分析为纯 IPC SourceFrame 消费者，不监听端口；socket.io 仅用于远程后端/远端 Mock
 - PowerTime/Eye/APD/Persistence Demo 固定使用“信号源工作台”的源数据
-- 源工作台支持录制（内存/流式分段）、回放与任意 IQ 导入（`.f32/.bin/.raw`）
+- 源工作台支持录制（内存/流式分段，未导出录制在加载回放/导入 IQ/新录制前需确认）、回放与任意 IQ 导入（`.f32/.bin/.raw`）
 - S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”与延时/损耗校准
 - 源目录含 OFDM（有效子载波/CP 可调，远端 Mock 同样支持），按源类型显示推荐分析入口，分析页固定使用源数据
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)

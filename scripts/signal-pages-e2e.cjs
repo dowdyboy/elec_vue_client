@@ -11,6 +11,9 @@ app.whenReady().then(async () => {
   try {
     await wait(2200)
     const win = BrowserWindow.getAllWindows()[0]
+    win.webContents.on('console-message', (_e, level, msg) => {
+      if (level >= 2) console.log('[renderer]', String(msg))
+    })
     const js = (code) => win.webContents.executeJavaScript(code, true)
     await js(`location.hash = '#/source'`)
     await wait(700)
@@ -52,7 +55,10 @@ app.whenReady().then(async () => {
       if (!info.body.includes('数据源固定为')) throw new Error(`${route} no source-only hint`)
       if (info.selects !== 0) throw new Error(`${route} still has ${info.selects} selects`)
       const metric = info.body.match(/(\d+)\s*(脉冲|轨迹|帧|样本)/)
-      if (!metric || Number(metric[1]) <= 0) throw new Error(`${route} received no source data`)
+      if (!metric || Number(metric[1]) <= 0)
+        throw new Error(
+          `${route} received no source data; body=${JSON.stringify(info.body.slice(0, 400))}`
+        )
       out.push({
         route,
         hint: info.body.includes('数据源固定为'),

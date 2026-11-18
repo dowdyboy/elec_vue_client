@@ -277,7 +277,8 @@ function exportCSV(): void {
   a.href = url
   a.download = filename
   a.click()
-  URL.revokeObjectURL(url)
+  // 点击后同步 revoke 会让部分浏览器取消下载（blob 仍在异步读取）：延后释放
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
   emit('exported', { kind: 'csv', filename })
 }
 

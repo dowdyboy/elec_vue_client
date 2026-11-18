@@ -4,7 +4,8 @@ import {
   getWindowInfo,
   computeSpectrumRow,
   SpectrumAnalyzer,
-  SpectrogramAccumulator
+  SpectrogramAccumulator,
+  MAX_SPECTROGRAM_ROWS_PER_PUSH
 } from './signalFrames'
 
 /** 生成整数 bin 的复单音（可用于验证窗增益补偿后的绝对电平） */
@@ -129,5 +130,14 @@ describe('SpectrogramAccumulator（固定 dB 行）', () => {
     const ref = computeSpectrumRow(tone.subarray(0, 512), c, { forceDb: true })
     expect(peak(rows[0]!)).toBeLessThan(1)
     for (let i = 0; i < ref.length; i++) expect(rows[0]![i]).toBeCloseTo(ref[i]!, 3)
+  })
+
+  it('高 overlap + 大帧长时单次 push 行数被封顶，且保留最新行', () => {
+    const c = cfg({ fftSize: 64, window: 'hann', overlap: 0.9 })
+    const acc = new SpectrogramAccumulator()
+    const rows = acc.push(complexTone(4096, 8, 64), c)
+    expect(rows.length).toBe(MAX_SPECTROGRAM_ROWS_PER_PUSH)
+    // 最后一行的能量应来自数据尾段（最新样本），而不是被截断成空行
+    expect(peak(rows[rows.length - 1]!)).toBeGreaterThan(-120)
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defaultAnalysisConfig, sanitizeConfigPatch } from './signal'
+import { defaultAnalysisConfig, isValidCarrierFrequency, sanitizeConfigPatch } from './signal'
 
 describe('信号配置：频谱模式', () => {
   it('默认 real，兼容旧配置（缺省即单边实信号）', () => {
@@ -55,5 +55,15 @@ describe('信号配置：频谱模式', () => {
     expect(sanitizeConfigPatch({ ofdmCpRatio: 0.25 }).value).toEqual({ ofdmCpRatio: 0.25 })
     expect(sanitizeConfigPatch({ ofdmSubcarriers: 7 }).ok).toBe(false)
     expect(sanitizeConfigPatch({ ofdmCpRatio: 0.6 }).ok).toBe(false)
+  })
+
+  it('载波合法域助手：0 允许，Nyquist/负数/NaN 拒绝', () => {
+    expect(isValidCarrierFrequency(0, 4096)).toBe(true)
+    expect(isValidCarrierFrequency(512, 4096)).toBe(true)
+    expect(isValidCarrierFrequency(2047.9, 4096)).toBe(true)
+    expect(isValidCarrierFrequency(2048, 4096)).toBe(false)
+    expect(isValidCarrierFrequency(-1, 4096)).toBe(false)
+    expect(isValidCarrierFrequency(Number.NaN, 4096)).toBe(false)
+    expect(isValidCarrierFrequency(0, 0)).toBe(false)
   })
 })

@@ -15,7 +15,8 @@ contextBridge.exposeInMainWorld('api', {
     stop: () => invoke('source:stop'),
     getStatus: () => invoke('source:getStatus'),
     setConfig: (cfg) => invoke('source:setConfig', cfg),
-    recordStart: (stream) => invoke('source:recordStart', stream),
+    trigger: () => invoke('source:trigger'),
+    recordStart: (stream, opts) => invoke('source:recordStart', stream, opts),
     recordStop: () => invoke('source:recordStop'),
     recordStatus: () => invoke('source:recordStatus'),
     playbackStatus: () => invoke('source:playbackStatus'),
@@ -27,7 +28,16 @@ contextBridge.exposeInMainWorld('api', {
     setPlaybackSpeed: (v) => invoke('source:setPlaybackSpeed', v),
     setPlaybackTiming: (v) => invoke('source:setPlaybackTiming', v),
     setPlaybackLoop: (v) => invoke('source:setPlaybackLoop', v),
-    onFrame: (cb) => on('source:frame', cb)
+    onFrame: (cb) => {
+      const dispose = on('source:frame', cb)
+      void invoke('source:subscribe')
+      return () => {
+        dispose()
+        void invoke('source:unsubscribe')
+      }
+    },
+    subscribe: () => invoke('source:subscribe'),
+    unsubscribe: () => invoke('source:unsubscribe')
   },
   sweep: {
     start: () => invoke('sweep:start'),

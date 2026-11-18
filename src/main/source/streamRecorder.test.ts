@@ -46,4 +46,16 @@ describe('SourceStreamRecorder', () => {
     await r.stop()
     r.dispose()
   })
+
+  it('停止后时长冻结，不随状态轮询增长', async () => {
+    const r = new SourceStreamRecorder()
+    r.start()
+    r.push(frame(1))
+    await r.stop()
+    const first = r.getStatus().durationMs
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    const later = r.getStatus().durationMs
+    expect(later).toBe(first)
+    r.dispose()
+  })
 })

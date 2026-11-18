@@ -32,7 +32,11 @@ import {
   type ConstellationRange,
   type SampledConstellation
 } from './core/constellation'
-import { ConstellationAnalyzer, resolveAnalysisConfig } from './core/constellationAnalysis'
+import {
+  ConstellationAnalyzer,
+  resolveAnalysisConfig,
+  type ConstellationAnalyzerOptions
+} from './core/constellationAnalysis'
 import type {
   ConstellationAnalysisStats,
   ConstellationProps,
@@ -86,6 +90,26 @@ const stableAuto = new ConstellationAutoRange({ hysteresis: 0.2, holdFrames: 180
 const analysisStats = ref<ConstellationAnalysisStats | null>(null)
 let analyzer: ConstellationAnalyzer | null = null
 let analyzerKey = ''
+// analysis 配置缓存：键只在配置变化时重算（原实现每帧 JSON.stringify 配置 + 解析结果）
+let analysisKey = ''
+let analysisOptions: ConstellationAnalyzerOptions | null = null
+let analysisValid = false
+let analysisError = ''
+let analysisErrorReported = false
+/** 重算 analysis 配置缓存键（原实现每帧 JSON.stringify 配置 + 解析结果） */
+function cacheAnalysis(): void {
+  analysisKey = ''
+  analysisOptions = null
+  analysisValid = false
+  analysisError = ''
+  if (!props.analysis) return
+  const resolved = resolveAnalysisConfig(props.analysis, {})
+  analysisOptions = resolved.options
+  analysisValid = resolved.valid
+  analysisError = resolved.error ?? '星座分析配置无效'
+  analysisKey = JSON.stringify({ cfg: props.analysis, opt: resolved.options })
+}
+cacheAnalysis()
 let renderer: PointsRenderer | null = null
 let canvasRenderer: ConstellationCanvasRenderer | null = null
 let overlayCtx: CanvasRenderingContext2D | null = null
@@ -521,22 +545,24 @@ function sanitizePair(i: Float32Array, q: Float32Array): { i: Float32Array; q: F
 /** 仅在显式 analysis 配置下构造分析仪；纯显示路径不调用 */
 function ensureAnalyzer(): ConstellationAnalyzer | null {
   if (!props.analysis) return null
-  const resolved = resolveAnalysisConfig(props.analysis, {})
-  if (!resolved.valid) {
+  if (!analysisValid || !analysisOptions) {
     if (analysisStats.value) analysisStats.value = null
-    reportError('data', resolved.error ?? '星座分析配置无效')
+    // 无效配置只在配置变化后报一次（原实现每帧重复上报，持续刷错误）
+    if (!analysisErrorReported) {
+      analysisErrorReported = true
+      reportError('data', analysisError)
+    }
     return null
   }
-  const key = JSON.stringify({ cfg: props.analysis, opt: resolved.options })
-  if (analyzer && analyzerKey === key) return analyzer
-  if (analyzerKey !== key) {
+  if (analyzer && analyzerKey === analysisKey) return analyzer
+  if (analyzerKey !== analysisKey) {
     buffer.clear()
     pointCount.value = 0
     sampleCache = null
     resetAutoRange()
   }
-  analyzer = new ConstellationAnalyzer(resolved.options)
-  analyzerKey = key
+  analyzer = new ConstellationAnalyzer(analysisOptions)
+  analyzerKey = analysisKey
   analysisStats.value = null
   return analyzer
 }
@@ -834,16 +860,21 @@ watch(
   }
 )
 watch(
-  () => JSON.stringify(props.analysis ?? null),
-  (a, b) => {
-    if (a === b) return
+  () => props.analysis,
+  () => {
+    // 深监听：配置变化才重算缓存键并重置分析仪；内容等价（父组件重建同值对象）不重置缓冲
+    const prevKey = analysisKey
+    cacheAnalysis()
+    if (analysisKey === prevKey) return
+    analysisErrorReported = false // 新配置重新给一次报错机会
     resetAnalysis()
     buffer.clear()
     pointCount.value = 0
     sampleCache = null
     resetAutoRange()
     schedule()
-  }
+  },
+  { deep: true }
 )
 watch(
   () => props.viewport,

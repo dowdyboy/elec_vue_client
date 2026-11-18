@@ -27,6 +27,30 @@ describe('findEdge', () => {
   })
 })
 
+describe('findEdge 跨段边界（分帧追加）', () => {
+  it('prevSample 低于电平、新段首样本高于电平，rising 命中新段首样本 s', () => {
+    const seg = new Float32Array([0.5, 0.4, -0.6])
+    // 无 prevSample：段内无 rising 边沿（0.5→0.4 未跨 0，0.4→-0.6 是下降沿）
+    expect(findEdge(seg, 0, seg.length, 0, 'rising', 0)).toBe(-1)
+    // 提供上段末样本 -0.2：(-0.2 → 0.5) 跨 0，命中 s
+    expect(findEdge(seg, 0, seg.length, 0, 'rising', 0, -0.2)).toBe(0)
+    // dropped 偏移同样生效
+    expect(findEdge(seg, 0, seg.length, 0, 'rising', 1000, -0.2)).toBe(1000)
+  })
+  it('新段只有 1 个样本时也能判边界；falling 对称生效', () => {
+    const one = new Float32Array([0.5])
+    expect(findEdge(one, 0, 1, 0, 'rising', 0, -0.2)).toBe(0)
+    expect(findEdge(one, 0, 1, 0, 'rising', 0)).toBe(-1) // 无 prevSample 保持旧行为
+    expect(findEdge(one, 0, 1, 0.6, 'falling', 0, 0.7)).toBe(0)
+    expect(findEdge(one, 0, 1, 0.6, 'falling', 0)).toBe(-1)
+  })
+  it('边界样本未跨电平时不误报，回落到段内扫描', () => {
+    const seg = new Float32Array([0.4, 0.6, 0.5])
+    expect(findEdge(seg, 0, seg.length, 0, 'rising', 0, 0.2)).toBe(-1) // 0.4 已在线以上
+    expect(findEdge(seg, 0, seg.length, 0.55, 'rising', 5, 0.2)).toBe(6) // 段内 0.6→index 1
+  })
+})
+
 describe('triggerWindow', () => {
   it('preTrigger=0.25：触发点在窗口 1/4 处', () => {
     const w = triggerWindow(1000, 400, 0.25, 0, 2000)

@@ -26,6 +26,8 @@ export class SourceStreamRecorder {
   private frames: RecordedFrameMeta[] = []
   private samples = 0
   private startedAt = 0
+  /** 停止时刻（冻结时长；未停止为 0，避免 UI 轮询时 durationMs 持续增长） */
+  private stoppedAt = 0
   private active = false
   private truncated = false
   private pendingBytes = 0
@@ -49,6 +51,7 @@ export class SourceStreamRecorder {
     this.frames = []
     this.samples = 0
     this.startedAt = Date.now()
+    this.stoppedAt = 0
     this.active = true
     this.truncated = false
     this.pendingBytes = 0
@@ -63,6 +66,7 @@ export class SourceStreamRecorder {
       console.error('[source] stream error', e)
       this.truncated = true
       this.active = false
+      this.stoppedAt = Date.now()
       if (this.ws === ws) this.ws = null
     })
     this.ws = ws
@@ -77,6 +81,7 @@ export class SourceStreamRecorder {
       if (this.pendingBytes + buf.length > this.maxPendingBytes) {
         this.truncated = true
         this.active = false
+        this.stoppedAt = Date.now()
         const ws = this.ws
         this.ws = null
         if (ws) {
@@ -127,6 +132,7 @@ export class SourceStreamRecorder {
       console.error('[source] stream write failed', e)
       this.active = false
       this.truncated = true
+      this.stoppedAt = Date.now()
     }
   }
 
@@ -142,14 +148,17 @@ export class SourceStreamRecorder {
     }
     await Promise.all(this.closers)
     this.closers = []
+    if (!this.stoppedAt) this.stoppedAt = Date.now()
   }
 
   getStatus(): SourceRecorderStatus {
+    const end = this.active ? Date.now() : this.stoppedAt || Date.now()
     return {
       recording: this.active,
       frames: this.frames.length,
       samples: this.samples,
-      durationMs: this.frames.length ? Date.now() - this.startedAt : 0,
+      // 停止后时长冻结在停止时刻，避免工作台每秒轮询时读数持续增长
+      durationMs: this.frames.length ? Math.max(0, end - this.startedAt) : 0,
       truncated: this.truncated
     }
   }
@@ -183,6 +192,8 @@ export class SourceStreamRecorder {
     this.currentBytes = 0
     this.frames = []
     this.samples = 0
+    this.startedAt = 0
+    this.stoppedAt = 0
     this.active = false
     this.truncated = false
     this.pendingBytes = 0

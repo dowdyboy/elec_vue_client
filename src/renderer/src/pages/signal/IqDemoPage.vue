@@ -39,6 +39,8 @@ const envelopeOn = ref(false)
 const persistenceVal = ref(0)
 const exportDir = ref<string>(localStorage.getItem('sig-iq-export-dir') ?? '')
 const hasData = ref(false)
+/** 本页主动停掉分析帧推送后显示「恢复推流」（信号源本身仍在运行） */
+const streamStopped = ref(false)
 const sourceMode = ref<'real' | 'complex'>('real')
 
 // ── 全部对外属性演示 ──
@@ -212,14 +214,29 @@ function onExportCSV(): void {
   iqRef.value?.exportCSV()
 }
 
-/** 停止推流（不切页）：组件保持挂载，约 3 秒后可观察「数据流中断」角标 */
+/** 停止分析帧推送（不切页、不停源）：组件保持挂载，约 3 秒后可观察「数据流中断」角标 */
 async function onStopStream(): Promise<void> {
   try {
     await window.api.signalAnalysis.stop()
     await window.api.remoteMock.stop()
-    message.success('已停止推流（组件保持挂载，可观察中断角标）')
+    streamStopped.value = true
+    message.success('已停止分析帧推送（信号源仍在运行，可点「恢复推流」）')
   } catch (e) {
     message.error(`停止失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** 重新启动本地分析消费者（源已在运行时只订阅，不重启源） */
+async function onRestartStream(): Promise<void> {
+  const r = (await window.api.signalAnalysis.start({ mode: 'local' }).catch(() => null)) as {
+    ok?: boolean
+    error?: string
+  } | null
+  if (r?.ok) {
+    streamStopped.value = false
+    message.success('已恢复分析帧推送')
+  } else {
+    message.error(r?.error || '恢复失败')
   }
 }
 
@@ -303,7 +320,8 @@ watch(adapterKey, (v) => {
         <NButton size="tiny" @click="onBackToLatest">回到最新</NButton>
         <NButton size="tiny" @click="onExportPNG">截图 PNG</NButton>
         <NButton size="tiny" @click="onExportCSV">导出 CSV</NButton>
-        <NButton size="tiny" @click="onStopStream">停止推流</NButton>
+        <NButton v-if="!streamStopped" size="tiny" @click="onStopStream">停止推流</NButton>
+        <NButton v-else size="tiny" type="primary" @click="onRestartStream">恢复推流</NButton>
         <NButton size="tiny" @click="onClear">清空</NButton>
         <span v-if="!hasData && !sig.remoteError.value" style="color: #18a058; font-size: 12px"
           >等待服务端（请至“信号源工作台”启动）…</span

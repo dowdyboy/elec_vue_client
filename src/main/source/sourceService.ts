@@ -25,6 +25,8 @@ export interface SourceStatus {
   running: boolean
   mode: 'live' | 'playback'
   backend: 'simulated' | 'playback'
+  /** 回放是否处于暂停（live 恒为 false） */
+  paused: boolean
   config: SignalAnalysisConfig
 }
 
@@ -38,11 +40,15 @@ export class SourceService {
   private playbackTiming: 'fixed' | 'timestamp' = 'fixed'
   private frameSeq = 0
   private subscribers = new Set<(frame: SourceFrame) => void>()
+  /** 渲染进程窗口订阅计数（source:frame 只投递给订阅窗口） */
+  private windowSubscribers = new Map<number, number>()
   private recorder = new SourceRecorder()
   private streamRecorder = new SourceStreamRecorder()
   private recordMode: 'memory' | 'stream' = 'memory'
   private playback: SourcePlayback | null = null
   private playbackSpeed = 1
+  /** 当前录制是否已导出成功（start 置 false；导出成功后置 true） */
+  private recordExported = true
 
   constructor(initial?: SignalAnalysisConfig) {
     this.config = initial ? { ...initial } : defaultAnalysisConfig()
@@ -59,7 +65,9 @@ export class SourceService {
 
   private startTimer(): void {
     if (this.timer) return
-    const interval = Math.max(4, Math.round(1000 / 60 / this.playbackSpeed))
+    // 回放倍速只作用于回放；直播源固定 60fps（否则 4x 回放后直播会变成 240fps）
+    const speed = this.playbackBackend ? this.playbackSpeed : 1
+    const interval = Math.max(4, Math.round(1000 / 60 / speed))
     this.timer = setInterval(() => this.tick(), interval)
   }
 
@@ -78,7 +86,11 @@ export class SourceService {
     const allowed = [0.25, 0.5, 1, 2, 4]
     if (!allowed.includes(speed)) return false
     this.playbackSpeed = speed
-    if (this.playback && this.playbackTiming === 'timestamp') {
+    // 没有回放对象时倍速不影响直播源；回放暂停时也不应重启空闲定时器
+    if (!this.playback) return true
+    const st = this.playback.getStatus()
+    if (!st.playing || st.paused) return true
+    if (this.playbackTiming === 'timestamp') {
       this.scheduleTimestampPlayback()
     } else if (this.timer) {
       clearInterval(this.timer)
@@ -93,6 +105,8 @@ export class SourceService {
     this.playbackTiming = timing
     if (this.playback) {
       this.clearTimers()
+      const st = this.playback.getStatus()
+      if (!st.playing || st.paused) return true
       if (timing === 'fixed') this.startTimer()
       else this.scheduleTimestampPlayback()
     }
@@ -128,11 +142,18 @@ export class SourceService {
       clearTimeout(this.playbackTimer)
       this.playbackTimer = null
     }
+    // 固定帧率模式暂停时停掉空闲定时器：否则 running 仍为 true，且每秒空转 60 次
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
     return true
   }
 
   resumePlayback(): boolean {
     if (!this.playback) return false
+    const st = this.playback.getStatus()
+    if (!st.playing) return false
     this.playback.resume()
     if (this.playbackTiming === 'timestamp') this.scheduleTimestampPlayback()
     else this.startTimer()
@@ -183,6 +204,8 @@ export class SourceService {
 
   stop(): void {
     this.clearTimers()
+    // 停止输出时同步把回放置为停止（回放对象保留，可重新回放）；避免「已停止」但 playbackStatus.playing 仍为 true
+    if (this.playback?.getStatus().playing) this.playback.stop()
   }
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
@@ -191,10 +214,12 @@ export class SourceService {
   }
 
   getStatus(): SourceStatus {
+    const pb = this.playback?.getStatus()
     return {
-      running: !!this.timer || !!this.playbackTimer,
+      running: !!this.timer || !!this.playbackTimer || !!pb?.playing,
       mode: this.playback ? 'playback' : 'live',
       backend: this.playbackBackend?.kind ?? 'simulated',
+      paused: !!pb?.paused,
       config: { ...this.config }
     }
   }
@@ -204,21 +229,45 @@ export class SourceService {
     return () => this.subscribers.delete(cb)
   }
 
-  trigger(): void {
-    this.tick(true)
+  /** 渲染进程窗口订阅 source:frame（按 webContents 引用计数；未订阅窗口不再收到 60fps 原始帧） */
+  subscribeWindow(id: number): void {
+    this.windowSubscribers.set(id, (this.windowSubscribers.get(id) ?? 0) + 1)
   }
 
-  private tick(force = false): void {
-    if (!force && !this.config.enabled) return
+  unsubscribeWindow(id: number): void {
+    const left = (this.windowSubscribers.get(id) ?? 0) - 1
+    if (left > 0) this.windowSubscribers.set(id, left)
+    else this.windowSubscribers.delete(id)
+  }
+
+  /** 页面 reload/销毁时清空该窗口计数（旧页面不会再 unsubscribe） */
+  clearWindowSubscriber(id: number): void {
+    this.windowSubscribers.delete(id)
+  }
+
+  hasWindowSubscribers(): boolean {
+    return this.windowSubscribers.size > 0
+  }
+
+  /** 单帧触发：返回是否真的产生并广播了一帧 */
+  trigger(): boolean {
+    return this.tick(true)
+  }
+
+  private tick(force = false): boolean {
+    // 「输出/推送」只门控直播生成；回放由用户显式播放控制，两种调度方式保持一致
+    if (!force && !this.playbackBackend && !this.config.enabled) return false
     try {
       const frame = this.playbackBackend ? this.playbackBackend.next() : this.liveBackend.next()
       if (!frame) {
         if (this.playback && !this.playback.getStatus().playing) this.stop()
-        return
+        return false
       }
       this.emitFrame(frame)
+      return true
     } catch (e) {
       console.error('[source] tick failed', e)
+      return false
     }
   }
 
@@ -267,19 +316,46 @@ export class SourceService {
         console.error('[source] subscriber failed', e)
       }
     }
+    // 原始源帧只投递给已订阅窗口：无人看图时不再对每个窗口做 60fps 的宽 IPC 序列化
+    if (this.windowSubscribers.size === 0) return
+    const ids = new Set(this.windowSubscribers.keys())
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send('source:frame', frame)
+      if (win.isDestroyed()) continue
+      const wc = win.webContents
+      if (wc.isDestroyed() || !ids.has(wc.id)) continue
+      try {
+        wc.send('source:frame', frame)
+      } catch {
+        // 窗口销毁/重载竞态：跳过该窗口，不影响其它消费者
+      }
     }
   }
 
   dispose(): void {
     this.stop()
     this.subscribers.clear()
+    this.windowSubscribers.clear()
     this.recorder.reset()
     this.streamRecorder.dispose()
   }
 
-  recordStart(stream = false): void {
+  /** 是否存在「已录制但尚未导出」的数据（加载回放/导入 IQ/新录制会丢弃它，需先确认） */
+  hasUnexportedRecording(): boolean {
+    const status =
+      this.recordMode === 'stream' ? this.streamRecorder.getStatus() : this.recorder.getStatus()
+    return status.frames > 0 && !this.recordExported
+  }
+
+  markRecordingExported(): void {
+    this.recordExported = true
+  }
+
+  recordStart(
+    stream = false,
+    opts: { confirmDiscard?: boolean } = {}
+  ): { ok: boolean; needsConfirm?: boolean } {
+    if (this.hasUnexportedRecording() && !opts.confirmDiscard)
+      return { ok: false, needsConfirm: true }
     if (stream) {
       this.recorder.reset()
       this.recordMode = 'stream'
@@ -289,6 +365,8 @@ export class SourceService {
       this.recordMode = 'memory'
       this.recorder.start()
     }
+    this.recordExported = false
+    return { ok: true }
   }
 
   async recordStop(): Promise<void> {
@@ -296,10 +374,17 @@ export class SourceService {
     else this.recorder.stop()
   }
 
-  recordStatus(): ReturnType<SourceRecorder['getStatus']> {
-    return this.recordMode === 'stream'
-      ? this.streamRecorder.getStatus()
-      : this.recorder.getStatus()
+  recordStatus(): ReturnType<SourceRecorder['getStatus']> & {
+    mode: 'memory' | 'stream'
+    hasUnexported: boolean
+  } {
+    const status =
+      this.recordMode === 'stream' ? this.streamRecorder.getStatus() : this.recorder.getStatus()
+    return {
+      ...status,
+      mode: this.recordMode,
+      hasUnexported: this.hasUnexportedRecording()
+    }
   }
 
   recordFrames(): ReturnType<SourceRecorder['getFrames']> {
@@ -364,11 +449,12 @@ async function pickRecording(): Promise<LoadRecordingResult> {
   try {
     const metaRaw = JSON.parse(await fs.readFile(jsonPath, 'utf8')) as {
       format?: string
+      sampleRate?: number | null
       frames?: Array<{
         seq: number
         timestamp: number
-        sampleRate: number
-        centerFrequencyHz: number
+        sampleRate: number | null
+        centerFrequencyHz: number | null
         outputMode: 'real' | 'complex'
         waveform: SourceFrame['waveform']
         modType: SourceFrame['modType']
@@ -380,22 +466,36 @@ async function pickRecording(): Promise<LoadRecordingResult> {
     if (metaRaw.format !== 'source-iq-f32-v1' || !Array.isArray(metaRaw.frames))
       return { ok: false, error: '元数据格式不是 source-iq-f32-v1' }
     const buf = await fs.readFile(f32Path)
+    // 大录制（1GB 级）不再逐帧拷贝：整体只保有一份 Float32 视图，帧用 subarray 共享内存。
+    // readFile 返回的 Buffer 通常自成一块 ArrayBuffer（byteOffset 0），此时零拷贝；否则退回一次拷贝。
+    const all =
+      buf.byteOffset % 4 === 0
+        ? new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4))
+        : (() => {
+            const copy = new Uint8Array(buf.byteLength)
+            copy.set(buf)
+            return new Float32Array(copy.buffer)
+          })()
+    const fallbackRate =
+      typeof metaRaw.sampleRate === 'number' && metaRaw.sampleRate > 0 ? metaRaw.sampleRate : 4096
     const frames: SourceFrame[] = []
     let off = 0
     for (const m of metaRaw.frames) {
       const n = m.sampleCount >>> 0
       if (n === 0 || off + n * 8 > buf.length)
         return { ok: false, error: 'IQ 文件与元数据长度不匹配' }
-      const data = new Float32Array(n * 2)
-      for (let k = 0; k < n * 2; k++) {
-        data[k] = buf.readFloatLE(off + k * 4)
-      }
+      const data = all.subarray(off / 4, off / 4 + n * 2)
       off += n * 8
       frames.push({
         seq: m.seq,
         timestamp: m.timestamp,
-        sampleRate: m.sampleRate,
-        centerFrequencyHz: m.centerFrequencyHz,
+        // 录制中途改过采样率时元数据顶层的 sampleRate 为 null，逐帧优先、再回退顶层/默认
+        sampleRate:
+          typeof m.sampleRate === 'number' && m.sampleRate > 0 ? m.sampleRate : fallbackRate,
+        centerFrequencyHz:
+          typeof m.centerFrequencyHz === 'number' && Number.isFinite(m.centerFrequencyHz)
+            ? m.centerFrequencyHz
+            : 0,
         outputMode: m.outputMode,
         waveform: m.waveform,
         modType: m.modType,
@@ -473,6 +573,34 @@ async function pickArbitraryIq(
 
 export function registerSourceService(): () => void {
   const service = getSourceService()
+  /** 已挂过 destroyed/navigation 监听的 webContents，避免重复挂 */
+  const watchedSenders = new Set<number>()
+
+  ipcMain.handle('source:subscribe', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const id = e.sender.id
+    service.subscribeWindow(id)
+    if (!watchedSenders.has(id)) {
+      watchedSenders.add(id)
+      e.sender.once('destroyed', () => {
+        watchedSenders.delete(id)
+        service.clearWindowSubscriber(id)
+      })
+      // 跨文档导航/刷新后旧订阅作废（did-navigate 不含 hash 路由切换）
+      e.sender.on('did-navigate', () => service.clearWindowSubscriber(id))
+      e.sender.on('render-process-gone', () => {
+        watchedSenders.delete(id)
+        service.clearWindowSubscriber(id)
+      })
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('source:unsubscribe', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    service.unsubscribeWindow(e.sender.id)
+    return { ok: true }
+  })
 
   ipcMain.handle('source:start', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
@@ -501,15 +629,18 @@ export function registerSourceService(): () => void {
 
   ipcMain.handle('source:trigger', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
-    service.trigger()
-    return { ok: true, seq: service.lastSeq }
+    const emitted = service.trigger()
+    return { ok: true, emitted, seq: service.lastSeq }
   })
 
-  ipcMain.handle('source:recordStart', (e, stream: unknown) => {
-    if (!isTrustedSender(e)) return FORBIDDEN
-    service.recordStart(!!stream)
-    return { ok: true, status: service.recordStatus() }
-  })
+  ipcMain.handle(
+    'source:recordStart',
+    (e, stream: unknown, opts?: { confirmDiscard?: boolean }) => {
+      if (!isTrustedSender(e)) return FORBIDDEN
+      const r = service.recordStart(!!stream, { confirmDiscard: opts?.confirmDiscard === true })
+      return { ...r, status: service.recordStatus() }
+    }
+  )
 
   ipcMain.handle('source:recordStop', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
@@ -525,9 +656,9 @@ export function registerSourceService(): () => void {
   ipcMain.handle('source:recordExport', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     const streamMode = service.isStreamRecordingMode()
-    const frames = streamMode ? service.streamFrames() : service.recordFrames()
-    if (frames.length === 0) return { ok: false, error: '没有可导出的录制帧' }
-    await service.recordStop()
+    // 先确认有数据、再弹保存框；取消保存不会顺手停掉正在进行的录制
+    const preview = streamMode ? service.streamFrames() : service.recordFrames()
+    if (preview.length === 0) return { ok: false, error: '没有可导出的录制帧' }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const opts = {
       title: '导出源录制（原始 IQ + 元数据）',
@@ -546,55 +677,64 @@ export function registerSourceService(): () => void {
       ? ret.filePath
       : `${ret.filePath}.f32`
     const jsonPath = f32Path.replace(/\.f32$/i, '.json')
-    if (streamMode) {
-      await service.copyStreamRecording(f32Path)
-    } else {
-      const rawFrames = frames as ReturnType<SourceRecorder['getFrames']>
-      const totalFloats = rawFrames.reduce((n, f) => n + f.data.length, 0)
-      const buf = Buffer.allocUnsafe(totalFloats * 4)
-      let off = 0
-      for (const f of rawFrames) {
-        for (let i = 0; i < f.data.length; i++) {
-          buf.writeFloatLE(f.data[i]!, off)
-          off += 4
+    try {
+      await service.recordStop()
+      const frames = streamMode ? service.streamFrames() : service.recordFrames()
+      if (streamMode) {
+        await service.copyStreamRecording(f32Path)
+      } else {
+        const rawFrames = frames as ReturnType<SourceRecorder['getFrames']>
+        const totalFloats = rawFrames.reduce((n, f) => n + f.data.length, 0)
+        const buf = Buffer.allocUnsafe(totalFloats * 4)
+        let off = 0
+        for (const f of rawFrames) {
+          for (let i = 0; i < f.data.length; i++) {
+            buf.writeFloatLE(f.data[i]!, off)
+            off += 4
+          }
         }
+        await fs.writeFile(f32Path, buf)
       }
-      await fs.writeFile(f32Path, buf)
-    }
-    const sampleRates = new Set(frames.map((f) => f.sampleRate))
-    const totalSamples = frames.reduce((n, f) => n + f.sampleCount, 0)
-    const meta = {
-      format: 'source-iq-f32-v1',
-      endianness: 'little',
-      layout: 'interleaved IQ',
-      createdAt: new Date().toISOString(),
-      sampleRate: sampleRates.size === 1 ? frames[0]!.sampleRate : null,
-      totalSamples,
-      frames: frames.map((f) => ({
-        seq: f.seq,
-        timestamp: f.timestamp,
-        sampleRate: f.sampleRate,
-        centerFrequencyHz: f.centerFrequencyHz,
-        outputMode: f.outputMode,
-        waveform: f.waveform,
-        modType: f.modType,
-        samplesPerSymbol: f.samplesPerSymbol,
-        amplitude: f.amplitude,
-        sampleCount: f.sampleCount
-      }))
-    }
-    await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2), 'utf8')
-    return {
-      ok: true,
-      path: f32Path,
-      metaPath: jsonPath,
-      frames: frames.length,
-      samples: totalSamples
+      const sampleRates = new Set(frames.map((f) => f.sampleRate))
+      const totalSamples = frames.reduce((n, f) => n + f.sampleCount, 0)
+      const meta = {
+        format: 'source-iq-f32-v1',
+        endianness: 'little',
+        layout: 'interleaved IQ',
+        createdAt: new Date().toISOString(),
+        sampleRate: sampleRates.size === 1 ? frames[0]!.sampleRate : null,
+        totalSamples,
+        frames: frames.map((f) => ({
+          seq: f.seq,
+          timestamp: f.timestamp,
+          sampleRate: f.sampleRate,
+          centerFrequencyHz: f.centerFrequencyHz,
+          outputMode: f.outputMode,
+          waveform: f.waveform,
+          modType: f.modType,
+          samplesPerSymbol: f.samplesPerSymbol,
+          amplitude: f.amplitude,
+          sampleCount: f.sampleCount
+        }))
+      }
+      await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2), 'utf8')
+      service.markRecordingExported()
+      return {
+        ok: true,
+        path: f32Path,
+        metaPath: jsonPath,
+        frames: frames.length,
+        samples: totalSamples
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
-  ipcMain.handle('source:importIq', async (e) => {
+  ipcMain.handle('source:importIq', async (e, opts?: { confirmDiscard?: boolean }) => {
     if (!isTrustedSender(e)) return FORBIDDEN
+    if (service.hasUnexportedRecording() && opts?.confirmDiscard !== true)
+      return { ok: false, needsConfirm: true, error: '存在未导出的录制，先导出或确认丢弃' }
     const r = await pickArbitraryIq(service.getStatus().config)
     if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
     await service.loadPlayback(r.frames)
@@ -602,8 +742,10 @@ export function registerSourceService(): () => void {
     return { ok: true, path: r.path, truncated: r.truncated, status: service.playbackStatus() }
   })
 
-  ipcMain.handle('source:loadPlayback', async (e) => {
+  ipcMain.handle('source:loadPlayback', async (e, opts?: { confirmDiscard?: boolean }) => {
     if (!isTrustedSender(e)) return FORBIDDEN
+    if (service.hasUnexportedRecording() && opts?.confirmDiscard !== true)
+      return { ok: false, needsConfirm: true, error: '存在未导出的录制，先导出或确认丢弃' }
     const r = await pickRecording()
     if (!r.ok || !r.frames) return { ok: false, canceled: r.canceled, error: r.error }
     await service.loadPlayback(r.frames)
@@ -668,6 +810,9 @@ export function registerSourceService(): () => void {
   return () => {
     service.dispose()
     sourceServiceInstance = null
+    watchedSenders.clear()
+    ipcMain.removeHandler('source:subscribe')
+    ipcMain.removeHandler('source:unsubscribe')
     ipcMain.removeHandler('source:start')
     ipcMain.removeHandler('source:stop')
     ipcMain.removeHandler('source:getStatus')

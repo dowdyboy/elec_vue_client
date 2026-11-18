@@ -8,7 +8,7 @@ import {
   type SignalQualityMetrics
 } from '@components/signal'
 import { useSignalAnalysis } from '@renderer/composables/useSignalAnalysis'
-import { iqToAmplitude } from '../../../../shared/sourceAdapters'
+import { iqToPowerDb } from '../../../../shared/sourceAdapters'
 
 const chartRef = ref<InstanceType<typeof ApdCcdfChart> | null>(null)
 const sig = useSignalAnalysis({ autoSubscribe: true })
@@ -33,8 +33,9 @@ function clear(): void {
 }
 
 // 固定消费信号源工作台的 IQ 帧；没有仿真 PAPR 数据源
+// APD/CCDF 分析按 dB 解析样本，因此送 20log10|IQ|（dB，相对满量程）
 sig.onIq((data) => {
-  chartRef.value?.appendData(iqToAmplitude(data))
+  chartRef.value?.appendData(iqToPowerDb(data))
   updateStats()
 })
 </script>
@@ -58,15 +59,16 @@ sig.onIq((data) => {
         theme="spectrum"
       />
       <div class="apd-hint">
-        APD 为各电平出现概率，CCDF 为超过该电平的概率；PAPR
-        来自峰值-均值。稀疏尖峰会抬高高功率尾部。
+        APD 为各电平出现概率，CCDF 为超过该电平的概率；PAPR 来自峰值-均值。
+        送进来的为功率样本（dB，相对满量程），满幅 CW ≈ 0 dB；稀疏尖峰会抬高高功率尾部。
       </div>
     </NCard>
 
     <SignalQualityPanel
       title="PAPR / 功率"
       :metrics="metrics"
-      :thresholds="{ paprDbMax: 18, powerDbmMin: -40, powerDbmMax: 20 }"
+      :thresholds="{ paprDbMax: 18, powerDbmMin: -80, powerDbmMax: 3 }"
+      power-unit="dBFS"
     />
   </div>
 </template>

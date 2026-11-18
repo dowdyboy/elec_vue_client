@@ -136,8 +136,11 @@ OFDM 生成：
 
 ```text
 source:start / source:stop / source:getStatus / source:setConfig / source:trigger
+source:subscribe / source:unsubscribe   # source:frame 只投递给已订阅窗口
 source:frame  →  SourceFrame
 ```
+
+> `window.api.source.onFrame()` 在预加载层自动登记/注销订阅；工作台卸载后源仍运行也不会再向该窗口推送 60fps 原始 IQ。
 
 源工作台已切到 `window.api.source`，不再通过分析服务启动源。启动源后同时启动本地 `signalAnalysis` 消费者，分析 UI 页面即可收到 `signal:analysis`。
 
@@ -187,9 +190,12 @@ PowerTime/Eye/APD/Persistence Demo 固定使用信号源工作台的数据，不
 源工作台支持：
 
 - 开始/停止录制；
-- 显示录制帧数/样本数/时长；
+- 显示录制帧数/样本数/时长；**停止后时长冻结**（不再随状态轮询增长）；
 - 达到上限后标记截断并停止；
-- 导出为 `.f32` + `.json`。
+- 导出为 `.f32` + `.json`；
+- **未导出保护**：存在已录制未导出的数据时，开始新录制 / 加载回放 / 导入 IQ 会先返回 `needsConfirm`，工作台弹窗确认后才丢弃（`source:recordStart`、`source:loadPlayback`、`source:importIq` 均支持 `{ confirmDiscard: true }` 续行）；
+- **导出不打断录制**：先弹保存框选路径，用户确认后才 `recordStop` 并落盘；取消保存不会停止正在进行的录制；
+- 停止/退出时未导出数据会被保留到下一次录制或应用退出（退出时临时分片清理）。
 
 文件格式：
 
@@ -223,10 +229,13 @@ source-recording-*.json  {
 回放：
 
 - 源工作台“回放录制”选择 `.f32/.json`；
-- 主进程解析并重建 SourceFrame；
+- 主进程解析并重建 SourceFrame（大文件按整块 ArrayBuffer 共享视图，避免逐帧双份拷贝）；
 - 按 60fps 顺序循环回放；
 - 回放帧同样进入源工作台预览与分析消费者；
-- `SourcePlayback` 位于 `src/shared/sourcePlayback.ts`。
+- `SourcePlayback` 位于 `src/shared/sourcePlayback.ts`；
+- 回放暂停会停掉固定帧率定时器（`running` 同步为 false）；`source:stop` 会把回放置为停止但保留回放对象，非循环播完后工作台显示「重新回放」；
+- **回放倍速只作用于回放**：直播源固定 60fps，回放设 4x/0.25x 后启动直播不再改变直播帧率；
+- 回放的“输出/推送”开关语义与直播一致：固定帧率与按时间戳两种调度都只由播放/暂停控制，不再被 `enabled=false` 卡死。
 
 任意 IQ 导入：
 
@@ -258,12 +267,19 @@ Z = R + j(ωL - 1/ωC)
 
 - `LocalAnalysisSource` 已不再自产 IQ，分析页通过 `signal:analysis` 接收显示帧；
 - 本地分析已去掉 HTTP/socket 服务，启动不再监听端口；socket.io 仅保留给远程后端/远端 Mock；
-- 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者；
+- 源工作台启动源时会启动本地分析消费者；停止时只停止由本页启动的消费者（归属标记跨路由保留）；本地分析在源未运行时启动会代启动一次源，但**不会覆盖源工作台配置**（以 SourceService 当前配置为准），且只把源域字段下发给源；
+- 分析参数（FFT/窗/dB/重叠/频谱语义）变更不再重建源波形生成器；只有波形参数变化才重建（相位/符号历史不再是“改个 FFT 就复位”）；
+- 载波 0 Hz 全链路一致：配置校验、源页、本地分析 `signalAnalysis:setConfig`、远端 Mock 都接受 `0 ≤ freq < Fs/2`；
+- 分析帧只投递给已 `subscribe` 的窗口（无订阅时保持广播以兼容测试/宿主）；窗口 reload 会清空旧订阅计数；
+- 原始源帧 `source:frame` 只投递给已订阅窗口：`window.api.source.onFrame()` 自动订阅/注销，无订阅者时不再做 60fps 的宽 IPC 序列化；
+- Spectrum/IQ 组件导出 PNG 不再推进余辉淡出或清空回填快照（导出前后状态与像素隔离）；
+- 远端连接主动停止不再广播 `error: 'stopped'`，页面不会显示红色“远程错误”；奇数长度 IQ 帧会被裁成偶数再下发；
 - FFT/窗/重叠已迁到 `/signal/analysis-config`；`/source/advanced` 现在只保留连接/端口/远端 Mock；
 - PowerTime/Eye/APD/Persistence Demo 固定使用源工作台数据，不再提供仿真切换；Smith 支持“S11 扫频”；
 - 录制支持内存与流式落盘；流式模式只保留元数据，导出时复制临时 f32；
 - 回放支持暂停/继续/单步/定位、0.5x/1x/2x/4x 变速、固定 60fps 或按原始时间戳调度，以及循环开关；
 - 时间戳模式按帧时间差调度，处理耗时会导致轻微漂移；
+- 直播源按帧定时器推进（默认 60fps × pointsPerFrame），不是按采样时钟实时输出；时间轴以 `sampleRate` 做样本↔时间换算，与墙钟存在倍率差，演示场景有意如此；
 - 源目录含 OFDM；有效子载波/CP 可调；远端 Mock 也实现了同一 OFDM 生成；
 - 工作台按源类型显示推荐分析入口，分析页固定使用源数据；
 - 预览有 IQ 与频谱；时频/星座等分析 UI 仍各自订阅分析帧；
@@ -273,7 +289,7 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 235 例，含 sourceEngine/录制/播放/扫频/流式分段
+npm run test          # 249 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
 npm run test:source-ipc  # 真实主进程服务 + 真实 preload 的 IPC E2E

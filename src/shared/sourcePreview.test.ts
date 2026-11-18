@@ -58,6 +58,18 @@ describe('源工作台独立频谱预览', () => {
     expect(complexAsReal!.freqStartHz).toBe(0)
   })
 
+  it('满幅 CW 预览峰值 ≈ 0 dB（complex，已补偿窗相干增益）', () => {
+    const p = buildSourcePreviewSpectrum(frame('complex', 256, 32), {})
+    const peak = Math.max(...Array.from(p!.data))
+    expect(peak).toBeCloseTo(0, 1)
+  })
+
+  it('满幅 CW 预览峰值 ≈ 0 dB（real，单边非 DC ×2）', () => {
+    const p = buildSourcePreviewSpectrum(frame('real', 256, 32), {})
+    const peak = Math.max(...Array.from(p!.data))
+    expect(peak).toBeCloseTo(0, 1)
+  })
+
   it('FFT 选择与分析配置无关，且样本不足返回 null', () => {
     expect(pickPreviewFftSize(100)).toBe(64)
     expect(pickPreviewFftSize(256)).toBe(256)

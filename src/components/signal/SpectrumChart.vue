@@ -57,6 +57,7 @@ import {
   type PlotRect
 } from './core/axis'
 import { resolveTheme } from './core/theme'
+import { KeyboardArbiter } from './core/keyboardFocus'
 import { translate, type ChartMessageKey } from './core/i18n'
 import { cssSize } from './core/css'
 import type {
@@ -997,8 +998,8 @@ let lastView: {
 } | null = null
 let lastXrReal: { min: number; max: number } | null = null
 let cursor: { px: number; py: number } | null = null
-let hovered = false
-const focused = ref(false)
+// 键盘响应权：同页多图只有最后悬停/聚焦的一张响应快捷键
+const keyboard = new KeyboardArbiter()
 
 // ── 标记 / 框选 / 菜单状态 ──
 let markers: number[] = []
@@ -2278,11 +2279,14 @@ function onPointerCancel(evt: PointerEvent): void {
   schedule()
 }
 
+function onFocus(): void {
+  keyboard.claim()
+}
 function onPointerEnter(): void {
-  hovered = true
+  keyboard.claim()
 }
 function onPointerLeave(): void {
-  hovered = false
+  // 不释放键盘响应权：移开鼠标仍保留最近一次悬停/聚焦的键盘焦点态
   const canvas = canvasRef.value
   if (canvas && canvas.style.cursor) canvas.style.cursor = ''
   if (cursor !== null) {
@@ -2331,7 +2335,10 @@ function menuAction(
 // ── 键盘微调 ──
 function onKeyDown(evt: KeyboardEvent): void {
   if (evt.ctrlKey || evt.metaKey || evt.altKey) return
-  if (!hovered && !focused.value) return
+  // 按住重复触发会让冻结/缩放等快捷键反复切换，只响应首次按键
+  if (evt.repeat) return
+  // 只响应最近悬停/聚焦的那张图（多实例不抢键）；焦点在输入控件内时不响应
+  if (!keyboard.active) return
   const t = evt.target as HTMLElement | null
   if (
     t &&
@@ -2877,20 +2884,62 @@ function getStats(): SpectrumStats {
 }
 
 // ── 导出 ──
+/**
+ * 导出渲染隔离：draw() 会推进余辉淡出 / 清空待回填快照（实时采集语义）。
+ * 导出只是取当前画面，不应改变屏幕状态；这里在 draw() 前保存状态与像素，导出后还原，
+ * 避免「点一次导出，余辉暗一格 / 暂停回填快照丢失」。
+ */
+function withExportRender<T>(fn: () => T): T {
+  const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
+  if (persist <= 0) return fn()
+  const canvas = canvasRef.value
+  const saved = { fadeOutFrames, persistSnapshot, needsRestore }
+  let before: HTMLCanvasElement | null = null
+  // preserveDrawingBuffer=false 时旧帧缓冲可能已被清空，快照无意义，只还原状态
+  if (canvas && !saved.needsRestore && props.preserveDrawingBuffer !== false) {
+    before = document.createElement('canvas')
+    before.width = canvas.width
+    before.height = canvas.height
+    before.getContext('2d')?.drawImage(canvas, 0, 0)
+  }
+  try {
+    return fn()
+  } finally {
+    fadeOutFrames = saved.fadeOutFrames
+    // 导出顺带完成的「画布重建回填」保留修复结果；其余情况恢复导出前快照与像素
+    if (!saved.needsRestore) {
+      persistSnapshot = saved.persistSnapshot
+      needsRestore = saved.needsRestore
+      if (before && canvas && canvasRef.value === canvas) {
+        if (blitRenderer && gl) blitRenderer.draw(before)
+        else if (ctx2d) {
+          ctx2d.save()
+          ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+          ctx2d.clearRect(0, 0, canvas.width, canvas.height)
+          ctx2d.drawImage(before, 0, 0, canvas.width, canvas.height)
+          ctx2d.restore()
+        }
+      }
+    }
+  }
+}
+
 function compositeCanvas(): HTMLCanvasElement {
-  draw()
-  const glC = canvasRef.value
-  const ov = overlayRef.value
-  const out = document.createElement('canvas')
-  if (!glC || !ov) return out
-  out.width = glC.width
-  out.height = glC.height
-  const ctx = out.getContext('2d')
-  if (!ctx) return out
-  // 按输出尺寸显式缩放两层：backing 尺寸一致时等价 1:1；漂移时仍保证完整对齐
-  ctx.drawImage(glC, 0, 0, out.width, out.height)
-  ctx.drawImage(ov, 0, 0, out.width, out.height)
-  return out
+  return withExportRender(() => {
+    draw()
+    const glC = canvasRef.value
+    const ov = overlayRef.value
+    const out = document.createElement('canvas')
+    if (!glC || !ov) return out
+    out.width = glC.width
+    out.height = glC.height
+    const ctx = out.getContext('2d')
+    if (!ctx) return out
+    // 按输出尺寸显式缩放两层：backing 尺寸一致时等价 1:1；漂移时仍保证完整对齐
+    ctx.drawImage(glC, 0, 0, out.width, out.height)
+    ctx.drawImage(ov, 0, 0, out.width, out.height)
+    return out
+  })
 }
 
 function pngFilename(): string {
@@ -3243,8 +3292,7 @@ defineExpose({
       '--sig-text': th.text,
       '--sig-border': th.border
     }"
-    @focus="focused = true"
-    @blur="focused = false"
+    @focus="onFocus"
     @wheel="onWheel"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"

@@ -63,7 +63,9 @@ export class SpectrogramCanvasRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.imageSmoothingEnabled = p.interpolation === 'linear'
     const sx = Math.max(0, Math.min(cols - 1, p.freqStart))
-    const ex = Math.max(sx + 1, Math.min(cols, p.freqEnd))
+    // freqEnd 是闭区间（与 GL 着色器一致），+1 转成 drawImage 的半开宽度；
+    // 少了 +1 会丢掉最后一列（右边缘恒缺一像素列）
+    const ex = Math.max(sx + 1, Math.min(cols, p.freqEnd + 1))
     ctx.drawImage(
       this.off,
       sx,

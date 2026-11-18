@@ -32,8 +32,8 @@ const analysis = computed<PowerTimeAnalysisConfig | undefined>(() =>
     : undefined
 )
 const thresholds = {
-  powerDbmMin: -70,
-  powerDbmMax: -10,
+  powerDbmMin: -80,
+  powerDbmMax: 3,
   paprDbMax: 60
 }
 
@@ -100,13 +100,14 @@ sig.onIq((data, frame) => {
         :sample-rate="sourceSampleRate"
         :time-step-sec="timeStepSec"
         :span="4096"
-        :unit="'dBm'"
+        :unit="'dBFS'"
         :analysis="analysis"
         :threshold-db="analysisOn ? undefined : thresholdDb"
         theme="spectrum"
       />
       <div class="pt-hint">
-        纯显示只画功率；开启分析后仅叠加门限/脉冲带并计算脉宽、周期、占空比。高电平为脉冲，低电平为噪声底。
+        功率为 dBFS（相对满量程），满幅 CW ≈ 0 dB；
+        纯显示只画功率，开启分析后仅叠加门限/脉冲带并计算脉宽、周期、占空比。高电平为脉冲，低电平为噪声底。
       </div>
     </NCard>
 
@@ -114,6 +115,7 @@ sig.onIq((data, frame) => {
       title="功率/脉冲质量"
       :metrics="metrics"
       :thresholds="thresholds"
+      power-unit="dBFS"
       show-pass-fail
     />
   </div>

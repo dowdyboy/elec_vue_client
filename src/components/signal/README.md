@@ -464,9 +464,10 @@ specgram.value?.appendData(rowDb, {
 - `width/height`：数字或 CSS 字符串
 - `renderer`：`auto`（默认，WebGL2→Canvas2D）/ `webgl2` / `canvas2d`；**挂载时生效**
 - `preserveDrawingBuffer`：默认 `true`；无余辉需求可设 `false` 降低拷贝开销
+- PNG 导出（`exportPNG` / `exportPNGAsync`）不会推进余辉淡出、也不会清空画布重建的待回填快照（导出前后状态与像素隔离）
 - `contextMenu`：默认 `true`；设 `false` 后仍会 emit `contextmenu`，由宿主自绘
-- 事件：`error`、`errorDetail`、`cursorChange`、`ready`、`contextLost`、`contextRestored`、`exported`、`contextmenu`、`viewportChange`
-- 无障碍/触摸：根节点 `tabindex/role/aria-label`，聚焦后可键盘操作；触摸支持双指 X 缩放
+- 事件：`error`、`errorDetail`、`cursorChange`、`ready`、`contextLost`、`contextRestored`、`exported`、`contextmenu`、`viewportChange`（IQ/频谱/时频的视口/频率窗变化；时频载荷为 `{ startBin, endBin, fullSpan }`，与 `frequencyChange` 同时触发）
+- 无障碍/触摸：根节点 `tabindex/role/aria-label`，悬停或聚焦后可键盘操作；触摸支持双指 X 缩放
 - 离屏：IntersectionObserver 不可见时暂停重绘（数据仍入缓冲）；`dispose()` 可手动释放
 
 **IQ 新增**
@@ -503,7 +504,7 @@ specgram.value?.appendData(rowDb, {
 - 原生 `class`/`style` 可以正常用于布局；外观色请走 `chart-style`。
 - 内置 `spectrum` 主题为黑底黄迹频谱仪风格；`tracePalette` 可覆盖多迹线调色板。
 - 覆盖插槽：`<template #overlay>…</template>` 可叠加自定义标注/告警框（默认 `pointer-events:none`）。
-- 图表根节点可聚焦（`tabindex=0`），聚焦后键盘快捷键生效；触摸屏支持双指 X 缩放（IQ/频谱/时频）。
+- 图表根节点可聚焦（`tabindex=0`）；悬停或聚焦后键盘快捷键生效，且同一时刻只有最近悬停/聚焦的一张图响应（多实例不抢键），按住重复（`repeat`）不重复触发；触摸屏支持双指 X 缩放（IQ/频谱/时频）。
 
 ### 多语言
 

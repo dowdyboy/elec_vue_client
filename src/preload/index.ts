@@ -59,6 +59,27 @@ export interface DisplaySourcesPayload {
   sources: DisplaySourceInfo[]
 }
 
+/** 信号源运行状态（与主进程 SourceStatus 保持一致） */
+export interface SourceStatusInfo {
+  running: boolean
+  mode: 'live' | 'playback'
+  backend: 'simulated' | 'playback'
+  paused: boolean
+  config: unknown
+}
+
+/** 源录制状态（内存/流式两种模式共用） */
+export interface SourceRecordStatusInfo {
+  recording: boolean
+  frames: number
+  samples: number
+  durationMs: number
+  truncated: boolean
+  mode: 'memory' | 'stream'
+  /** 已录制但尚未导出（加载回放/导入 IQ/新录制前需确认） */
+  hasUnexported: boolean
+}
+
 // ──────────────────────────────────────────────────
 // 自定义 API：按特性分组，类型定义见 index.d.ts
 // ──────────────────────────────────────────────────
@@ -550,25 +571,20 @@ const api = {
 
   /** ── 独立信号源服务（SourceEngine → source:frame；不含 FFT）── */
   source: {
-    start: () =>
-      invoke<{ ok: boolean; status?: { running: boolean; config: unknown } }>('source:start'),
-    stop: () =>
-      invoke<{ ok: boolean; status?: { running: boolean; config: unknown } }>('source:stop'),
-    getStatus: () => invoke<{ running: boolean; config: unknown }>('source:getStatus'),
+    start: () => invoke<{ ok: boolean; status?: SourceStatusInfo }>('source:start'),
+    stop: () => invoke<{ ok: boolean; status?: SourceStatusInfo }>('source:stop'),
+    getStatus: () => invoke<SourceStatusInfo>('source:getStatus'),
     setConfig: (cfg: unknown) =>
       invoke<{ ok: boolean; config?: unknown; error?: string }>('source:setConfig', cfg),
-    trigger: () => invoke<{ ok: boolean; seq?: number }>('source:trigger'),
-    recordStart: (stream = false) =>
-      invoke<{ ok: boolean; status?: unknown }>('source:recordStart', stream),
-    recordStop: () => invoke<{ ok: boolean; status?: unknown }>('source:recordStop'),
-    recordStatus: () =>
-      invoke<{
-        recording: boolean
-        frames: number
-        samples: number
-        durationMs: number
-        truncated: boolean
-      }>('source:recordStatus'),
+    trigger: () => invoke<{ ok: boolean; emitted?: boolean; seq?: number }>('source:trigger'),
+    recordStart: (stream = false, opts?: { confirmDiscard?: boolean }) =>
+      invoke<{ ok: boolean; needsConfirm?: boolean; status?: SourceRecordStatusInfo }>(
+        'source:recordStart',
+        stream,
+        opts
+      ),
+    recordStop: () => invoke<{ ok: boolean; status?: SourceRecordStatusInfo }>('source:recordStop'),
+    recordStatus: () => invoke<SourceRecordStatusInfo>('source:recordStatus'),
     recordExport: () =>
       invoke<{
         ok: boolean
@@ -579,19 +595,25 @@ const api = {
         canceled?: boolean
         error?: string
       }>('source:recordExport'),
-    importIq: () =>
+    importIq: (opts?: { confirmDiscard?: boolean }) =>
       invoke<{
         ok: boolean
         path?: string
         truncated?: boolean
         canceled?: boolean
+        needsConfirm?: boolean
         error?: string
         status?: unknown
-      }>('source:importIq'),
-    loadPlayback: () =>
-      invoke<{ ok: boolean; path?: string; canceled?: boolean; error?: string; status?: unknown }>(
-        'source:loadPlayback'
-      ),
+      }>('source:importIq', opts),
+    loadPlayback: (opts?: { confirmDiscard?: boolean }) =>
+      invoke<{
+        ok: boolean
+        path?: string
+        canceled?: boolean
+        needsConfirm?: boolean
+        error?: string
+        status?: unknown
+      }>('source:loadPlayback', opts),
     startPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:startPlayback'),
     pausePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:pausePlayback'),
     resumePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:resumePlayback'),
@@ -617,7 +639,18 @@ const api = {
         durationMs: number
         positionMs: number
       } | null>('source:playbackStatus'),
-    onFrame: (cb: (frame: SourceFrame) => void) => on('source:frame', cb)
+    /** 订阅登记：只有真正需要原始源帧的窗口才接收 source:frame（按 webContents 计数） */
+    subscribe: () => invoke<{ ok: boolean }>('source:subscribe'),
+    unsubscribe: () => invoke<{ ok: boolean }>('source:unsubscribe'),
+    /** 监听源帧：预加载层自动登记/注销订阅，未看图窗口不再白收 60fps 原始 IQ */
+    onFrame: (cb: (frame: SourceFrame) => void) => {
+      const dispose = on('source:frame', cb)
+      void invoke('source:subscribe').catch(() => {})
+      return () => {
+        dispose()
+        void invoke('source:unsubscribe').catch(() => {})
+      }
+    }
   },
 
   /** ── S11 扫频源（Smith 圆图；独立于 IQ 源）── */
@@ -648,7 +681,7 @@ const api = {
         'signalAnalysis:setConfig',
         cfg
       ),
-    trigger: () => invoke<{ ok: boolean }>('signalAnalysis:trigger'),
+    trigger: () => invoke<{ ok: boolean; emitted?: boolean }>('signalAnalysis:trigger'),
     /** 订阅登记：渲染进程有图表在接收帧时才让主进程做 60fps 生成/FFT */
     subscribe: () => invoke<{ ok: boolean }>('signalAnalysis:subscribe'),
     unsubscribe: () => invoke<{ ok: boolean }>('signalAnalysis:unsubscribe'),

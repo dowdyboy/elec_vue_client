@@ -32,8 +32,18 @@ describe('源帧 → 分析组件适配', () => {
 
   it('频谱重采样到固定 bins', () => {
     const src = new Float32Array([-10, -20, -30, -40])
-    expect(Array.from(spectrumToBins(src, 2))).toEqual([-15, -35])
+    // 默认按功率域桶平均：10log10((10^(v/10) 之和)/个数)
+    expect(spectrumToBins(src, 2)[0]).toBeCloseTo(-12.5964, 3)
+    expect(spectrumToBins(src, 2)[1]).toBeCloseTo(-32.5964, 3)
+    // db=false 保持线性平均（旧口径）
+    expect(Array.from(spectrumToBins(src, 2, { db: false }))).toEqual([-15, -35])
     expect(Array.from(spectrumToBins(new Float32Array([-20]), 3))).toEqual([-20, -20, -20])
+  })
+
+  it('dB 域桶平均不低估底噪', () => {
+    // 10log10((10^-6 + 10^-10)/2) ≈ -63.01 dB；线性平均会得到 -80 dB
+    const out = spectrumToBins(new Float32Array([-60, -100]), 1)
+    expect(out[0]).toBeCloseTo(-63.01, 2)
   })
 
   it('线性幅度转 dB', () => {

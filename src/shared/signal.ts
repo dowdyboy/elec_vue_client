@@ -138,6 +138,21 @@ export function defaultAnalysisConfig(): SignalAnalysisConfig {
   }
 }
 
+/**
+ * 载波/中心频率合法域：`0 ≤ freq < sampleRate/2`。
+ * 0 表示复基带/DC（源页与真实矢量源都允许），Nyquist 及以上会折叠/混叠。
+ * 本地分析、远端 Mock、配置校验统一走这里，避免三处各写一份判断。
+ */
+export function isValidCarrierFrequency(freq: number, sampleRate: number): boolean {
+  return (
+    Number.isFinite(freq) &&
+    Number.isFinite(sampleRate) &&
+    sampleRate > 0 &&
+    freq >= 0 &&
+    freq < sampleRate / 2
+  )
+}
+
 // ── 配置校验（IPC / socket.io 双面共用：非法键剔除，非法值拒绝）──
 
 export interface ConfigPatchResult {
@@ -179,7 +194,7 @@ export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {
     const freq = num('freq')
     const srInPatch = num('sampleRate')
     if (freq === null || freq < 0) errors.push('freq 须为非负数')
-    else if (srInPatch !== null && srInPatch > 0 && freq >= srInPatch / 2)
+    else if (srInPatch !== null && srInPatch > 0 && !isValidCarrierFrequency(freq, srInPatch))
       errors.push(`freq(${freq}) 须小于 sampleRate/2(${srInPatch / 2})`)
     else out.freq = freq
   }

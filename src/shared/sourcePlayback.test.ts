@@ -34,6 +34,8 @@ describe('SourcePlayback', () => {
     expect(p.next()?.seq).toBe(1)
     expect(p.next()).toBeNull()
     expect(p.getStatus().playing).toBe(false)
+    // index 指向末尾之外时对外钳制，避免滑块 value 超出 max
+    expect(p.getStatus().index).toBe(0)
   })
 
   it('暂停后可单步', () => {

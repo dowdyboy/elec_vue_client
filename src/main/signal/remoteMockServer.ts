@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from 'socket.io'
 import { ipcMain } from 'electron'
 import {
   defaultAnalysisConfig,
+  isValidCarrierFrequency,
   sanitizeConfigPatch,
   type SignalAnalysisConfig
 } from '../../shared/signal'
@@ -104,10 +105,10 @@ export function registerRemoteMockServer(): () => void {
         const clean = sanitizeConfigPatch(opts.config)
         if (!clean.ok || !clean.value) return { ok: false, error: clean.error }
         const merged = { ...cfg, ...clean.value }
-        if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2))
+        if (!isValidCarrierFrequency(merged.freq, merged.sampleRate))
           return {
             ok: false,
-            error: `freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})`
+            error: `freq(${merged.freq}) 须满足 0 ≤ freq < sampleRate/2(${merged.sampleRate / 2})`
           }
         cfg = merged
         gen = null
@@ -132,9 +133,9 @@ export function registerRemoteMockServer(): () => void {
                 return
               }
               const merged = { ...cfg, ...res.value } as SignalAnalysisConfig
-              if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2)) {
+              if (!isValidCarrierFrequency(merged.freq, merged.sampleRate)) {
                 console.warn(
-                  `[remote-mock] freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})，配置忽略`
+                  `[remote-mock] freq(${merged.freq}) 须满足 0 ≤ freq < sampleRate/2(${merged.sampleRate / 2})，配置忽略`
                 )
                 return
               }
@@ -233,11 +234,14 @@ export function registerRemoteMockServer(): () => void {
     return { ok: true }
   })
 
-  ipcMain.handle('remoteMock:getStatus', () => ({
-    running: !!(server || io),
-    port,
-    config: { ...cfg }
-  }))
+  ipcMain.handle('remoteMock:getStatus', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return {
+      running: !!(server || io),
+      port,
+      config: { ...cfg }
+    }
+  })
 
   return () => {
     if (timer) clearInterval(timer)

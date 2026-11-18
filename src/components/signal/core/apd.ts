@@ -72,12 +72,12 @@ export function computeApdCcdf(samples: ArrayLike<number>, opts: ApdOptions = {}
   const bins = Math.max(4, Math.min(2048, Math.floor(opts.bins ?? 100)))
   const step = (max - min) / bins
   const counts = new Uint32Array(bins)
-  let sumDb = 0
+  let sumPower = 0
   let peak = -Infinity
   for (const v of vals) {
     const idx = Math.max(0, Math.min(bins - 1, Math.floor((v - min) / step)))
     counts[idx]!++
-    sumDb += v
+    sumPower += 10 ** (v / 10)
     if (v > peak) peak = v
   }
   const x = new Float32Array(bins)
@@ -92,7 +92,8 @@ export function computeApdCcdf(samples: ArrayLike<number>, opts: ApdOptions = {}
     x[i] = min + (i + 0.5) * step
     apdY[i] = (counts[i]! / n) * 100
   }
-  const meanDb = sumDb / n
+  // 均值必须在功率域求：dB 值直接算术平均因 Jensen 不等式会低估均值（PAPR 偏大）
+  const meanDb = 10 * Math.log10(sumPower / n)
   return {
     apd: { x, y: apdY },
     ccdf: { x, y: ccdfY },

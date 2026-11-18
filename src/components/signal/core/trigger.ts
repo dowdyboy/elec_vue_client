@@ -48,16 +48,30 @@ export interface TriggerState {
   pendingAbs: number
 }
 
-/** 扫描数据段 [s,e) 中第一个跨电平边沿，返回绝对索引；未命中返回 -1 */
+/**
+ * 扫描数据段 [s,e) 中第一个跨电平边沿，返回绝对索引；未命中返回 -1。
+ *
+ * prevSample 为上一段末样本（即 arr[s-1] 的数值）：提供时先判跨段边界 (s-1, s)，
+ * 补上分帧追加时永远漏检的帧间边沿；不提供则保持旧行为（只看段内）。
+ */
 export function findEdge(
   arr: Float32Array,
   s: number,
   e: number,
   level: number,
   edge: TriggerEdge,
-  dropped: number
+  dropped: number,
+  prevSample?: number
 ): number {
   if (e - s < 1) return -1
+  if (prevSample !== undefined && Number.isFinite(prevSample)) {
+    const first = arr[s] ?? 0
+    const crossed =
+      edge === 'rising'
+        ? prevSample <= level && first > level
+        : prevSample >= level && first < level
+    if (crossed) return s + dropped
+  }
   let prev = arr[s] ?? 0
   for (let i = s + 1; i < e; i++) {
     const cur = arr[i] ?? 0
@@ -113,14 +127,15 @@ export class TriggerEngine {
     srcArr: Float32Array,
     segS: number,
     segE: number,
-    dropped: number
+    dropped: number,
+    prevSample?: number
   ): void {
     if (!cfg.enabled) return
     if (cfg.mode === 'single' && !this.state.armed) {
       this.lastFeedHit = false
       return
     }
-    const hit = findEdge(srcArr, segS, segE, cfg.level, cfg.edge, dropped)
+    const hit = findEdge(srcArr, segS, segE, cfg.level, cfg.edge, dropped, prevSample)
     this.lastFeedHit = hit >= 0
     if (hit < 0) return
     if (cfg.mode === 'single') {

@@ -110,11 +110,13 @@ export class SourcePlayback {
   getStatus(): SourcePlaybackStatus {
     const first = this.frames[0]!
     const last = this.frames[this.frames.length - 1]!
-    const current = this.frames[Math.min(this.index, this.frames.length - 1)] ?? first
+    // 回放结束时 index 会等于 length（指向下一帧），对外钳制到最后一帧，避免 UI 滑块越界
+    const idx = Math.min(this.index, this.frames.length - 1)
+    const current = this.frames[idx] ?? first
     return {
       playing: this.playing,
       paused: this.paused,
-      index: this.index,
+      index: idx,
       total: this.frames.length,
       loop: this.loop,
       durationMs: Math.max(0, last.timestamp - first.timestamp),

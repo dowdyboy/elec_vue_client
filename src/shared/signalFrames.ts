@@ -115,6 +115,9 @@ export class SpectrumAnalyzer {
   }
 }
 
+/** 单次 push 最多返回的时频行数：高 overlap + 超大 pointsPerFrame 时防止单 tick 数百行 FFT/IPC 打满主进程 */
+export const MAX_SPECTROGRAM_ROWS_PER_PUSH = 64
+
 /**
  * 时频图行累计器：按 overlap 在帧间滑动窗口，输出固定 dB 行。
  * （从 analysisServer 抽出，供本地源 / 内置远端 Mock 复用，避免两份实现漂移）
@@ -142,6 +145,10 @@ export class SpectrogramAccumulator {
         computeSpectrumRow(this.buf.subarray(this.pos, this.pos + need), cfg, { forceDb: true })
       )
       this.pos += step
+    }
+    // pos 已照常推进；超出单 tick 上限时只保留最新行（时间连续性优先于完整覆盖）
+    if (rows.length > MAX_SPECTROGRAM_ROWS_PER_PUSH) {
+      rows.splice(0, rows.length - MAX_SPECTROGRAM_ROWS_PER_PUSH)
     }
     // 压缩已消费部分
     if (this.pos > cfg.fftSize * 4) {

@@ -40,6 +40,30 @@ export interface SourceEngineOptions {
   now?: () => number
 }
 
+/**
+ * 影响波形生成器的配置字段：只有这些变化才需要重建生成器。
+ * fftSize/window/overlap/spectrumMode/enabled 等属于分析或服务控制参数，变更不应重置相位/符号历史。
+ */
+const GENERATOR_KEYS = [
+  'freq',
+  'snr',
+  'amplitude',
+  'modType',
+  'outputMode',
+  'waveform',
+  'modFreq',
+  'amDepth',
+  'fmDeviation',
+  'pulsePeriod',
+  'pulseDuty',
+  'toneSpacing',
+  'sampleRate',
+  'samplesPerSymbol',
+  'ofdmSubcarriers',
+  'ofdmCpRatio',
+  'imageDb'
+] as const satisfies ReadonlyArray<keyof SignalAnalysisConfig>
+
 export class SourceEngine {
   private config: SignalAnalysisConfig
   private gen: SignalGenerator
@@ -58,10 +82,12 @@ export class SourceEngine {
     return { ...this.config }
   }
 
-  /** 更新源配置；波形参数变更时重建生成器，保持相位/符号历史重置的既有语义 */
+  /** 更新源配置；只有波形参数变化才重建生成器（分析参数变更不再重置相位/符号历史） */
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
+    const prev = this.config
     this.config = { ...this.config, ...patch }
-    this.gen = createSignalGenerator(this.config, { rng: this.rng })
+    const rebuild = GENERATOR_KEYS.some((key) => this.config[key] !== prev[key])
+    if (rebuild) this.gen = createSignalGenerator(this.config, { rng: this.rng })
   }
 
   reset(): void {

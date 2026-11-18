@@ -44,10 +44,16 @@ async function refresh(): Promise<void> {
     running.value = st.running
     mode.value = st.mode
     runningRemoteUrl.value = st.remoteUrl || ''
-    if (st.config)
-      sourceLabel.value = `${st.config.waveform}/${st.config.modType} @ ${st.config.freq} Hz`
   } catch {
     running.value = false
+  }
+  try {
+    // 源标签跟随 SourceService 的实际配置（分析侧持久配置可能落后于源页改动）
+    const src = (await window.api.source.getStatus()) as { config?: SignalAnalysisConfig }
+    if (src.config)
+      sourceLabel.value = `${src.config.waveform}/${src.config.modType} @ ${src.config.freq} Hz`
+  } catch {
+    sourceLabel.value = ''
   }
   try {
     const rm = (await window.api.remoteMock.getStatus()) as { running: boolean; port: number }
@@ -66,7 +72,7 @@ async function startLocal(): Promise<void> {
       error?: string
     }
     if (!r.ok) message.error(r.error || '本地分析启动失败')
-    else message.success(`本地分析已启动 :${port.value}`)
+    else message.success('本地分析已启动（纯 IPC，无端口；源未运行时由分析代启动）')
     await refresh()
   } finally {
     loading.value = false
@@ -101,10 +107,11 @@ async function stop(): Promise<void> {
 
 async function startRemoteMock(): Promise<void> {
   try {
-    const st = (await window.api.signalAnalysis.getStatus()) as { config?: SignalAnalysisConfig }
+    // Mock 应跟随「当前源配置」，而不是分析侧持久配置（源页改参数后分析配置不会回写）
+    const src = (await window.api.source.getStatus()) as { config?: unknown }
     const r = (await window.api.remoteMock.start({
       port: port.value,
-      config: st.config ?? {}
+      config: src.config ?? {}
     })) as { ok: boolean; port?: number; error?: string }
     if (!r.ok) message.error(r.error || '远端 Mock 启动失败')
     else message.success(`远端 Mock 已启动 :${r.port ?? port.value}`)

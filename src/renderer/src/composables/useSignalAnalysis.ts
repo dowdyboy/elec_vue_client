@@ -85,9 +85,17 @@ export function useSignalAnalysis(
         console.warn('[useSignalAnalysis] empty frame', f.type)
       }
     }
-    if (f.type === 'spectrum') spectrumCbs.forEach((cb) => cb(f.data, f))
-    else if (f.type === 'spectrogram') spectrogramCbs.forEach((cb) => cb(f.data, f))
-    else if (f.type === 'iq') iqCbs.forEach((cb) => cb(f.data, f))
+    // 单个宿主回调抛错不应中断同帧其它消费者的回调（远端脏 payload 常见）
+    const invoke = (cb: FrameCb): void => {
+      try {
+        cb(f.data, f)
+      } catch (e) {
+        console.error('[useSignalAnalysis] frame callback failed', e)
+      }
+    }
+    if (f.type === 'spectrum') spectrumCbs.forEach(invoke)
+    else if (f.type === 'spectrogram') spectrogramCbs.forEach(invoke)
+    else if (f.type === 'iq') iqCbs.forEach(invoke)
   }
 
   function handleRemoteStatus(s: RemoteLinkStatus): void {

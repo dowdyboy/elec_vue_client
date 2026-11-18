@@ -26,19 +26,31 @@ export function iqToAmplitude(data: Float32Array): Float32Array {
 
 /**
  * 频谱行 → 固定显示 bins。
- * 降采样用桶平均（dB 域），升采样用线性映射（最近邻保形）。
+ * 降采样用桶平均（默认按功率域，见 opts.db），升采样用线性映射（最近邻保形）。
  */
-export function spectrumToBins(data: Float32Array, bins: number): Float32Array {
+export function spectrumToBins(
+  data: Float32Array,
+  bins: number,
+  opts: { db?: boolean } = {}
+): Float32Array {
   const n = Math.max(1, Math.floor(bins))
   if (n === data.length) return new Float32Array(data)
   const out = new Float32Array(n)
+  const db = opts.db !== false
   if (data.length > n) {
     for (let i = 0; i < n; i++) {
       const start = Math.floor((i * data.length) / n)
       const end = Math.max(start + 1, Math.floor(((i + 1) * data.length) / n))
-      let sum = 0
-      for (let k = start; k < end; k++) sum += data[k]!
-      out[i] = sum / (end - start)
+      if (db) {
+        // dB 域桶平均先在功率域求和再取 dB，否则会低估底噪
+        let power = 0
+        for (let k = start; k < end; k++) power += Math.pow(10, data[k]! / 10)
+        out[i] = 10 * Math.log10(power / (end - start))
+      } else {
+        let sum = 0
+        for (let k = start; k < end; k++) sum += data[k]!
+        out[i] = sum / (end - start)
+      }
     }
   } else {
     for (let i = 0; i < n; i++) {

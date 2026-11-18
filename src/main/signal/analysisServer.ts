@@ -17,6 +17,7 @@ import { io as socketIoClient, type Socket as ClientSocket } from 'socket.io-cli
 import {
   defaultAnalysisConfig,
   FRAME_TYPE_BY_CODE,
+  isValidCarrierFrequency,
   sanitizeConfigPatch,
   type AnalysisFrame,
   type ModType,
@@ -42,36 +43,44 @@ export interface SignalAnalysisSource {
   stop(): void
   setConfig(patch: Partial<SignalAnalysisConfig>): void
   getConfig(): SignalAnalysisConfig
-  trigger(): void
+  /** 触发一帧；返回是否真的产生了分析帧（本地=源帧已产出，远端=已下发） */
+  trigger(): boolean
 }
 
 // ──────────────────────────────────────────────────
 // 本地分析：消费 SourceService 的 SourceFrame，只做 FFT/时频
 // ──────────────────────────────────────────────────
 
+/** 源输出域字段：只有这些字段属于 SourceService，分析器的 FFT/窗/dB/重叠不应下发到源 */
+const SOURCE_FIELD_KEYS = [
+  'freq',
+  'snr',
+  'amplitude',
+  'modType',
+  'outputMode',
+  'waveform',
+  'modFreq',
+  'amDepth',
+  'fmDeviation',
+  'pulsePeriod',
+  'pulseDuty',
+  'toneSpacing',
+  'sampleRate',
+  'pointsPerFrame',
+  'samplesPerSymbol',
+  'ofdmSubcarriers',
+  'ofdmCpRatio',
+  'enabled',
+  'imageDb'
+] as const satisfies ReadonlyArray<keyof SignalAnalysisConfig>
+
 /** 从源配置提取输出域字段；FFT/窗/重叠仍归分析器所有 */
 function sourceFields(c: SignalAnalysisConfig): Partial<SignalAnalysisConfig> {
-  return {
-    freq: c.freq,
-    snr: c.snr,
-    amplitude: c.amplitude,
-    modType: c.modType,
-    outputMode: c.outputMode,
-    waveform: c.waveform,
-    modFreq: c.modFreq,
-    amDepth: c.amDepth,
-    fmDeviation: c.fmDeviation,
-    pulsePeriod: c.pulsePeriod,
-    pulseDuty: c.pulseDuty,
-    toneSpacing: c.toneSpacing,
-    sampleRate: c.sampleRate,
-    pointsPerFrame: c.pointsPerFrame,
-    samplesPerSymbol: c.samplesPerSymbol,
-    ofdmSubcarriers: c.ofdmSubcarriers,
-    ofdmCpRatio: c.ofdmCpRatio,
-    enabled: c.enabled,
-    imageDb: c.imageDb
+  const out: Partial<SignalAnalysisConfig> = {}
+  for (const key of SOURCE_FIELD_KEYS) {
+    ;(out as Record<string, unknown>)[key] = c[key]
   }
+  return out
 }
 
 class LocalAnalysisSource implements SignalAnalysisSource {
@@ -99,13 +108,12 @@ class LocalAnalysisSource implements SignalAnalysisSource {
     this.onFrame = onFrame
     if (this.sourceUnsub) return
     const st = this.sourceService.getStatus()
-    if (!st.running) {
-      this.sourceService.setConfig(this.config)
+    // 源已在源工作台运行：以源配置为准，保留本分析器的 FFT/窗参数
+    this.config = { ...this.config, ...sourceFields(st.config) }
+    if (!st.running && st.mode !== 'playback') {
+      // 纯消费者：不覆盖源配置（源参数归源页）；源未启动时由本地分析代启动一次，保证有数据可分析
       this.sourceService.start()
       this.ownsSource = true
-    } else {
-      // 源已在源工作台运行：以源配置为准，保留本分析器的 FFT/窗参数
-      this.config = { ...this.config, ...sourceFields(st.config) }
     }
     this.sourceUnsub = this.sourceService.subscribe((frame) => this.handleSourceFrame(frame))
   }
@@ -122,7 +130,12 @@ class LocalAnalysisSource implements SignalAnalysisSource {
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
     this.config = { ...this.config, ...patch }
-    this.sourceService.setConfig(patch)
+    // 只把源域字段下发 SourceService；FFT/窗/重叠/频谱语义等分析参数不应污染源配置
+    const sourcePatch: Partial<SignalAnalysisConfig> = {}
+    for (const key of SOURCE_FIELD_KEYS) {
+      if (key in patch) (sourcePatch as Record<string, unknown>)[key] = patch[key]
+    }
+    if (Object.keys(sourcePatch).length > 0) this.sourceService.setConfig(sourcePatch)
     this.acc.reset()
     this.spec.reset()
   }
@@ -131,13 +144,13 @@ class LocalAnalysisSource implements SignalAnalysisSource {
     return { ...this.config }
   }
 
-  trigger(): void {
-    if (!this.sourceService.getStatus().running) {
-      this.sourceService.setConfig(this.config)
+  trigger(): boolean {
+    const st = this.sourceService.getStatus()
+    if (!st.running && st.mode !== 'playback') {
       this.sourceService.start()
       this.ownsSource = true
     }
-    this.sourceService.trigger()
+    return this.sourceService.trigger()
   }
 
   private logError(e: unknown): void {
@@ -322,6 +335,8 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
   private sock: ClientSocket | null = null
   private onFrame: ((f: AnalysisFrame) => void) | null = null
   private url: string
+  /** 主动停止期间抑制 socket 的 disconnect/error 状态广播（避免页面出现红色“远程错误: stopped”） */
+  private stopping = false
 
   constructor(
     private rawUrl: string,
@@ -335,8 +350,15 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
     else this.url = rawUrl
   }
 
+  /** 主动停止后忽略迟到的 socket 状态，避免 UI 显示“远程错误: stopped” */
+  private reportStatus(s: { connected: boolean; error?: string }): void {
+    if (this.stopping) return
+    this.onStatus?.(s)
+  }
+
   start(onFrame: (f: AnalysisFrame) => void): void {
     this.onFrame = onFrame
+    this.stopping = false
     console.log(`[signal:remote] connecting to ${this.url} (raw=${this.rawUrl})`)
     this.sock = socketIoClient(this.url, {
       transports: ['websocket', 'polling'],
@@ -491,6 +513,10 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
               : 'null'
           })
         }
+        // IQ 必须是交织 I/Q（偶数长度）；奇数长度会让渲染侧适配器抛错，这里先裁掉尾样本
+        if (type === 'iq' && data.length > 0 && data.length % 2 !== 0) {
+          data = data.subarray(0, data.length - 1)
+        }
         this.onFrame?.({
           type,
           seq,
@@ -515,10 +541,10 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
     })
     this.sock.on('connect', () => {
       this.sock?.emit('signal:analysis:config', this.config)
-      this.onStatus?.({ connected: true })
+      this.reportStatus({ connected: true })
     })
     this.sock.on('disconnect', (reason: string) => {
-      this.onStatus?.({ connected: false, error: `disconnect: ${reason}` })
+      this.reportStatus({ connected: false, error: `disconnect: ${reason}` })
     })
     let lastErrMsg = ''
     this.sock.on('connect_error', (err: Error) => {
@@ -532,7 +558,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
           : ` (url=${this.url})`
       const msg = `${rawMsg}${hint}`
       console.error('[signal:remote] connect_error', msg)
-      this.onStatus?.({ connected: false, error: msg })
+      this.reportStatus({ connected: false, error: msg })
       // 避免刷屏：3秒后允许再次提示
       setTimeout(() => {
         lastErrMsg = ''
@@ -541,6 +567,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
   }
 
   stop(): void {
+    this.stopping = true
     this.sock?.close()
     this.sock = null
     this.onFrame = null
@@ -555,8 +582,10 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
     return { ...this.config }
   }
 
-  trigger(): void {
-    this.sock?.emit('signal:analysis:trigger')
+  trigger(): boolean {
+    if (!this.sock) return false
+    this.sock.emit('signal:analysis:trigger')
+    return true
   }
 }
 
@@ -593,14 +622,31 @@ export function registerSignalAnalysisServer(): () => void {
         console.warn('[signal] emit empty frame', f.type, f.seq)
       }
     }
+    // 有订阅者时只投递给订阅窗口；无订阅（E2E / 兼容旧用法）时保持广播
+    const ids = analysisSubscribers.size > 0 ? new Set(analysisSubscribers.keys()) : null
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('signal:analysis', f)
+      if (win.isDestroyed()) continue
+      const wc = win.webContents
+      if (wc.isDestroyed()) continue
+      if (ids && !ids.has(wc.id)) continue
+      try {
+        wc.send('signal:analysis', f)
+      } catch {
+        // 窗口销毁/重载竞态：跳过该窗口，不影响其它消费者
+      }
     }
   }
 
   function broadcastRemoteStatus(s: { connected: boolean; error?: string; url?: string }): void {
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('signal:analysis:status', s)
+      if (win.isDestroyed()) continue
+      const wc = win.webContents
+      if (wc.isDestroyed()) continue
+      try {
+        wc.send('signal:analysis:status', s)
+      } catch {
+        void 0
+      }
     }
   }
 
@@ -647,18 +693,20 @@ export function registerSignalAnalysisServer(): () => void {
     const wasRemote = source?.mode === 'remote'
     source?.stop()
     source = null
-    if (wasRemote)
-      broadcastRemoteStatus({ connected: false, error: 'stopped', url: persistedRemoteUrl })
+    if (wasRemote) broadcastRemoteStatus({ connected: false, url: persistedRemoteUrl })
     return { ok: true }
   })
 
-  ipcMain.handle('signalAnalysis:getStatus', () => ({
-    running: source !== null,
-    mode: source?.mode ?? 'none',
-    port: 0,
-    remoteUrl: persistedRemoteUrl,
-    config: source?.getConfig() ?? persistedConfig
-  }))
+  ipcMain.handle('signalAnalysis:getStatus', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return {
+      running: source !== null,
+      mode: source?.mode ?? 'none',
+      port: 0,
+      remoteUrl: persistedRemoteUrl,
+      config: source?.getConfig() ?? persistedConfig
+    }
+  })
 
   ipcMain.handle('signalAnalysis:setConfig', (e, patch: unknown) => {
     if (!isTrustedSender(e)) return FORBIDDEN
@@ -666,10 +714,10 @@ export function registerSignalAnalysisServer(): () => void {
     const res = sanitizeConfigPatch(patch)
     if (!res.ok || !res.value) return { ok: false, error: res.error }
     const merged = { ...persistedConfig, ...res.value }
-    if (!(merged.freq > 0 && merged.freq < merged.sampleRate / 2))
+    if (!isValidCarrierFrequency(merged.freq, merged.sampleRate))
       return {
         ok: false,
-        error: `freq(${merged.freq}) 须小于 sampleRate/2(${merged.sampleRate / 2})`
+        error: `freq(${merged.freq}) 须满足 0 ≤ freq < sampleRate/2(${merged.sampleRate / 2})`
       }
     persistedConfig = merged
     if (source) source.setConfig(res.value)
@@ -686,8 +734,8 @@ export function registerSignalAnalysisServer(): () => void {
 
   ipcMain.handle('signalAnalysis:trigger', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
-    source?.trigger()
-    return { ok: true }
+    const emitted = source?.trigger() ?? false
+    return { ok: true, emitted }
   })
 
   // 订阅登记：只有真正有人看图时才做 60fps 的生成/FFT/IPC（按 webContents 引用计数）
@@ -701,10 +749,19 @@ export function registerSignalAnalysisServer(): () => void {
         analysisWatchedSenders.delete(id)
         analysisSubscribers.delete(id)
       })
+      // 跨文档导航/刷新后旧订阅作废（did-navigate 不含 hash 路由切换，避免误清 SPA 内订阅）
+      e.sender.on('did-navigate', () => {
+        analysisSubscribers.delete(id)
+      })
+      e.sender.on('render-process-gone', () => {
+        analysisWatchedSenders.delete(id)
+        analysisSubscribers.delete(id)
+      })
     }
     return { ok: true }
   })
   ipcMain.handle('signalAnalysis:unsubscribe', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     const id = e.sender.id
     const left = (analysisSubscribers.get(id) ?? 0) - 1
     if (left > 0) analysisSubscribers.set(id, left)

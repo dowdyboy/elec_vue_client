@@ -87,6 +87,17 @@ async function run(): Promise<void> {
   assert(src[0]!.dataLength === 1024, `dataLength=${src[0]!.dataLength}`)
   assert(Number(src[0]!.qAbs) > 0, 'OFDM Q energy is zero')
 
+  // 1b) source:frame 只投递给已订阅窗口：退订后不再接收，重新订阅恢复
+  await js('window.api.source.unsubscribe()')
+  await js('window.__sourceFrames = []')
+  await wait(220)
+  const unsubFrames = Number(await js<number>('window.__sourceFrames.length'))
+  assert(unsubFrames === 0, `source:frame leaked to unsubscribed window: ${unsubFrames}`)
+  await js('window.api.source.subscribe()')
+  await wait(220)
+  const resubFrames = Number(await js<number>('window.__sourceFrames.length'))
+  assert(resubFrames > 0, 'source:frame did not resume after re-subscribe')
+
   // 2) analysis consumer
   const aStart = await js<{ ok: boolean; error?: string }>(
     `window.api.signalAnalysis.start({ mode: 'local' })`
@@ -116,8 +127,22 @@ async function run(): Promise<void> {
   assert(memStop.status && memStop.status.frames > 0, 'memory recording captured no frames')
   assert(memStop.status.samples > 0, 'memory recording captured no samples')
 
+  // 3b) 未导出录制保护：换模式/新录制必须先确认，不能静默丢弃
+  const guard = await js<{ ok: boolean; needsConfirm?: boolean }>(
+    'window.api.source.recordStart(true)'
+  )
+  assert(
+    guard.ok === false && guard.needsConfirm === true,
+    'unexported recording was discarded silently'
+  )
+  const recStatus = await js<{ hasUnexported?: boolean }>('window.api.source.recordStatus()')
+  assert(recStatus.hasUnexported === true, 'recordStatus.hasUnexported should be true')
+
   // 4) streaming recording + concatenated export
-  await js('window.api.source.recordStart(true)')
+  const streamStart = await js<{ ok: boolean; status?: { recording: boolean } }>(
+    'window.api.source.recordStart(true, { confirmDiscard: true })'
+  )
+  assert(streamStart.ok && streamStart.status?.recording === true, 'stream recording did not start')
   await wait(300)
   const streamStop = await js<{ ok: boolean; status?: { samples: number; truncated: boolean } }>(
     'window.api.source.recordStop()'
@@ -177,6 +202,25 @@ async function run(): Promise<void> {
   assert(pst2?.speed === 2, `playback speed=${pst2?.speed}`)
   assert(pst2?.loop === false, `playback loop=${pst2?.loop}`)
   await js('window.api.source.stopPlayback()')
+
+  // 5c) 回放倍速不得泄漏到直播：设 4x 后启动实时源，0.5s 内仍应约 30 帧（60fps），而不是 ~120 帧
+  await js('window.api.source.setPlaybackSpeed(4)')
+  await js('window.api.source.start()')
+  await js('window.__sourceFrames = []')
+  await wait(500)
+  const liveFrames = Number(await js<number>('window.__sourceFrames.length'))
+  assert(
+    liveFrames >= 12 && liveFrames <= 60,
+    `live frame rate polluted by playback speed: ${liveFrames} frames in 500ms`
+  )
+  await js('window.api.source.stop()')
+
+  // 5d) 0 Hz 基带：分析配置与源共享同一合法域（0 ≤ freq < Fs/2）
+  const zeroHz = await js<{ ok: boolean; error?: string }>(
+    'window.api.signalAnalysis.setConfig({ freq: 0, sampleRate: 4096 })'
+  )
+  assert(zeroHz.ok, `analysis setConfig rejected 0 Hz baseband: ${zeroHz.error}`)
+  await js('window.api.signalAnalysis.setConfig({ freq: 512 })')
 
   // 6) S11 sweep
   const sweepCfg = { ...defaultSweepConfig(), points: 51, calDelayPs: 100, calLossDb: 1 }

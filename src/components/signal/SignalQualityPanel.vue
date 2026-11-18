@@ -14,9 +14,15 @@ import type {
   SignalQualityState
 } from './core/types'
 
-const props = withDefaults(defineProps<SignalQualityPanelProps>(), {
+interface Props extends SignalQualityPanelProps {
+  /** powerDbm/peakPowerDbm 两行的单位显示（默认 dBm，保持向后兼容） */
+  powerUnit?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
   compact: false,
-  showPassFail: true
+  showPassFail: true,
+  powerUnit: 'dBm'
 })
 
 interface Row {
@@ -50,8 +56,8 @@ const rows = computed<Row[]>(() => {
     { key: 'paprDb', labelKey: 'quality.papr', unit: 'dB', digits: 1 },
     { key: 'iqGainImbalanceDb', labelKey: 'quality.iqGain', unit: 'dB', digits: 2 },
     { key: 'iqPhaseImbalanceDeg', labelKey: 'quality.iqPhase', unit: '°', digits: 2 },
-    { key: 'powerDbm', labelKey: 'quality.power', unit: 'dBm', digits: 1 },
-    { key: 'peakPowerDbm', labelKey: 'quality.peakPower', unit: 'dBm', digits: 1 },
+    { key: 'powerDbm', labelKey: 'quality.power', unit: props.powerUnit, digits: 1 },
+    { key: 'peakPowerDbm', labelKey: 'quality.peakPower', unit: props.powerUnit, digits: 1 },
     { key: 'frequencyHz', labelKey: 'quality.frequency', unit: 'Hz', digits: 1 },
     { key: 'pulseWidthSec', labelKey: 'quality.pulseWidth', unit: 's', digits: 6 },
     { key: 'dutyCycle', labelKey: 'quality.duty', unit: '%', digits: 1 }

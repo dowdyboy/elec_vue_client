@@ -1,3 +1,12 @@
+<script lang="ts">
+/**
+ * 本工作台是否在当前应用会话中启动过本地分析消费者。
+ * 放在模块作用域而不是 setup 作用域：路由离开/返回后组件实例会重建，
+ * 若用实例变量会丢失归属，导致「停止」按钮不再停止自己启动过的分析消费。
+ */
+let analysisStartedByWorkbench = false
+</script>
+
 <script setup lang="ts">
 /**
  * SourceWorkbenchPage（信号源工作台）
@@ -22,6 +31,7 @@ import {
   NTabPane,
   NTabs,
   NTag,
+  useDialog,
   useMessage
 } from 'naive-ui'
 import { IqChart, SpectrumChart } from '@components/signal'
@@ -38,6 +48,7 @@ import {
 } from '../../../../shared/source'
 
 const message = useMessage()
+const dialog = useDialog()
 const iqRef = ref<InstanceType<typeof IqChart> | null>(null)
 const spectrumRef = ref<InstanceType<typeof SpectrumChart> | null>(null)
 const previewSpectrumMode = ref<'real' | 'complex'>('complex')
@@ -61,7 +72,6 @@ const playbackIndex = ref(0)
 const playbackTotal = ref(0)
 const playbackDurationMs = ref(0)
 const playbackPositionMs = ref(0)
-let analysisStartedHere = false
 const kind = ref<SourceKind>('cw')
 const outputMode = ref<'real' | 'complex'>('complex')
 const carrierHz = ref(512)
@@ -85,6 +95,8 @@ const recordFrames = ref(0)
 const recordSamples = ref(0)
 const recordDurationMs = ref(0)
 const recordTruncated = ref(false)
+const recordHasUnexported = ref(false)
+const recordMode = ref<'memory' | 'stream'>('memory')
 const streamRecord = ref(false)
 const recordBusy = ref(false)
 let recordPoll: ReturnType<typeof setInterval> | null = null
@@ -180,10 +192,14 @@ function hydrate(c: Partial<SignalAnalysisConfig>): void {
 }
 
 async function refreshStatus(sync = false): Promise<void> {
-  const st = await window.api.source.getStatus()
-  running.value = st.running
-  sourceMode.value = (st as { mode?: 'live' | 'playback' }).mode ?? 'live'
-  if (sync && st.config) hydrate(st.config as Partial<SignalAnalysisConfig>)
+  try {
+    const st = await window.api.source.getStatus()
+    running.value = st.running
+    sourceMode.value = st.mode ?? 'live'
+    if (sync && st.config) hydrate(st.config as Partial<SignalAnalysisConfig>)
+  } catch {
+    running.value = false
+  }
 }
 
 async function refreshPlaybackStatus(): Promise<void> {
@@ -209,14 +225,41 @@ async function refreshPlaybackStatus(): Promise<void> {
   }
 }
 
-async function importIq(): Promise<void> {
+/** 有未导出录制时确认是否丢弃（返回 true = 继续） */
+function confirmDiscardRecording(action: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (v: boolean): void => {
+      if (settled) return
+      settled = true
+      resolve(v)
+    }
+    dialog.warning({
+      title: '存在未导出的录制',
+      content: `${recordFrames.value} 帧 / ${recordSamples.value} 样本尚未导出，${action}会丢弃这段录制。是否继续？`,
+      positiveText: '丢弃并继续',
+      negativeText: '取消',
+      onPositiveClick: () => done(true),
+      onNegativeClick: () => done(false),
+      onClose: () => done(false),
+      onMaskClick: () => done(false)
+    })
+  })
+}
+
+async function importIq(confirmDiscard = false): Promise<void> {
   try {
-    const r = (await window.api.source.importIq()) as {
+    const r = (await window.api.source.importIq({ confirmDiscard })) as {
       ok: boolean
       path?: string
       truncated?: boolean
       canceled?: boolean
+      needsConfirm?: boolean
       error?: string
+    }
+    if (r.needsConfirm) {
+      if (await confirmDiscardRecording('导入 IQ')) await importIq(true)
+      return
     }
     if (r.canceled) return
     if (!r.ok) {
@@ -234,13 +277,18 @@ async function importIq(): Promise<void> {
   }
 }
 
-async function loadPlayback(): Promise<void> {
+async function loadPlayback(confirmDiscard = false): Promise<void> {
   try {
-    const r = (await window.api.source.loadPlayback()) as {
+    const r = (await window.api.source.loadPlayback({ confirmDiscard })) as {
       ok: boolean
       path?: string
       canceled?: boolean
+      needsConfirm?: boolean
       error?: string
+    }
+    if (r.needsConfirm) {
+      if (await confirmDiscardRecording('加载回放')) await loadPlayback(true)
+      return
     }
     if (r.canceled) return
     if (!r.ok) {
@@ -307,13 +355,13 @@ async function applyConfig(): Promise<boolean> {
 }
 
 async function ensureAnalysisConsumer(): Promise<boolean> {
-  if (analysisStartedHere) return true
+  if (analysisStartedByWorkbench) return true
   const ar = (await window.api.signalAnalysis.start({ mode: 'local' }).catch(() => null)) as {
     ok?: boolean
     error?: string
   } | null
   if (ar?.ok) {
-    analysisStartedHere = true
+    analysisStartedByWorkbench = true
     return true
   }
   if (ar?.error && !ar.error.includes('已运行')) {
@@ -336,9 +384,9 @@ async function startSource(): Promise<void> {
 }
 
 async function stopSource(): Promise<void> {
-  if (analysisStartedHere) {
+  if (analysisStartedByWorkbench) {
     await window.api.signalAnalysis.stop().catch(() => {})
-    analysisStartedHere = false
+    analysisStartedByWorkbench = false
   }
   if (recording.value) {
     await window.api.source.recordStop().catch(() => {})
@@ -352,6 +400,18 @@ async function stopSource(): Promise<void> {
   message.success('信号源已停止')
 }
 
+/** 非循环回放播完后重新从头播放（不重新选文件） */
+async function restartPlayback(): Promise<void> {
+  const r = (await window.api.source.startPlayback()) as { ok: boolean }
+  if (!r.ok) {
+    message.warning('没有可重新回放的录制，请选择「回放录制」')
+    return
+  }
+  await refreshStatus()
+  await refreshPlaybackStatus()
+  message.success('重新开始回放')
+}
+
 async function refreshRecordStatus(): Promise<void> {
   try {
     const st = (await window.api.source.recordStatus()) as {
@@ -360,12 +420,16 @@ async function refreshRecordStatus(): Promise<void> {
       samples: number
       durationMs: number
       truncated: boolean
+      mode?: 'memory' | 'stream'
+      hasUnexported?: boolean
     }
     recording.value = st.recording
     recordFrames.value = st.frames
     recordSamples.value = st.samples
     recordDurationMs.value = st.durationMs
     recordTruncated.value = st.truncated
+    if (st.mode) recordMode.value = st.mode
+    recordHasUnexported.value = st.hasUnexported === true
   } catch {
     /* ignore */
   }
@@ -382,9 +446,24 @@ async function toggleRecord(): Promise<void> {
     message.warning('请先启动源再录制')
     return
   }
-  await window.api.source.recordStart(streamRecord.value).catch(() => {})
+  if (playbackPaused.value) {
+    message.warning('回放暂停中不会产生新帧，请先继续回放再录制')
+    return
+  }
+  const start = async (confirmDiscard: boolean): Promise<{ needsConfirm?: boolean }> => {
+    const r = (await window.api.source
+      .recordStart(streamRecord.value, { confirmDiscard })
+      .catch(() => ({ ok: false, needsConfirm: false }))) as { needsConfirm?: boolean }
+    return r
+  }
+  let r = await start(false)
+  if (r.needsConfirm) {
+    if (!(await confirmDiscardRecording('开始新录制'))) return
+    r = await start(true)
+  }
   await refreshRecordStatus()
-  message.success(streamRecord.value ? '开始流式录制源帧' : '开始录制源帧')
+  if (recording.value) message.success(streamRecord.value ? '开始流式录制源帧' : '开始录制源帧')
+  else message.error('录制启动失败')
 }
 
 async function exportRecord(): Promise<void> {
@@ -407,6 +486,8 @@ async function exportRecord(): Promise<void> {
       return
     }
     message.success(`已导出 ${r.path}（元数据 ${r.metaPath}）`)
+  } catch (e) {
+    message.error(`导出失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     recordBusy.value = false
     await refreshRecordStatus()
@@ -421,8 +502,9 @@ async function applyAndNotify(): Promise<void> {
   if (await applyConfig()) message.success('源参数已下发')
 }
 async function triggerOnce(): Promise<void> {
-  const r = (await window.api.source.trigger()) as { ok: boolean }
-  if (r.ok) message.info('已触发一帧')
+  const r = (await window.api.source.trigger()) as { ok: boolean; emitted?: boolean }
+  if (r.ok && r.emitted !== false) message.info('已触发一帧')
+  else if (r.ok) message.warning('当前没有产出帧（检查「输出/推送」开关或回放状态）')
   else message.warning('当前源不支持单帧触发')
 }
 
@@ -433,6 +515,7 @@ onMounted(async () => {
   await refreshRecordStatus()
   await refreshPlaybackStatus()
   recordPoll = setInterval(() => {
+    void refreshStatus()
     void refreshRecordStatus()
     void refreshPlaybackStatus()
   }, 1000)
@@ -489,13 +572,16 @@ onUnmounted(() => {
         <p>源类型、输出与损伤；分析 UI 组件不在这里配置 FFT/窗。</p>
       </div>
       <div class="source-status">
-        <NTag :type="running ? 'success' : 'default'" :bordered="false">
-          {{ running ? '运行中' : '未运行' }}
+        <NTag
+          :type="playbackPaused ? 'warning' : running ? 'success' : 'default'"
+          :bordered="false"
+        >
+          {{ playbackPaused ? '已暂停' : running ? '运行中' : '未运行' }}
         </NTag>
         <NTag v-if="sourceMode === 'playback'" type="warning" :bordered="false">回放</NTag>
         <NTag :bordered="false">{{ frameCount }} 帧</NTag>
-        <NButton size="small" @click="loadPlayback">回放录制</NButton>
-        <NButton size="small" @click="importIq">导入 IQ</NButton>
+        <NButton size="small" @click="loadPlayback()">回放录制</NButton>
+        <NButton size="small" @click="importIq()">导入 IQ</NButton>
         <NButton v-if="sourceMode === 'playback'" size="small" @click="togglePlaybackPause">
           {{ playbackPaused ? '继续' : '暂停' }}
         </NButton>
@@ -504,6 +590,13 @@ onUnmounted(() => {
           size="small"
           @click="stepPlayback"
           >单步</NButton
+        >
+        <NButton
+          v-if="sourceMode === 'playback' && playbackLoaded && !running && !playbackPaused"
+          size="small"
+          type="primary"
+          @click="restartPlayback"
+          >重新回放</NButton
         >
         <NButton v-if="sourceMode === 'playback'" size="small" @click="stopPlayback">
           停止回放
@@ -524,6 +617,15 @@ onUnmounted(() => {
         >
       </div>
     </div>
+    <NAlert
+      v-if="recordHasUnexported && !recording"
+      type="warning"
+      :bordered="false"
+      style="margin-bottom: 10px"
+    >
+      有未导出的录制（{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
+      {{ formatDuration(recordDurationMs) }}）。加载回放、导入 IQ 或开始新录制会丢弃它，请先导出。
+    </NAlert>
     <div v-if="sourceMode === 'playback' || recording || recordFrames > 0" class="record-bar">
       <NTag v-if="sourceMode === 'playback'" type="warning" size="small" :bordered="false">
         回放 {{ playbackIndex }}/{{ playbackTotal }}{{ playbackPaused ? ' · 暂停' : '' }}
@@ -571,11 +673,13 @@ onUnmounted(() => {
       </label>
       <span v-if="playbackPath" class="playback-path">{{ playbackPath }}</span>
       <NTag v-if="recording" type="error" size="small" :bordered="false">● 录制中</NTag>
+      <NTag size="small" :bordered="false">{{ recordMode === 'stream' ? '流式' : '内存' }}</NTag>
       <span
         >{{ recordFrames }} 帧 / {{ recordSamples }} 样本 /
         {{ formatDuration(recordDurationMs) }}</span
       >
       <span v-if="recordTruncated" class="record-warn">已达录制上限，后续帧未记录</span>
+      <span v-else-if="recordHasUnexported" class="record-warn">未导出</span>
     </div>
 
     <NGrid :cols="24" :x-gap="16">
@@ -707,7 +811,12 @@ onUnmounted(() => {
         <NCard size="small" title="预览 / 播放">
           <template #header-extra>
             <div class="actions">
-              <NButton size="small" type="primary" :disabled="running" @click="startSource">
+              <NButton
+                size="small"
+                type="primary"
+                :disabled="running || playbackLoaded"
+                @click="startSource"
+              >
                 启动
               </NButton>
               <NButton size="small" :disabled="!running" @click="stopSource">停止</NButton>
@@ -715,8 +824,29 @@ onUnmounted(() => {
               <NButton size="small" :disabled="!running" @click="triggerOnce">单帧</NButton>
             </div>
           </template>
-          <NAlert v-if="!running" type="info" :bordered="false" style="margin-bottom: 10px">
+          <NAlert
+            v-if="!running && !playbackLoaded"
+            type="info"
+            :bordered="false"
+            style="margin-bottom: 10px"
+          >
             启动后由本地源持续推送 IQ，同时启动本地分析消费者；可在 IQ/频谱预览间切换。
+          </NAlert>
+          <NAlert
+            v-else-if="playbackPaused"
+            type="warning"
+            :bordered="false"
+            style="margin-bottom: 10px"
+          >
+            回放已暂停：用「继续」恢复、或「单步」逐帧查看。
+          </NAlert>
+          <NAlert
+            v-else-if="!running && playbackLoaded"
+            type="warning"
+            :bordered="false"
+            style="margin-bottom: 10px"
+          >
+            回放已结束：用「重新回放」从头播放，或「停止回放」后回到实时源。
           </NAlert>
           <NAlert v-else type="success" :bordered="false" style="margin-bottom: 10px">
             {{ summary.label }} · {{ summary.outputMode }} · {{ summary.sampleRate }} Sa/s · 每帧

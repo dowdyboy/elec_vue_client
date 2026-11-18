@@ -3,7 +3,8 @@
  * 不读取分析配置，确保「分析配置」不会反向影响「信号源」预览。
  */
 import type { SourceFrame } from './sourceEngine'
-import { applyWindow, getWindow, magnitudeSpectrum, toDB } from './signalDsp'
+import { applyWindow, magnitudeSpectrum, toDB } from './signalDsp'
+import { getWindowInfo } from './signalFrames'
 
 export interface SourcePreviewSpectrum {
   data: Float32Array
@@ -43,12 +44,20 @@ export function buildSourcePreviewSpectrum(
     re[k] = frame.data[2 * k] ?? 0
     im[k] = frame.data[2 * k + 1] ?? 0
   }
-  const win = getWindow('hann', fftSize)
+  const { win, gain } = getWindowInfo('hann', fftSize)
   applyWindow(re, win)
   applyWindow(im, win)
   const spectrumMode = opts.spectrumMode ?? (frame.outputMode === 'complex' ? 'complex' : 'real')
   const complex = spectrumMode === 'complex'
   const mag = magnitudeSpectrum(re, im, complex ? { full: true, fftShift: true } : {})
+  // 窗相干增益补偿（与 signalFrames.computeSpectrumRow 同口径）：
+  // 满量程 CW 预览峰值 = 0 dB；real 单边谱除 DC 外 ×2
+  const inv = gain > 1e-12 ? 1 / gain : 1
+  if (complex) {
+    for (let i = 0; i < mag.length; i++) mag[i] = (mag[i] ?? 0) * inv
+  } else {
+    for (let i = 0; i < mag.length; i++) mag[i] = (mag[i] ?? 0) * inv * (i === 0 ? 1 : 2)
+  }
   const db = opts.db !== false
   return {
     data: db ? toDB(mag) : mag,

@@ -35,6 +35,7 @@ import { YAutoScaler } from './core/yauto'
 import { resolveTheme } from './core/theme'
 import { translate, type ChartMessageKey } from './core/i18n'
 import { cssSize } from './core/css'
+import { KeyboardArbiter } from './core/keyboardFocus'
 import type {
   ExportPayload,
   IqCursorInfo,
@@ -264,6 +265,11 @@ function schedule(): void {
 
 // 触发引擎：触发对齐显示模式（独立于跟随/暂停）
 const triggerEng = new TriggerEngine()
+// 各通道上一段末样本：供 findEdge 检测跨段边界 (s-1, s) 的边沿（此前永不检测）
+const lastTrigSample: { i: number | undefined; q: number | undefined } = {
+  i: undefined,
+  q: undefined
+}
 // 最近已渲染的触发显示键（`触发点绝对索引:窗宽`）；空串=尚未渲染过。
 // normal/single 触发后首帧渲染「触发对齐窗口」并冻结，仅当触发点或窗宽变化才重绘——
 // 环形缓冲持续流入淘汰也不影响已冻结画面（消除周期性跳变）
@@ -432,12 +438,18 @@ function pushNormalized(n: IqNormalized): void {
   } else if (dataLen > pyrStart) {
     pyr.appendRange(iBuf, qBuf, pyrStart, dataLen)
   }
-  // 触发检测：在新增数据段上找边沿（源通道）
+  // 触发检测：在新增数据段上找边沿（源通道）；同时把上一段末样本喂给引擎，
+  // 让 (s-1, s) 的跨段边界边沿也能命中
+  const lastI = iBuf[dataLen - 1]
+  const lastQ = qBuf[dataLen - 1]
   if (triggerCfg.enabled) {
-    const src = triggerCfg.source === 'i' ? iBuf : qBuf
-    triggerEng.feed(triggerCfg, src, trigStart, dataLen, dropped)
+    const key = triggerCfg.source === 'i' ? 'i' : 'q'
+    const src = key === 'i' ? iBuf : qBuf
+    triggerEng.feed(triggerCfg, src, trigStart, dataLen, dropped, lastTrigSample[key])
     promotePendingIfReady()
   }
+  lastTrigSample.i = lastI
+  lastTrigSample.q = lastQ
   lastDataAt = performance.now() // 实际入缓冲才刷新（数据流中断角标依据）
   schedule()
 }
@@ -672,9 +684,8 @@ let lastXrReal: { min: number; max: number } | null = null
 
 // 十字光标状态：绘图区内悬停位置；null=不显示
 let cursor: { px: number; py: number } | null = null
-// 鼠标是否悬停本实例：键盘快捷键只作用于悬停中的图表（多实例不抢键）
-let hovered = false
-const focused = ref(false)
+// 键盘响应权：同页多图只有最后悬停/聚焦的一张响应快捷键
+const keyboard = new KeyboardArbiter()
 
 // Shift+拖拽框选状态：像素坐标矩形；null=未框选
 let boxSel: { x0: number; y0: number; x1: number; y1: number } | null = null
@@ -1532,9 +1543,11 @@ function zoomViewX(factor: number): void {
 }
 function onKeyDown(evt: KeyboardEvent): void {
   if (evt.ctrlKey || evt.metaKey || evt.altKey) return
-  // 键盘快捷键作用于悬停或聚焦的实例（多图同页不互相抢键）；
+  // 按住重复触发会让暂停/缩放等快捷键反复切换，只响应首次按键
+  if (evt.repeat) return
+  // 键盘快捷键只作用于最近悬停/聚焦的一张图（多图同页不互相抢键）；
   // 且焦点在输入控件内时完全不响应（避免打字触发撤销/平移/缩放）
-  if (!hovered && !focused.value) return
+  if (!keyboard.active) return
   const t = evt.target as HTMLElement | null
   if (
     t &&
@@ -1639,11 +1652,14 @@ function updateCursor(evt: MouseEvent): void {
     schedule()
   }
 }
+function onFocus(): void {
+  keyboard.claim()
+}
 function onPointerEnter(): void {
-  hovered = true
+  keyboard.claim()
 }
 function onPointerLeave(): void {
-  hovered = false
+  // 不释放键盘响应权：移开鼠标仍保留最近一次悬停/聚焦的键盘焦点态
   if (cursor !== null) {
     cursor = null
     emit('cursorChange', null)
@@ -2107,53 +2123,95 @@ function getStats(): IqStats {
 const EXPORT_MAX_ROWS = 500_000
 
 /**
+ * 导出渲染隔离：draw() 会推进余辉淡出 / 清空待回填快照。
+ * 导出只是取当前画面，不应改变屏幕状态；draw() 前后保存/还原状态与像素。
+ */
+function withExportRender<T>(fn: () => T): T {
+  const persist = Math.min(0.95, Math.max(0, props.persistence ?? 0))
+  if (persist <= 0) return fn()
+  const canvas = canvasRef.value
+  const saved = { fadeOutFrames, persistSnapshot, needsRestore }
+  let before: HTMLCanvasElement | null = null
+  // preserveDrawingBuffer=false 时旧帧缓冲可能已被清空，快照无意义，只还原状态
+  if (canvas && !saved.needsRestore && props.preserveDrawingBuffer !== false) {
+    before = document.createElement('canvas')
+    before.width = canvas.width
+    before.height = canvas.height
+    before.getContext('2d')?.drawImage(canvas, 0, 0)
+  }
+  try {
+    return fn()
+  } finally {
+    fadeOutFrames = saved.fadeOutFrames
+    // 导出顺带完成的「画布重建回填」保留修复结果；其余情况恢复导出前快照与像素
+    if (!saved.needsRestore) {
+      persistSnapshot = saved.persistSnapshot
+      needsRestore = saved.needsRestore
+      if (before && canvas && canvasRef.value === canvas) {
+        if (blitRenderer && gl) blitRenderer.draw(before)
+        else if (ctx2d) {
+          ctx2d.save()
+          ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+          ctx2d.clearRect(0, 0, canvas.width, canvas.height)
+          ctx2d.drawImage(before, 0, 0, canvas.width, canvas.height)
+          ctx2d.restore()
+        }
+      }
+    }
+  }
+}
+
+/**
  * 合成 GL 波形层 + overlay 轴层为离屏画布（手动补绘图例，DOM 元素不入画布）。
- * 先同步 draw()：preserveDrawingBuffer=false 时，同任务内重绘+读取可确保 WebGL 帧缓冲有效
+ * 先同步 draw()：preserveDrawingBuffer=false 时，同任务内重绘+读取可确保 WebGL 帧缓冲有效；
+ * draw() 的余辉副作用由 withExportRender 隔离。
  */
 function compositeCanvas(): HTMLCanvasElement {
-  draw()
-  const glC = canvasRef.value
-  const ov = overlayRef.value
-  const out = document.createElement('canvas')
-  if (!glC || !ov) return out
-  out.width = glC.width
-  out.height = glC.height
-  const ctx = out.getContext('2d')
-  if (!ctx) return out
-  // 按输出尺寸显式缩放：两层 backing 若因 DPR/页面缩放时序不同步，
-  // 仍保证导出图完整覆盖且轴层与波形对齐（overlay CSS 宽度与 GL 画布同一布局盒）
-  ctx.drawImage(glC, 0, 0, out.width, out.height)
-  ctx.drawImage(ov, 0, 0, out.width, out.height)
-  // 图例按 GL 画布的实测比例映射（背板 ÷ CSS 实测尺寸）：与波形同一变换基准，
-  // 不用全局 devicePixelRatio 缓存（页面缩放/DPR 时序变化下会与画布实际比例脱节）
-  const ratio = glC.width / Math.max(1, glC.clientWidth || glC.width)
-  const cssW = glC.clientWidth || glC.width
-  ctx.scale(ratio, ratio)
-  ctx.font = '12px system-ui, -apple-system, sans-serif'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  const items = [
-    { label: 'I', color: th.value.traceI, on: traceVisible.i },
-    { label: 'Q', color: th.value.traceQ, on: traceVisible.q }
-  ]
-  if (props.envelope) items.push({ label: 'Env', color: th.value.envColor, on: traceVisible.env })
-  const gap = 12
-  const widths = items.map((it) => 8 + 4 + ctx.measureText(it.label).width)
-  const totalW = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)
-  let x = cssW - 10 - totalW
-  const y = 15
-  items.forEach((it, idx) => {
-    ctx.globalAlpha = it.on ? 1 : 0.35
-    ctx.fillStyle = it.color
-    ctx.beginPath()
-    ctx.arc(x + 4, y, 4, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = th.value.text
-    ctx.fillText(it.label, x + 12, y + 0.5)
-    x += widths[idx]! + gap
+  return withExportRender(() => {
+    draw()
+    const glC = canvasRef.value
+    const ov = overlayRef.value
+    const out = document.createElement('canvas')
+    if (!glC || !ov) return out
+    out.width = glC.width
+    out.height = glC.height
+    const ctx = out.getContext('2d')
+    if (!ctx) return out
+    // 按输出尺寸显式缩放：两层 backing 若因 DPR/页面缩放时序不同步，
+    // 仍保证导出图完整覆盖且轴层与波形对齐（overlay CSS 宽度与 GL 画布同一布局盒）
+    ctx.drawImage(glC, 0, 0, out.width, out.height)
+    ctx.drawImage(ov, 0, 0, out.width, out.height)
+    // 图例按 GL 画布的实测比例映射（背板 ÷ CSS 实测尺寸）：与波形同一变换基准，
+    // 不用全局 devicePixelRatio 缓存（页面缩放/DPR 时序变化下会与画布实际比例脱节）
+    const ratio = glC.width / Math.max(1, glC.clientWidth || glC.width)
+    const cssW = glC.clientWidth || glC.width
+    ctx.scale(ratio, ratio)
+    ctx.font = '12px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    const items = [
+      { label: 'I', color: th.value.traceI, on: traceVisible.i },
+      { label: 'Q', color: th.value.traceQ, on: traceVisible.q }
+    ]
+    if (props.envelope) items.push({ label: 'Env', color: th.value.envColor, on: traceVisible.env })
+    const gap = 12
+    const widths = items.map((it) => 8 + 4 + ctx.measureText(it.label).width)
+    const totalW = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1)
+    let x = cssW - 10 - totalW
+    const y = 15
+    items.forEach((it, idx) => {
+      ctx.globalAlpha = it.on ? 1 : 0.35
+      ctx.fillStyle = it.color
+      ctx.beginPath()
+      ctx.arc(x + 4, y, 4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = th.value.text
+      ctx.fillText(it.label, x + 12, y + 0.5)
+      x += widths[idx]! + gap
+    })
+    ctx.globalAlpha = 1
+    return out
   })
-  ctx.globalAlpha = 1
-  return out
 }
 
 /** 导出当前视图为 PNG（波形 + 坐标轴 + 图例） */
@@ -2461,6 +2519,9 @@ function appendData(raw: unknown, meta?: IqFrameMeta): void {
 function clear(needDraw = true): void {
   dataLen = 0
   dropped = 0
+  // 缓冲清空后跨段边沿的「上段末样本」失效
+  lastTrigSample.i = undefined
+  lastTrigSample.q = undefined
   markers = []
   markerDrag = -1
   persistSnapshot = null
@@ -2494,8 +2555,7 @@ function setViewport(v: Partial<NonNullable<IqProps['viewport']>>): void {
       '--sig-border': th.border,
       '--sig-trigger': th.triggerColor
     }"
-    @focus="focused = true"
-    @blur="focused = false"
+    @focus="onFocus"
     @wheel="onWheel"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"

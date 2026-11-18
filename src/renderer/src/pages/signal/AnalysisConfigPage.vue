@@ -98,7 +98,8 @@ onMounted(refresh)
       </template>
       <NAlert type="info" :bordered="false" style="margin-bottom: 14px">
         这里只配置 FFT/窗/dB/重叠/频谱语义。源类型、载波、幅度、AWGN 请到
-        <router-link to="/source">信号源工作台</router-link>；源是否运行由源页控制。
+        <router-link to="/source">信号源工作台</router-link
+        >；源的启停由源工作台控制（本地分析启动时若源未运行会代启动一次）。
       </NAlert>
       <NForm label-placement="left" label-width="128" size="small">
         <NFormItem label="FFT 大小">

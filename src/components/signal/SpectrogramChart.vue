@@ -15,6 +15,7 @@ import { SpectrogramGlRenderer } from './core/spectrogramGl'
 import { SpectrogramCanvasRenderer } from './core/spectrogramCanvas'
 import { translate, type ChartMessageKey } from './core/i18n'
 import { spectrumAdapters } from './core/adapters'
+import { KeyboardArbiter } from './core/keyboardFocus'
 import { useGlChart } from './composables/useGlChart'
 import { usePrefersDark } from './composables/usePrefersDark'
 import type {
@@ -77,6 +78,7 @@ const emit = defineEmits<{
   (e: 'update:dbMax', v: number): void
   (e: 'levelChange', p: { min: number; max: number }): void
   (e: 'frequencyChange', p: { startBin: number; endBin: number; fullSpan: boolean }): void
+  (e: 'viewportChange', p: { startBin: number; endBin: number; fullSpan: boolean }): void
   (e: 'metaChange', p: SpectrogramMeta): void
   (e: 'exported', p: { kind: 'png' | 'csv'; filename: string }): void
 }>()
@@ -88,6 +90,15 @@ function reportError(code: 'adapter' | 'webgl' | 'data' | 'export', message: str
   emit('error', message)
   emit('errorDetail', { code, message })
 }
+
+/** 不依赖 Vite 的 DEV 判断（非 Vite 宿主也能安全运行） */
+const IS_DEV = (() => {
+  try {
+    return Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV)
+  } catch {
+    return false
+  }
+})()
 
 const rootRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -241,8 +252,8 @@ const level = reactive({
 let lastAutoSeq = -1
 
 let cursor: { px: number; py: number } | null = null
-let hovered = false
-const focused = ref(false)
+// 键盘响应权：同页多图只有最后悬停/聚焦的一张响应快捷键
+const keyboard = new KeyboardArbiter()
 let drag: { px: number; start: number; end: number } | null = null
 const touchPts = new Map<number, { x: number; y: number }>()
 let pinch: { dist: number; span: number; centerBin: number } | null = null
@@ -343,6 +354,7 @@ function resetFreqView(): void {
   freqStart = 0
   freqEnd = Math.max(0, buffer.cols - 1)
   emit('frequencyChange', { startBin: freqStart, endBin: freqEnd, fullSpan: true })
+  emit('viewportChange', { startBin: freqStart, endBin: freqEnd, fullSpan: true })
   schedule()
 }
 /** 频率视图（bin 索引域）；双目/宿主 API 共用 */
@@ -353,6 +365,7 @@ function setFrequencyView(a: number, b: number): void {
   freqEnd = Math.max(a, b)
   clampFreqView()
   emit('frequencyChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
+  emit('viewportChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
   schedule()
 }
 
@@ -392,6 +405,7 @@ function updatePinch(): void {
     freqEnd = a0 + span
   }
   emit('frequencyChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
+  emit('viewportChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
   schedule()
 }
 
@@ -512,12 +526,27 @@ function sanitizeRow(row: Float32Array): Float32Array {
   for (let i = 0; i < row.length; i++) copy[i] = Number.isFinite(row[i]!) ? row[i]! : -160
   return copy
 }
+let fftMismatchWarned = false
 function applyCols(cols: number): void {
   if (buffer.cols !== cols) {
     buffer.configure(cols, initialCapacity())
-    // 行宽是强契约：real -> fftSize/2；complex -> fftSize
+    // 行宽是强契约：real -> fftSize/2；complex -> fftSize。
+    // 帧已给出 fftSize 时必须保留帧值（允许后端抽稀），否则 timeStepSec/频率轴都会错位；
+    // 只有帧未给出时才按行宽推导，冲突只在 dev 告警一次
     const mode = frameSpectrumMode ?? props.spectrumMode ?? 'real'
-    frameFftSize = mode === 'complex' ? cols : cols * 2
+    if (!frameFftSize) {
+      frameFftSize = mode === 'complex' ? cols : cols * 2
+    } else if (IS_DEV && !fftMismatchWarned) {
+      const expectCols = mode === 'complex' ? frameFftSize : frameFftSize / 2
+      if (Math.round(expectCols) !== cols) {
+        fftMismatchWarned = true
+        console.warn('[SpectrogramChart] fftSize 元数据与行宽不一致', {
+          fftSize: frameFftSize,
+          cols,
+          mode
+        })
+      }
+    }
     lastAutoSeq = -1
     freqFull = true
     freqStart = 0
@@ -1097,11 +1126,14 @@ function updateCursor(evt: MouseEvent): void {
     scheduleOverlay()
   }
 }
+function onFocus(): void {
+  keyboard.claim()
+}
 function onPointerEnter(): void {
-  hovered = true
+  keyboard.claim()
 }
 function onPointerLeave(): void {
-  hovered = false
+  // 不释放键盘响应权：移开鼠标仍保留最近一次悬停/聚焦的键盘焦点态
   if (cursor) {
     cursor = null
     emit('cursorChange', null)
@@ -1133,6 +1165,7 @@ function onWheel(evt: WheelEvent): void {
     freqEnd = a + span
   }
   emit('frequencyChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
+  emit('viewportChange', { startBin: freqStart, endBin: freqEnd, fullSpan: freqFull })
   schedule()
 }
 function onPointerDown(evt: PointerEvent): void {
@@ -1173,6 +1206,7 @@ function onPointerMove(evt: PointerEvent): void {
     freqStart = a
     freqEnd = a + span
     emit('frequencyChange', { startBin: freqStart, endBin: freqEnd, fullSpan: false })
+    emit('viewportChange', { startBin: freqStart, endBin: freqEnd, fullSpan: false })
     schedule()
     return
   }
@@ -1555,7 +1589,11 @@ onMounted(async () => {
 })
 
 function onKeyDown(evt: KeyboardEvent): void {
-  if (!hovered && !focused.value) return
+  // 组合键交给系统（Ctrl/Meta/Alt+F 等不抢）；按住重复触发也不响应
+  if (evt.ctrlKey || evt.metaKey || evt.altKey) return
+  if (evt.repeat) return
+  // 只响应最近悬停/聚焦的那张图（多实例不抢键）；焦点在输入控件内时不响应
+  if (!keyboard.active) return
   const t = evt.target as HTMLElement | null
   if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
   if (evt.key === 'f' || evt.key === 'F') {
@@ -1797,8 +1835,7 @@ defineExpose({
     @pointerleave="onPointerLeave"
     @contextmenu.prevent="onContextMenu"
     @dblclick="onDblClick"
-    @focus="focused = true"
-    @blur="focused = false"
+    @focus="onFocus"
   >
     <canvas ref="canvasRef" class="sig-canvas" />
     <canvas ref="overlayRef" class="sig-overlay" />
