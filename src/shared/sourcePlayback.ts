@@ -12,9 +12,28 @@ export interface SourcePlaybackStatus {
   loop: boolean
   durationMs: number
   positionMs: number
+  /** raw 双通道回放的通道号（普通 SourcePlayback 缺省 0） */
+  channel?: number
+  /** raw 回放实际显示采样率（全速=文件采样率；抽取=≤2 MSPS） */
+  displaySampleRate?: number
 }
 
-export class SourcePlayback {
+/** SourcePlayback / RawIqPlayback 共用的回放接口 */
+export interface PlaybackSource {
+  start(): void
+  stop(): void
+  pause(): void
+  resume(): void
+  step(): SourceFrame | null
+  next(): SourceFrame | null
+  peek(): SourceFrame | null
+  seek(index: number): boolean
+  setLoop(loop: boolean): void
+  getStatus(): SourcePlaybackStatus
+  dispose?(): void
+}
+
+export class SourcePlayback implements PlaybackSource {
   private index = 0
   private playing = false
   private paused = false

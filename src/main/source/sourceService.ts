@@ -6,28 +6,45 @@
  * - LocalAnalysisSource 消费同一 SourceFrame 生成 signal:analysis
  * - 支持模拟源、录制回放、任意 IQ、内存/流式录制
  */
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain } from 'electron'
 import fs from 'node:fs/promises'
+import { join } from 'node:path'
 import {
   defaultAnalysisConfig,
   sanitizeConfigPatch,
   type SignalAnalysisConfig
 } from '../../shared/signal'
 import { SourceEngine, type SourceFrame } from '../../shared/sourceEngine'
+import {
+  defaultDualSimConfig,
+  sanitizeDualSimConfig,
+  type DualSimConfig
+} from '../../shared/sourceDualSim'
 import { PlaybackOutputBackend, SimulatedOutputBackend } from '../../shared/sourceBackend'
-import { SourcePlayback } from '../../shared/sourcePlayback'
+import { SourcePlayback, type PlaybackSource } from '../../shared/sourcePlayback'
 import { SourceRecorder } from '../../shared/sourceRecorder'
 import type { RecordedFrameMeta } from '../../shared/sourceRecorder'
 import { SourceStreamRecorder } from './streamRecorder'
+import { TcpIqSource } from './network/tcpIqSource'
+import { RawIqRecorder } from './network/rawIqRecorder'
+import { RawIqPlayback, type RawPlaybackConfig } from './network/rawIqPlayback'
+import { RawArchivePlayback, type RawArchivePlaybackConfig } from './network/rawArchivePlayback'
+import {
+  sanitizeNetworkConfig,
+  type NetworkSourceConfig,
+  type NetworkSourceStatus
+} from '../../shared/sourceNetwork'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
 
 export interface SourceStatus {
   running: boolean
   mode: 'live' | 'playback'
-  backend: 'simulated' | 'playback'
+  backend: 'simulated' | 'playback' | 'network' | 'dual-sim'
   /** 回放是否处于暂停（live 恒为 false） */
   paused: boolean
   config: SignalAnalysisConfig
+  /** 网络源状态（仅 backend=network 时存在） */
+  network?: NetworkSourceStatus
 }
 
 export class SourceService {
@@ -42,11 +59,18 @@ export class SourceService {
   private subscribers = new Set<(frame: SourceFrame) => void>()
   /** 渲染进程窗口订阅计数（source:frame 只投递给订阅窗口） */
   private windowSubscribers = new Map<number, number>()
+  private dualWindowSubscribers = new Map<number, number>()
   private recorder = new SourceRecorder()
   private streamRecorder = new SourceStreamRecorder()
-  private recordMode: 'memory' | 'stream' = 'memory'
-  private playback: SourcePlayback | null = null
+  private recordMode: 'memory' | 'stream' | 'raw' = 'memory'
+  private playback: PlaybackSource | null = null
   private playbackSpeed = 1
+  /** 当前网络源（GNU Radio / TCP IQ）；与 simulated/playback 互斥 */
+  private network: TcpIqSource | null = null
+  private activeChannel = 0
+  private dualSimTimer: NodeJS.Timeout | null = null
+  private dualSimEngines: [SourceEngine, SourceEngine] | null = null
+  private dualSimConfig: DualSimConfig | null = null
   /** 当前录制是否已导出成功（start 置 false；导出成功后置 true） */
   private recordExported = true
 
@@ -57,6 +81,9 @@ export class SourceService {
   }
 
   start(): void {
+    this.stopDualSim()
+    this.stopNetwork()
+    this.playback?.dispose?.()
     this.playback = null
     this.playbackBackend = null
     this.clearTimers()
@@ -175,6 +202,7 @@ export class SourceService {
 
   stopPlayback(): void {
     this.playback?.stop()
+    this.playback?.dispose?.()
     this.playback = null
     this.playbackBackend = null
     this.clearTimers()
@@ -182,18 +210,50 @@ export class SourceService {
 
   async loadPlayback(frames: SourceFrame[]): Promise<boolean> {
     if (frames.length === 0) return false
+    this.stopDualSim()
+    await this.disposeNetworkAsync()
     await this.recordStop()
     this.recorder.reset()
     this.streamRecorder.dispose()
     this.recordMode = 'memory'
     this.clearTimers()
+    this.playback?.dispose?.()
     this.playback = new SourcePlayback(frames)
     this.playbackBackend = new PlaybackOutputBackend(this.playback)
     return true
   }
 
+  /** 载入网络源 raw 录制（ci16/cf32/ci8），按显示率抽取回放 */
+  async loadRawPlayback(cfg: RawPlaybackConfig): Promise<boolean> {
+    this.stopDualSim()
+    await this.disposeNetworkAsync()
+    await this.recordStop()
+    this.recorder.reset()
+    this.streamRecorder.dispose()
+    this.recordMode = 'memory'
+    this.clearTimers()
+    this.playback?.dispose?.()
+    this.playback = new RawIqPlayback(cfg)
+    this.playbackBackend = new PlaybackOutputBackend(this.playback)
+    return true
+  }
+
+  async loadArchivePlayback(cfg: RawArchivePlaybackConfig): Promise<boolean> {
+    this.stopDualSim()
+    await this.disposeNetworkAsync()
+    await this.recordStop()
+    this.recorder.reset()
+    this.streamRecorder.dispose()
+    this.recordMode = 'memory'
+    this.clearTimers()
+    this.playback?.dispose?.()
+    this.playback = new RawArchivePlayback(cfg)
+    this.playbackBackend = new PlaybackOutputBackend(this.playback)
+    return true
+  }
+
   playbackStatus():
-    | (ReturnType<SourcePlayback['getStatus']> & {
+    | (ReturnType<PlaybackSource['getStatus']> & {
         speed: number
         timing: 'fixed' | 'timestamp'
       })
@@ -203,9 +263,153 @@ export class SourceService {
   }
 
   stop(): void {
+    this.stopDualSim()
+    this.stopNetwork()
     this.clearTimers()
     // 停止输出时同步把回放置为停止（回放对象保留，可重新回放）；避免「已停止」但 playbackStatus.playing 仍为 true
     if (this.playback?.getStatus().playing) this.playback.stop()
+  }
+
+  /** 应用内双通道合成源：无 GNU Radio/硬件也能演示 RX0/RX1。 */
+  startDualSim(raw?: unknown): { ok: boolean; error?: string; config?: DualSimConfig } {
+    const parsed = sanitizeDualSimConfig(raw ?? defaultDualSimConfig())
+    if (!parsed.ok || !parsed.value) return { ok: false, error: parsed.error }
+    this.stop()
+    this.stopPlayback()
+    this.activeChannel = 0
+    this.recorder.reset()
+    this.recordMode = 'memory'
+    const cfg = parsed.value
+    const base = defaultAnalysisConfig()
+    const make = (freq: number, amplitude: number): SourceEngine =>
+      new SourceEngine({
+        ...base,
+        sampleRate: cfg.sampleRate,
+        pointsPerFrame: cfg.pointsPerFrame,
+        freq,
+        amplitude,
+        snr: cfg.snr,
+        outputMode: 'complex',
+        waveform: 'cw',
+        modType: 'sine',
+        enabled: true
+      })
+    this.dualSimEngines = [make(cfg.freq0, cfg.amplitude0), make(cfg.freq1, cfg.amplitude1)]
+    this.dualSimConfig = cfg
+    this.dualSimTimer = setInterval(() => this.dualSimTick(), 16)
+    return { ok: true, config: cfg }
+  }
+
+  stopDualSim(): void {
+    if (this.dualSimTimer) {
+      clearInterval(this.dualSimTimer)
+      this.dualSimTimer = null
+    }
+    this.dualSimEngines = null
+    this.dualSimConfig = null
+  }
+
+  isDualSimRunning(): boolean {
+    return this.dualSimTimer !== null
+  }
+
+  private dualSimTick(): void {
+    const engines = this.dualSimEngines
+    const cfg = this.dualSimConfig
+    if (!engines || !cfg) return
+    try {
+      const [e0, e1] = engines
+      const f0 = e0.next(cfg.pointsPerFrame)
+      const f1 = e1.next(cfg.pointsPerFrame)
+      f0.channel = 0
+      f1.channel = 1
+      if (cfg.phaseDeg !== 0) {
+        const rad = (cfg.phaseDeg * Math.PI) / 180
+        const c = Math.cos(rad)
+        const s = Math.sin(rad)
+        const d = f1.data
+        for (let i = 0; i < d.length; i += 2) {
+          const i0 = d[i]!
+          const q0 = d[i + 1]!
+          d[i] = i0 * c - q0 * s
+          d[i + 1] = i0 * s + q0 * c
+        }
+      }
+      this.emitDualFrame(f0)
+      this.emitDualFrame(f1)
+      this.emitFrame(this.activeChannel === 1 ? f1 : f0)
+    } catch (e) {
+      console.error('[source] dual simulator failed', e)
+      this.stopDualSim()
+    }
+  }
+
+  /**
+   * 启动网络源（GNU Radio / 任意 TCP IQ）。
+   * 与模拟源/回放互斥；连接成功后才返回 ok。
+   */
+  async startNetwork(
+    cfg: NetworkSourceConfig
+  ): Promise<{ ok: boolean; error?: string; status?: NetworkSourceStatus }> {
+    this.activeChannel = 0
+    // 先等旧网络源的 raw 临时文件删完，再切新源（避免切换时的目录残留）
+    await this.disposeNetworkAsync()
+    this.stop()
+    // 与回放/录制互斥：清掉回放对象，停止正在进行的录制（已录数据保留可导出）
+    this.playback?.dispose?.()
+    this.playback = null
+    this.playbackBackend = null
+    await this.recordStop()
+    const src = new TcpIqSource(cfg, {
+      onFrame: (frame) => {
+        // 双通道并排预览：所有通道都推给订阅了 source:dualFrame 的窗口
+        this.emitDualFrame(frame)
+        if ((frame.channel ?? 0) !== this.activeChannel) return
+        this.emitFrame(frame)
+      }
+      // 状态由渲染进程 1s 轮询 networkStatus；避免 stop 边界的事件推送与后续 IPC 交错。
+    })
+    this.network = src
+    try {
+      await src.start()
+      return { ok: true, status: src.getStatus() }
+    } catch (e) {
+      this.network = null
+      src.stop()
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  stopNetwork(): void {
+    const net = this.network
+    if (net) {
+      // 显式断开/切换源时清理 raw 临时文件；页面会先拦截未导出的断开。
+      void net.disposeRawRecorder()
+      net.stop()
+    }
+    this.network = null
+  }
+
+  /** 显式断开（IPC）：等 raw 临时文件删完再返回，避免测试/退出后留下大目录 */
+  async disposeNetworkAsync(): Promise<void> {
+    const net = this.network
+    this.network = null
+    this.activeChannel = 0
+    if (net) {
+      await net.disposeRawRecorder()
+      net.stop()
+    }
+  }
+
+  networkStatus(): NetworkSourceStatus | null {
+    const status = this.network?.getStatus()
+    if (status) status.activeChannel = this.activeChannel
+    return status ?? null
+  }
+
+  setActiveChannel(channel: number): boolean {
+    this.activeChannel = channel === 1 ? 1 : 0
+    return true
   }
 
   setConfig(patch: Partial<SignalAnalysisConfig>): void {
@@ -215,13 +419,26 @@ export class SourceService {
 
   getStatus(): SourceStatus {
     const pb = this.playback?.getStatus()
-    return {
-      running: !!this.timer || !!this.playbackTimer || !!pb?.playing,
+    const net = this.networkStatus()
+    const out: SourceStatus = {
+      running:
+        !!this.timer ||
+        !!this.playbackTimer ||
+        !!pb?.playing ||
+        !!this.network?.isConnected() ||
+        this.isDualSimRunning(),
       mode: this.playback ? 'playback' : 'live',
-      backend: this.playbackBackend?.kind ?? 'simulated',
+      backend: this.network
+        ? 'network'
+        : this.isDualSimRunning()
+          ? 'dual-sim'
+          : (this.playbackBackend?.kind ?? 'simulated'),
       paused: !!pb?.paused,
       config: { ...this.config }
     }
+    // 不把 undefined 放进 IPC 响应（部分序列化路径对 undefined 属性不友好）
+    if (net) out.network = net
+    return out
   }
 
   subscribe(cb: (frame: SourceFrame) => void): () => void {
@@ -249,8 +466,28 @@ export class SourceService {
     return this.windowSubscribers.size > 0
   }
 
-  /** 单帧触发：返回是否真的产生并广播了一帧 */
+  /** 双通道并排预览：独立引用计数，不把两路都塞进普通 source:frame */
+  subscribeDualWindow(id: number): void {
+    this.dualWindowSubscribers.set(id, (this.dualWindowSubscribers.get(id) ?? 0) + 1)
+  }
+
+  unsubscribeDualWindow(id: number): void {
+    const left = (this.dualWindowSubscribers.get(id) ?? 0) - 1
+    if (left > 0) this.dualWindowSubscribers.set(id, left)
+    else this.dualWindowSubscribers.delete(id)
+  }
+
+  clearDualWindowSubscriber(id: number): void {
+    this.dualWindowSubscribers.delete(id)
+  }
+
+  hasDualWindowSubscribers(): boolean {
+    return this.dualWindowSubscribers.size > 0
+  }
+
+  /** 单帧触发：返回是否真的产生并广播了一帧（网络源由数据到达驱动，不支持手动触发） */
   trigger(): boolean {
+    if (this.network) return false
     return this.tick(true)
   }
 
@@ -268,6 +505,20 @@ export class SourceService {
     } catch (e) {
       console.error('[source] tick failed', e)
       return false
+    }
+  }
+
+  private emitDualFrame(frame: SourceFrame): void {
+    if (this.dualWindowSubscribers.size === 0) return
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue
+      const wc = win.webContents
+      if (wc.isDestroyed() || !this.dualWindowSubscribers.has(wc.id)) continue
+      try {
+        wc.send('source:dualFrame', frame)
+      } catch {
+        // 窗口销毁竞态：忽略
+      }
     }
   }
 
@@ -325,22 +576,31 @@ export class SourceService {
       if (wc.isDestroyed() || !ids.has(wc.id)) continue
       try {
         wc.send('source:frame', frame)
-      } catch {
+      } catch (e) {
         // 窗口销毁/重载竞态：跳过该窗口，不影响其它消费者
+        console.error('[source] frame send failed', e)
       }
     }
   }
 
   dispose(): void {
+    void this.network?.disposeRawRecorder()
     this.stop()
+    this.playback?.dispose?.()
+    this.playback = null
     this.subscribers.clear()
     this.windowSubscribers.clear()
+    this.dualWindowSubscribers.clear()
     this.recorder.reset()
     this.streamRecorder.dispose()
   }
 
   /** 是否存在「已录制但尚未导出」的数据（加载回放/导入 IQ/新录制会丢弃它，需先确认） */
   hasUnexportedRecording(): boolean {
+    if (this.network) {
+      const raw = this.network.rawRecordStatus()
+      if (raw && raw.bytes > 0) return raw.hasUnexported && !this.recordExported
+    }
     const status =
       this.recordMode === 'stream' ? this.streamRecorder.getStatus() : this.recorder.getStatus()
     return status.frames > 0 && !this.recordExported
@@ -350,12 +610,32 @@ export class SourceService {
     this.recordExported = true
   }
 
-  recordStart(
+  async recordStart(
     stream = false,
-    opts: { confirmDiscard?: boolean } = {}
-  ): { ok: boolean; needsConfirm?: boolean } {
+    opts: { confirmDiscard?: boolean; rawArchive?: boolean; rawSegmentMB?: number } = {}
+  ): Promise<{ ok: boolean; needsConfirm?: boolean }> {
     if (this.hasUnexportedRecording() && !opts.confirmDiscard)
       return { ok: false, needsConfirm: true }
+    if (this.network) {
+      const segmentMB =
+        typeof opts.rawSegmentMB === 'number' && opts.rawSegmentMB > 0
+          ? Math.max(1, Math.floor(opts.rawSegmentMB))
+          : undefined
+      await this.network.startRawRecord(
+        opts.rawArchive || segmentMB
+          ? {
+              archiveDir: opts.rawArchive
+                ? join(app.getPath('userData'), 'raw-archive')
+                : undefined,
+              maxBytes: opts.rawArchive ? 0 : undefined,
+              segmentBytes: segmentMB ? segmentMB * 1024 * 1024 : undefined
+            }
+          : undefined
+      )
+      this.recordMode = 'raw'
+      this.recordExported = false
+      return { ok: true }
+    }
     if (stream) {
       this.recorder.reset()
       this.recordMode = 'stream'
@@ -370,14 +650,46 @@ export class SourceService {
   }
 
   async recordStop(): Promise<void> {
+    if (this.network && this.recordMode === 'raw') {
+      await this.network.stopRawRecord()
+      return
+    }
     if (this.recordMode === 'stream') await this.streamRecorder.stop()
     else this.recorder.stop()
   }
 
   recordStatus(): ReturnType<SourceRecorder['getStatus']> & {
-    mode: 'memory' | 'stream'
+    mode: 'memory' | 'stream' | 'raw'
     hasUnexported: boolean
+    channels?: number
+    archiveDir?: string
+    archivedFiles?: number
+    archivedBytes?: number
+    archiveIndexPath?: string
+    diskFreeBytes?: number
+    lowDisk?: boolean
   } {
+    if (this.network && this.recordMode === 'raw') {
+      const raw = this.network.rawRecordStatus()
+      if (raw) {
+        return {
+          recording: raw.recording,
+          frames: raw.frames,
+          samples: raw.samples,
+          durationMs: raw.durationMs,
+          truncated: raw.truncated,
+          channels: raw.channels,
+          archiveDir: raw.archiveDir,
+          archivedFiles: raw.archivedFiles,
+          archivedBytes: raw.archivedBytes,
+          archiveIndexPath: raw.archiveIndexPath,
+          diskFreeBytes: raw.diskFreeBytes,
+          lowDisk: raw.lowDisk,
+          mode: 'raw',
+          hasUnexported: this.hasUnexportedRecording()
+        }
+      }
+    }
     const status =
       this.recordMode === 'stream' ? this.streamRecorder.getStatus() : this.recorder.getStatus()
     return {
@@ -385,6 +697,28 @@ export class SourceService {
       mode: this.recordMode,
       hasUnexported: this.hasUnexportedRecording()
     }
+  }
+
+  isRawRecordingMode(): boolean {
+    return this.network !== null && this.recordMode === 'raw'
+  }
+
+  rawRecordStatus(): ReturnType<NonNullable<SourceService['network']>['rawRecordStatus']> | null {
+    return this.network?.rawRecordStatus() ?? null
+  }
+
+  async exportRawRecording(target: string): Promise<{
+    path: string
+    metaPath: string
+    bytes: number
+    samples: number
+    frames: number
+    segments: number
+  }> {
+    if (!this.network) throw new Error('网络源未连接')
+    const r = await this.network.exportRawRecord(target)
+    this.recordExported = true
+    return r
   }
 
   recordFrames(): ReturnType<SourceRecorder['getFrames']> {
@@ -521,6 +855,58 @@ async function pickRecording(): Promise<LoadRecordingResult> {
   }
 }
 
+interface RawMetaInfo {
+  path: string
+  format: 'cf32' | 'ci16' | 'ci8'
+  channels: number
+  sampleRate: number
+  centerHz: number
+  samples: number
+}
+
+/** 读取 raw 录制 sidecar（<raw>.json）；找不到/格式不符返回 null */
+async function readRawMeta(rawPath: string): Promise<RawMetaInfo | null> {
+  const jsonPath = rawPath.toLowerCase().endsWith('.json') ? rawPath : `${rawPath}.json`
+  const actualRaw = jsonPath.toLowerCase().endsWith('.json') ? jsonPath.slice(0, -5) : rawPath
+  try {
+    const meta = JSON.parse(await fs.readFile(jsonPath, 'utf8')) as Record<string, unknown>
+    if (meta.format !== 'raw-iq-v1') return null
+    const format = meta.sampleFormat
+    if (format !== 'cf32' && format !== 'ci16' && format !== 'ci8') return null
+    const sampleRate = typeof meta.sampleRate === 'number' ? meta.sampleRate : 0
+    const samples = typeof meta.samples === 'number' ? Math.floor(meta.samples) : 0
+    if (!(sampleRate > 0) || samples <= 0) return null
+    const centerHz = typeof meta.centerHz === 'number' ? meta.centerHz : 0
+    const channels = meta.channels === 2 ? 2 : 1
+    return { path: actualRaw, format, channels, sampleRate, centerHz, samples }
+  } catch {
+    return null
+  }
+}
+
+async function pickRawRecordingFile(): Promise<{
+  ok: boolean
+  path?: string
+  canceled?: boolean
+  error?: string
+}> {
+  const focused = BrowserWindow.getFocusedWindow()
+  const opts = {
+    title: '打开网络源 raw 录制（.ci16/.cf32/.ci8 + .json）',
+    properties: ['openFile'] as Array<'openFile'>,
+    filters: [
+      { name: 'Raw IQ', extensions: ['ci16', 'cf32', 'ci8', 'bin'] },
+      { name: 'JSON metadata', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  }
+  const ret = focused
+    ? await dialog.showOpenDialog(focused, opts)
+    : await dialog.showOpenDialog(opts)
+  if (ret.canceled || ret.filePaths.length === 0) return { ok: false, canceled: true }
+  return { ok: true, path: ret.filePaths[0] }
+}
+
 /** 任意原始 IQ 文件（little-endian interleaved f32）→ SourceFrame */
 async function pickArbitraryIq(
   config: SignalAnalysisConfig
@@ -585,9 +971,12 @@ async function pickArbitraryIq(
 }
 
 export function registerSourceService(): () => void {
+  // 单实例启动：清掉上次崩溃/测试留下的 raw 临时目录（Windows 下 fd 未关时跳过）
+  RawIqRecorder.cleanupStaleTempDirs()
   const service = getSourceService()
   /** 已挂过 destroyed/navigation 监听的 webContents，避免重复挂 */
   const watchedSenders = new Set<number>()
+  const watchedDualSenders = new Set<number>()
 
   ipcMain.handle('source:subscribe', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
@@ -615,6 +1004,26 @@ export function registerSourceService(): () => void {
     return { ok: true }
   })
 
+  ipcMain.handle('source:subscribeDual', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const id = e.sender.id
+    service.subscribeDualWindow(id)
+    if (!watchedDualSenders.has(id)) {
+      watchedDualSenders.add(id)
+      e.sender.once('destroyed', () => {
+        watchedDualSenders.delete(id)
+        service.clearDualWindowSubscriber(id)
+      })
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('source:unsubscribeDual', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    service.unsubscribeDualWindow(e.sender.id)
+    return { ok: true }
+  })
+
   ipcMain.handle('source:start', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.start()
@@ -624,6 +1033,18 @@ export function registerSourceService(): () => void {
   ipcMain.handle('source:stop', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     service.stop()
+    return { ok: true, status: service.getStatus() }
+  })
+
+  ipcMain.handle('source:startDualSim', (e, cfg?: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const r = service.startDualSim(cfg)
+    return { ...r, status: service.getStatus() }
+  })
+
+  ipcMain.handle('source:stopDualSim', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    service.stopDualSim()
     return { ok: true, status: service.getStatus() }
   })
 
@@ -640,6 +1061,30 @@ export function registerSourceService(): () => void {
     return { ok: true, config: service.getStatus().config }
   })
 
+  ipcMain.handle('source:startNetwork', async (e, cfg: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    const r = sanitizeNetworkConfig(cfg)
+    if (!r.ok || !r.value) return { ok: false, error: r.error }
+    return service.startNetwork(r.value)
+  })
+
+  ipcMain.handle('source:stopNetwork', async (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    await service.disposeNetworkAsync()
+    return { ok: true }
+  })
+
+  ipcMain.handle('source:networkStatus', (e) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return service.networkStatus()
+  })
+
+  ipcMain.handle('source:setActiveChannel', (e, channel: unknown) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    service.setActiveChannel(typeof channel === 'number' ? channel : 0)
+    return { ok: true, status: service.networkStatus() }
+  })
+
   ipcMain.handle('source:trigger', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     const emitted = service.trigger()
@@ -648,9 +1093,17 @@ export function registerSourceService(): () => void {
 
   ipcMain.handle(
     'source:recordStart',
-    (e, stream: unknown, opts?: { confirmDiscard?: boolean }) => {
+    async (
+      e,
+      stream: unknown,
+      opts?: { confirmDiscard?: boolean; rawArchive?: boolean; rawSegmentMB?: number }
+    ) => {
       if (!isTrustedSender(e)) return FORBIDDEN
-      const r = service.recordStart(!!stream, { confirmDiscard: opts?.confirmDiscard === true })
+      const r = await service.recordStart(!!stream, {
+        confirmDiscard: opts?.confirmDiscard === true,
+        rawArchive: opts?.rawArchive === true,
+        rawSegmentMB: opts?.rawSegmentMB
+      })
       return { ...r, status: service.recordStatus() }
     }
   )
@@ -668,6 +1121,41 @@ export function registerSourceService(): () => void {
 
   ipcMain.handle('source:recordExport', async (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
+    // 网络源：全速 raw 录制导出（ci16/cf32/ci8 + sidecar JSON）
+    if (service.isRawRecordingMode()) {
+      const raw = service.rawRecordStatus()
+      if (!raw || raw.bytes === 0) return { ok: false, error: '没有可导出的 raw 录制' }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const ext = raw.format
+      const opts = {
+        title: '导出网络源 raw IQ（原始样本 + 元数据）',
+        defaultPath: `source-raw-${stamp}.${ext}`,
+        filters: [
+          { name: `Raw IQ (${ext})`, extensions: [ext] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      }
+      const focused = BrowserWindow.getFocusedWindow()
+      const ret = focused
+        ? await dialog.showSaveDialog(focused, opts)
+        : await dialog.showSaveDialog(opts)
+      if (ret.canceled || !ret.filePath) return { ok: false, canceled: true }
+      const target = ret.filePath.toLowerCase().endsWith(`.${ext}`)
+        ? ret.filePath
+        : `${ret.filePath}.${ext}`
+      try {
+        const r = await service.exportRawRecording(target)
+        return {
+          ok: true,
+          path: r.path,
+          metaPath: r.metaPath,
+          frames: r.frames,
+          samples: r.samples
+        }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
     const streamMode = service.isStreamRecordingMode()
     // 先确认有数据、再弹保存框；取消保存不会顺手停掉正在进行的录制
     const preview = streamMode ? service.streamFrames() : service.recordFrames()
@@ -769,6 +1257,91 @@ export function registerSourceService(): () => void {
     return { ok: true, path: r.path, status: service.playbackStatus() }
   })
 
+  ipcMain.handle(
+    'source:loadRawPlayback',
+    async (
+      e,
+      target?: unknown,
+      opts?: { confirmDiscard?: boolean; channel?: number; fullRate?: boolean }
+    ) => {
+      if (!isTrustedSender(e)) return FORBIDDEN
+      if (service.hasUnexportedRecording() && opts?.confirmDiscard !== true)
+        return { ok: false, needsConfirm: true, error: '存在未导出的录制，先导出或确认丢弃' }
+      const chosen =
+        typeof target === 'string' && target.trim()
+          ? { ok: true, path: target }
+          : await pickRawRecordingFile()
+      if (!chosen.ok || !chosen.path)
+        return { ok: false, canceled: chosen.canceled, error: chosen.error }
+      const meta = await readRawMeta(chosen.path)
+      if (!meta) return { ok: false, error: '未找到 raw 元数据（<file>.json）或格式不是 raw-iq-v1' }
+      const displaySampleRate = opts?.fullRate
+        ? meta.sampleRate
+        : Math.min(meta.sampleRate, 2_000_000)
+      const pointsPerFrame = Math.max(256, Math.min(65_536, Math.round(displaySampleRate / 60)))
+      try {
+        await service.loadRawPlayback({
+          path: meta.path,
+          format: meta.format,
+          sampleRate: meta.sampleRate,
+          centerHz: meta.centerHz,
+          totalSamples: meta.samples,
+          displaySampleRate,
+          pointsPerFrame,
+          channels: meta.channels,
+          channel: opts?.channel === 1 ? 1 : 0,
+          loop: true
+        })
+        service.startPlayback()
+        return { ok: true, path: meta.path, status: service.playbackStatus() }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'source:loadRawArchivePlayback',
+    async (
+      e,
+      target?: unknown,
+      opts?: { confirmDiscard?: boolean; channel?: number; fullRate?: boolean }
+    ) => {
+      if (!isTrustedSender(e)) return FORBIDDEN
+      if (service.hasUnexportedRecording() && opts?.confirmDiscard !== true)
+        return { ok: false, needsConfirm: true, error: '存在未导出的录制，先导出或确认丢弃' }
+      let dir = typeof target === 'string' && target.trim() ? target : ''
+      if (!dir) {
+        const focused = BrowserWindow.getFocusedWindow()
+        const ret = focused
+          ? await dialog.showOpenDialog(focused, {
+              title: '打开滚动归档目录（含 index.json）',
+              defaultPath: join(app.getPath('userData'), 'raw-archive'),
+              properties: ['openDirectory']
+            })
+          : await dialog.showOpenDialog({
+              title: '打开滚动归档目录（含 index.json）',
+              defaultPath: join(app.getPath('userData'), 'raw-archive'),
+              properties: ['openDirectory']
+            })
+        if (ret.canceled || ret.filePaths.length === 0) return { ok: false, canceled: true }
+        dir = ret.filePaths[0]
+      }
+      try {
+        await service.loadArchivePlayback({
+          dir,
+          channel: opts?.channel === 1 ? 1 : 0,
+          fullRate: opts?.fullRate === true,
+          loop: true
+        })
+        service.startPlayback()
+        return { ok: true, path: dir, status: service.playbackStatus() }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
   ipcMain.handle('source:startPlayback', (e) => {
     if (!isTrustedSender(e)) return FORBIDDEN
     return { ok: service.startPlayback(), status: service.playbackStatus() }
@@ -827,12 +1400,21 @@ export function registerSourceService(): () => void {
     service.dispose()
     sourceServiceInstance = null
     watchedSenders.clear()
+    watchedDualSenders.clear()
     ipcMain.removeHandler('source:subscribe')
     ipcMain.removeHandler('source:unsubscribe')
+    ipcMain.removeHandler('source:subscribeDual')
+    ipcMain.removeHandler('source:unsubscribeDual')
     ipcMain.removeHandler('source:start')
     ipcMain.removeHandler('source:stop')
+    ipcMain.removeHandler('source:startDualSim')
+    ipcMain.removeHandler('source:stopDualSim')
     ipcMain.removeHandler('source:getStatus')
     ipcMain.removeHandler('source:setConfig')
+    ipcMain.removeHandler('source:startNetwork')
+    ipcMain.removeHandler('source:stopNetwork')
+    ipcMain.removeHandler('source:networkStatus')
+    ipcMain.removeHandler('source:setActiveChannel')
     ipcMain.removeHandler('source:trigger')
     ipcMain.removeHandler('source:recordStart')
     ipcMain.removeHandler('source:recordStop')
@@ -840,6 +1422,8 @@ export function registerSourceService(): () => void {
     ipcMain.removeHandler('source:recordExport')
     ipcMain.removeHandler('source:importIq')
     ipcMain.removeHandler('source:loadPlayback')
+    ipcMain.removeHandler('source:loadRawPlayback')
+    ipcMain.removeHandler('source:loadRawArchivePlayback')
     ipcMain.removeHandler('source:startPlayback')
     ipcMain.removeHandler('source:pausePlayback')
     ipcMain.removeHandler('source:resumePlayback')

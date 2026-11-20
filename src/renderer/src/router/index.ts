@@ -311,6 +311,17 @@ export const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/source/network',
+    name: 'source-network',
+    component: () => import('../pages/source/NetworkSourcePage.vue'),
+    meta: {
+      title: '网络源（GNU Radio）',
+      menuTitle: '网络源',
+      icon: '🛰️',
+      group: '信号源'
+    }
+  },
+  {
     path: '/signal',
     redirect: '/source/advanced'
   },
@@ -332,6 +343,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'signal-spectrum',
     component: () => import('../pages/signal/SpectrumDemoPage.vue'),
     meta: { title: '频谱', icon: '📊', group: '信号分析UI组件' }
+  },
+  {
+    path: '/signal/dual',
+    name: 'signal-dual',
+    component: () => import('../pages/signal/DualChannelPage.vue'),
+    meta: { title: '双通道并排', icon: '📡', group: '信号分析UI组件' }
   },
   {
     path: '/signal/spectrogram',

@@ -3,7 +3,7 @@
  * 当前提供模拟源与录制回放两个实现；硬件 RF/DAC 后端后续按同一接口接入。
  */
 import type { SourceEngine, SourceFrame } from './sourceEngine'
-import type { SourcePlayback } from './sourcePlayback'
+import type { PlaybackSource } from './sourcePlayback'
 
 export type SourceBackendKind = 'simulated' | 'playback'
 
@@ -28,7 +28,7 @@ export class SimulatedOutputBackend implements SourceOutputBackend {
 export class PlaybackOutputBackend implements SourceOutputBackend {
   readonly kind = 'playback' as const
 
-  constructor(private readonly playback: SourcePlayback) {}
+  constructor(private readonly playback: PlaybackSource) {}
 
   next(): SourceFrame | null {
     return this.playback.next()

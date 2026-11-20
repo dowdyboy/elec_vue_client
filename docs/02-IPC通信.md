@@ -50,7 +50,10 @@ ipcMain.on('ipc:create-channel', (event) => {
 // preload（预注册，早于页面任何点击）
 ipcRenderer.on('ipc:channel-port', (event) => {
   const port = event.ports[0]
-  if (port) window.postMessage('ipc:channel-port', '*', [port]) // 转移而非传递
+  if (!port) return
+  // 收紧 targetOrigin：file:// 下 origin 为 'null'，只能回退 '*'
+  const targetOrigin = window.location.protocol === 'file:' ? '*' : window.location.origin
+  window.postMessage('ipc:channel-port', targetOrigin, [port]) // 转移而非传递
 })
 
 // 页面（主世界）

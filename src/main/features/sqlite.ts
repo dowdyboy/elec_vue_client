@@ -63,8 +63,8 @@ export function registerSqlite(): void {
     'CREATE TABLE IF NOT EXISTS bench (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, n INTEGER)'
   )
 
-  // 退出前关闭数据库（WAL 模式更规范；进程退出也会自动释放）
-  app.on('before-quit', () => {
+  // 退出时关闭数据库（will-quit 在 quitGuard 确认之后；取消退出不关库）
+  app.on('will-quit', () => {
     db?.close()
     db = null
   })

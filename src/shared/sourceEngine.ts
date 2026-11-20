@@ -38,6 +38,8 @@ export interface SourceFrame {
    * real 输出时 Q=0，仍保持交织以复用同一传输/显示契约。
    */
   data: Float32Array
+  /** AD9361 双 RX 通道号（0/1）；单通道源缺省为 0 */
+  channel?: number
 }
 
 export interface SourceEngineOptions {

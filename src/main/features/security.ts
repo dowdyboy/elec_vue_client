@@ -73,11 +73,18 @@ export function registerSecurity(): void {
     // 教学说明：页面点击 <a href> 或 window.location 跳转都会触发
     contents.on('will-navigate', (event, url) => {
       const devServerUrl = process.env['ELECTRON_RENDERER_URL'] ?? ''
-      const isInternal = url.startsWith(devServerUrl) || url.startsWith('file://')
+      // 生产环境 devServerUrl 为空：不能直接用 startsWith('')（恒真，会完全绕过拦截）
+      const isInternal =
+        (devServerUrl !== '' && url.startsWith(devServerUrl)) || url.startsWith('file://')
       if (!isInternal) {
         event.preventDefault()
-        // 外部链接交给系统默认浏览器打开
-        shell.openExternal(url)
+        // 只把 http/https 交给系统浏览器，避免 file://、smb:// 等协议被外部程序执行
+        try {
+          const protocol = new URL(url).protocol
+          if (protocol === 'http:' || protocol === 'https:') shell.openExternal(url)
+        } catch {
+          // 非法 URL：不打开
+        }
       }
     })
 

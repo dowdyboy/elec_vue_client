@@ -631,8 +631,9 @@ export function registerSignalAnalysisServer(): () => void {
       if (ids && !ids.has(wc.id)) continue
       try {
         wc.send('signal:analysis', f)
-      } catch {
+      } catch (e) {
         // 窗口销毁/重载竞态：跳过该窗口，不影响其它消费者
+        console.error('[signal] analysis send failed', e)
       }
     }
   }

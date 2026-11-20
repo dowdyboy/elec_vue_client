@@ -22,7 +22,7 @@ import { join } from 'path'
 import type { MainWindowGetter } from '../types'
 
 /** 与 index.ts 中 electronApp.setAppUserModelId 保持一致 */
-const APP_USER_MODEL_ID = 'com.electron'
+const APP_USER_MODEL_ID = 'com.electron.app'
 
 /** Windows 开始菜单快捷方式路径（AUMID 注册载体） */
 function shortcutPath(): string {

@@ -14,6 +14,7 @@ import { app, ipcMain, shell, WebContentsView } from 'electron'
 import { isAbsolute, join } from 'path'
 import { existsSync } from 'fs'
 import type { MainWindowGetter } from '../types'
+import { FORBIDDEN, isTrustedSender } from '../utils/validateSender'
 
 /** 自定义协议名（注册为系统默认处理程序） */
 const PROTOCOL = 'elec-demo'
@@ -73,8 +74,15 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
   })
 
   // ── ③ 系统打开协议链接（演示用：渲染进程触发）──
-  ipcMain.handle('protocol:openUrl', (_e, url: string) => {
-    // 用系统默认程序打开该链接 → 唤起应用自身（触发深链接流程）
+  ipcMain.handle('protocol:openUrl', (e, url: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    // 只允许 http/https 与项目自己的 elec-demo 深链接，避免 openExternal 执行任意协议
+    try {
+      const protocol = new URL(url).protocol
+      if (protocol !== 'http:' && protocol !== 'https:' && protocol !== `${PROTOCOL}:`) return false
+    } catch {
+      return false
+    }
     shell.openExternal(url)
     return true
   })
@@ -121,7 +129,15 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
     embeddedView.setBounds({ x: 0, y: viewTopInset, width, height: height - viewTopInset })
   }
 
-  ipcMain.handle('view:open', (_e, url: string, options?: { topInset?: number }) => {
+  ipcMain.handle('view:open', (e, url: string, options?: { topInset?: number }) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    try {
+      const protocol = new URL(url).protocol
+      if (protocol !== 'http:' && protocol !== 'https:' && protocol !== 'file:')
+        return { ok: false, error: '仅支持 http/https/file URL' }
+    } catch {
+      return { ok: false, error: 'URL 非法' }
+    }
     const win = getMainWindow()
     if (!win) return { ok: false, error: '无主窗口' }
     viewTopInset = options?.topInset ?? 0

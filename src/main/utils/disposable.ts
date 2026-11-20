@@ -1,7 +1,7 @@
 /**
  * 【工具】资源释放辅助（轻量化）
  * 【说明】每个 features 模块的 registerX 可返回 Disposer，
- *         index.ts 统一在 before-quit 时调用，避免资源泄漏。
+ *         index.ts 统一在 will-quit 时调用，避免资源泄漏。
  *         不引入新依赖，仅类型与辅助函数。
  */
 

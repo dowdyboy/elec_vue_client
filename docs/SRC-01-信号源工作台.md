@@ -1,4 +1,4 @@
-﻿# SRC-01 - 信号源工作台
+# SRC-01 - 信号源工作台
 
 > `src/renderer/src/pages/source/SourceWorkbenchPage.vue`
 >
@@ -294,7 +294,7 @@ Z = R + j(ωL - 1/ωC)
 
 ```powershell
 npm run typecheck
-npm run test          # 255 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁/DOM 面板
+npm run test          # 288 例，含 sourceEngine/录制/播放/扫频/流式分段/时频行数上限/键盘仲裁/DOM 面板
 npm run test:coverage # 覆盖率（v8，含阈值；CI 在 Linux 上跑）
 npm run build
 npm run test:source   # mock preload 加载 /source，截图检查页面可渲染
@@ -321,8 +321,9 @@ npm run check:signal  # dist-signal 发布产物校验（配合 npm run build:si
 
 ## 十一、后续
 
-1. 真实 RF/DAC 硬件后端；
-2. Smith 完整 SOLT 校准与夹具去嵌入；
-3. 流式录制定时/滚动归档；
-4. 任意 IQ 文件元数据自动识别（sampleRate/center/格式）；
-5. 录制可重复种子与远端 Mock 场景扩展。
+1. GNU Radio / TCP IQ 网络源：已落地（见 [SRC-02](./SRC-02-GNU%20Radio%20接入.md)）；
+2. 真实 RF/DAC 硬件后端；
+3. Smith 完整 SOLT 校准与夹具去嵌入；
+4. 流式录制定时/滚动归档；
+5. 任意 IQ 文件元数据自动识别（sampleRate/center/格式）；
+6. 录制可重复种子与远端 Mock 场景扩展。

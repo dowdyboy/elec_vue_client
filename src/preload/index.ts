@@ -10,7 +10,6 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils, IpcRendererEvent } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import type { ChildWindowMode } from '../main/features/windowManager'
 import type { NotificationOptions } from '../main/features/notification'
 import type { ThemeSource } from '../main/features/theme'
@@ -18,6 +17,8 @@ import type { ShellOpenResult } from '../main/features/shellOps'
 import type { DownloadRecord } from '../main/features/download'
 import type { SourceFrame } from '../shared/sourceEngine'
 import type { SweepFrame } from '../shared/sweep'
+import type { NetworkSourceConfig, NetworkSourceStatus } from '../shared/sourceNetwork'
+import type { LocalGnuRadioSettings, LocalGnuRadioStatus } from '../shared/localGnuRadio'
 
 /** 事件监听辅助：统一封装"注册监听 + 返回取消函数" */
 function on<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -63,9 +64,11 @@ export interface DisplaySourcesPayload {
 export interface SourceStatusInfo {
   running: boolean
   mode: 'live' | 'playback'
-  backend: 'simulated' | 'playback'
+  backend: 'simulated' | 'playback' | 'network' | 'dual-sim'
   paused: boolean
   config: unknown
+  /** 网络源状态（仅 backend=network 时存在） */
+  network?: NetworkSourceStatus
 }
 
 /** 源录制状态（内存/流式两种模式共用） */
@@ -75,7 +78,14 @@ export interface SourceRecordStatusInfo {
   samples: number
   durationMs: number
   truncated: boolean
-  mode: 'memory' | 'stream'
+  mode: 'memory' | 'stream' | 'raw'
+  channels?: number
+  archiveDir?: string
+  archivedFiles?: number
+  archivedBytes?: number
+  archiveIndexPath?: string
+  diskFreeBytes?: number
+  lowDisk?: boolean
   /** 已录制但尚未导出（加载回放/导入 IQ/新录制前需确认） */
   hasUnexported: boolean
 }
@@ -573,11 +583,52 @@ const api = {
   source: {
     start: () => invoke<{ ok: boolean; status?: SourceStatusInfo }>('source:start'),
     stop: () => invoke<{ ok: boolean; status?: SourceStatusInfo }>('source:stop'),
+    startDualSim: (cfg?: unknown) =>
+      invoke<{ ok: boolean; error?: string; config?: unknown; status?: SourceStatusInfo }>(
+        'source:startDualSim',
+        cfg
+      ),
+    stopDualSim: () => invoke<{ ok: boolean; status?: SourceStatusInfo }>('source:stopDualSim'),
     getStatus: () => invoke<SourceStatusInfo>('source:getStatus'),
     setConfig: (cfg: unknown) =>
       invoke<{ ok: boolean; config?: unknown; error?: string }>('source:setConfig', cfg),
+    /** 网络源（GNU Radio / 任意 TCP IQ）：连接成功后返回 status */
+    startNetwork: (cfg: NetworkSourceConfig) =>
+      invoke<{ ok: boolean; error?: string; status?: NetworkSourceStatus }>(
+        'source:startNetwork',
+        cfg
+      ),
+    stopNetwork: () => invoke<{ ok: boolean }>('source:stopNetwork'),
+    networkStatus: () => invoke<NetworkSourceStatus | null>('source:networkStatus'),
+    setActiveChannel: (channel: number) =>
+      invoke<{ ok: boolean; status?: NetworkSourceStatus | null }>(
+        'source:setActiveChannel',
+        channel
+      ),
+    /** 本机 GNU Radio 一键启动（Python/脚本/端口均可配置，不绑死环境） */
+    localDefaults: () =>
+      invoke<{
+        settings: LocalGnuRadioSettings
+        detectedPython: string
+        scriptDir: string
+        scriptPath: string
+        scriptExists: boolean
+        pythonExists: boolean
+      }>('source:localDefaults'),
+    localSaveSettings: (patch: Partial<LocalGnuRadioSettings>) =>
+      invoke<LocalGnuRadioSettings>('source:localSaveSettings', patch),
+    localStart: (cfg: Partial<LocalGnuRadioSettings>) =>
+      invoke<{ ok: boolean; error?: string; status?: LocalGnuRadioStatus }>(
+        'source:localStart',
+        cfg
+      ),
+    localStop: () => invoke<{ ok: boolean; status: LocalGnuRadioStatus }>('source:localStop'),
+    localStatus: () => invoke<LocalGnuRadioStatus>('source:localStatus'),
     trigger: () => invoke<{ ok: boolean; emitted?: boolean; seq?: number }>('source:trigger'),
-    recordStart: (stream = false, opts?: { confirmDiscard?: boolean }) =>
+    recordStart: (
+      stream = false,
+      opts?: { confirmDiscard?: boolean; rawArchive?: boolean; rawSegmentMB?: number }
+    ) =>
       invoke<{ ok: boolean; needsConfirm?: boolean; status?: SourceRecordStatusInfo }>(
         'source:recordStart',
         stream,
@@ -614,6 +665,32 @@ const api = {
         error?: string
         status?: unknown
       }>('source:loadPlayback', opts),
+    /** 载入网络源 raw 录制（ci16/cf32/ci8 + sidecar JSON）；path 省略时弹文件框 */
+    loadRawPlayback: (
+      path?: string,
+      opts?: { confirmDiscard?: boolean; channel?: number; fullRate?: boolean }
+    ) =>
+      invoke<{
+        ok: boolean
+        path?: string
+        canceled?: boolean
+        needsConfirm?: boolean
+        error?: string
+        status?: unknown
+      }>('source:loadRawPlayback', path, opts),
+    /** 连续播放 raw-archive 目录（index.json + 每段 sidecar） */
+    loadArchivePlayback: (
+      dir?: string,
+      opts?: { confirmDiscard?: boolean; channel?: number; fullRate?: boolean }
+    ) =>
+      invoke<{
+        ok: boolean
+        path?: string
+        canceled?: boolean
+        needsConfirm?: boolean
+        error?: string
+        status?: unknown
+      }>('source:loadRawArchivePlayback', dir, opts),
     startPlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:startPlayback'),
     pausePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:pausePlayback'),
     resumePlayback: () => invoke<{ ok: boolean; status?: unknown }>('source:resumePlayback'),
@@ -649,6 +726,15 @@ const api = {
       return () => {
         dispose()
         void invoke('source:unsubscribe').catch(() => {})
+      }
+    },
+    /** 双通道并排预览：接收所有 channel 的帧（不受 activeChannel 过滤） */
+    onDualFrame: (cb: (frame: SourceFrame) => void) => {
+      const dispose = on('source:dualFrame', cb)
+      void invoke('source:subscribeDual').catch(() => {})
+      return () => {
+        dispose()
+        void invoke('source:unsubscribeDual').catch(() => {})
       }
     }
   },
@@ -701,19 +787,35 @@ const api = {
 }
 
 // ──────────────────────────────────────────────────
-// 暴露给渲染进程：window.electron（官方 API）+ window.api（自定义 API）
-// contextIsolation 开启时用 contextBridge，否则挂到 window 上
+// 暴露给渲染进程：window.electron（最小平台信息）+ window.api（自定义白名单）
+// 注意：不再暴露完整 @electron-toolkit/preload electronAPI——它会带上
+// ipcRenderer（任意通道）与 process.env，等于绕过 api 白名单。
+// 页面只需要 platform；需要 IPC 的一律走 window.api。
 // ──────────────────────────────────────────────────
+export interface ElectronBridge {
+  process: {
+    platform: NodeJS.Platform
+    versions: NodeJS.ProcessVersions
+  }
+}
+
+const electronBridge: ElectronBridge = {
+  process: {
+    platform: process.platform,
+    versions: process.versions
+  }
+}
+
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('electron', electronBridge)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (define in dts)
-  window.electron = electronAPI
+  window.electron = electronBridge
   // @ts-ignore (define in dts)
   window.api = api
 }

@@ -59,13 +59,14 @@
 - 本地分析为纯 IPC SourceFrame 消费者，不监听端口；socket.io 仅用于远程后端/远端 Mock
 - PowerTime/Eye/APD/Persistence Demo 固定使用“信号源工作台”的源数据
 - 源工作台支持录制（内存/流式分段，未导出录制在加载回放/导入 IQ/新录制前需确认）、回放与任意 IQ 导入（`.f32/.bin/.raw`）
+- **GNU Radio / TCP IQ 网络源**：`/source/network`，本机/远程同一套；支持 ci16/cf32/ci8、ELIQ 帧头/裸流自动识别、**双流（全速 raw + FIR 抽取显示，同端口/独立双端口）**、**AD9361 双通道（RX0/RX1 切换 + 双通道 raw + `/signal/dual` 并排/同步缩放/跨通道测量）**、显示抽取、断线重连、**全速 raw 录制/导出/滚动归档/全速或抽取回放**；GNU Radio 3.10.12 走 ZMQ + 桥（`tools/gnuradio/`）；**应用内可配置 Python/脚本一键启动本机 GNU Radio**（不绑死环境），**另有应用内双通道合成源，无 GNU Radio/硬件也能演示**，文档见 [SRC-02](./docs/SRC-02-GNU%20Radio%20接入.md)
 - **时间语义**：`SourceFrame.timestamp` 为信号时间（sampleIndex/sampleRate），`wallTimestamp` 为采集墙钟；录制时长/按时间戳回放/瀑布时间轴统一用信号时间
 - **场景预设**：保存/加载/导入导出源参数 + 分析配置（FFT/窗/dB/重叠/频谱语义）
 - S11 扫频源独立于 IQ 源，Smith 圆图支持“S11 扫频”与延时/损耗校准
 - 源目录含 OFDM（有效子载波/CP 可调，远端 Mock 同样支持），按源类型显示推荐分析入口，分析页固定使用源数据
 - 源领域模型、SourceEngine/SourceFrame：[`src/shared/source.ts`](./src/shared/source.ts)、[`src/shared/sourceEngine.ts`](./src/shared/sourceEngine.ts)
-- 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger/subscribe/unsubscribe` + `source:frame`（只投递给订阅窗口）
-- 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md)
+- 主进程独立源 IPC：`source:start/stop/getStatus/setConfig/trigger/subscribe/unsubscribe`、网络源 `source:startNetwork/stopNetwork/networkStatus` + `source:frame`（只投递给订阅窗口）
+- 文档：[SRC-01 信号源工作台](./docs/SRC-01-信号源工作台.md) · [SRC-02 GNU Radio 网络源](./docs/SRC-02-GNU%20Radio%20接入.md)
 
 ## 信号分析组件
 
@@ -91,7 +92,7 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 
 文档：[SRC-01 信号源](./docs/SRC-01-信号源工作台.md) · [SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 255 个单测。
+> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 288 个单测。
 
 ## 快速开始
 
@@ -109,14 +110,14 @@ npm run build:win  # 打包 Windows 安装包
 src/
 ├── main/
 │   ├── index.ts          # 入口：特性注册表（每行一个特性，注释即停用）
-│   └── features/         # ★ 55 个可独立复制的特性模块
+│   └── features/         # ★ 54 个已注册特性模块（+ _template.ts 模板）
 ├── preload/
 │   └── index.ts          # 安全桥：window.api.<分组>.<方法>
 └── renderer/src/
     ├── App.vue           # Naive UI 主题 + 侧边导航 + 内容区
     ├── router/           # vue-router（hash 模式）
     ├── stores/theme.ts   # 主题状态（与 nativeTheme 联动）
-    └── pages/            # 50 个演示页（含信号分析/TypeScript/子窗口）
+    └── pages/            # 58 个页面（30 Electron + 13 TS + 11 信号 + 2 源 + 首页/子窗口）
 src/components/signal/    # 可复用 IQ/频谱组件（core + composables + README）
 playground/               # 独立 Vite 宿主 + 像素回归 visual 页
 docs/                     # 教学文档（每特性一篇，含复制步骤）
@@ -141,11 +142,18 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 ## 质量校验
 
 ```powershell
-npm test                 # 纯逻辑单测（当前 255 例）
+npm test                 # 纯逻辑单测（当前 288 例）
 npm run test:coverage    # 覆盖率（v8，含阈值；报告在 coverage/）
 npm run test:source-ipc  # 真实主进程 source/analysis/remote/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响
 npm run test:signal-pages # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
+npm run test:gnuradio    # GNU Radio / TCP IQ 网络源（Mock + 真实 Electron E2E）
+npm run test:local-gnuradio # 本机有 GNU Radio 时验证一键启动（不进 CI）
+npm run test:raw-playback # 网络源 raw（ci16/cf32/ci8）录制回放
+npm run test:gnuradio-split # 独立双 TCP 端口（显示 / 录制分开）
+npm run test:gnuradio-dualch # AD9361 双通道（2ch 交织 + RX0/RX1 切换）
+npm run test:dual-sim     # 应用内双通道合成源（无需 GNU Radio/硬件）
+npm run test:gnuradio-perf # 10 MSPS 吞吐冒烟（Mock；真实 10 MSPS 见 SRC-02）
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
 npm run test:smoke       # 组件 Playground + API + PNG 导出管线 + 截图
 npm run test:visual      # Canvas2D/WebGL2 像素回归（10 个组件）
@@ -153,7 +161,7 @@ npm run test:e2e         # 4 套 Electron E2E 串联
 npm run check:signal     # 组件库 dist-signal 发布产物校验
 ```
 
-CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建与 5 套 Electron E2E；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
+CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建与 10 套 Electron E2E；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
 
 `test:sections` 会构建真实应用并启动隐藏窗口，逐页验证 30 个 Electron 教学页、13 个 TypeScript 惯用法页的标题、菜单、页面内容和 renderer 异常，并执行 IPC、safeStorage、主题切换和 TS 示例运行等交互。
 

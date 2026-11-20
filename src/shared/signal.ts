@@ -13,9 +13,9 @@ export type ModType = 'sine' | 'BPSK' | 'QPSK' | '16QAM'
  * - complex：复数 IQ 输出（矢量源/仿真）；I/Q 独立
  */
 export type OutputMode = 'real' | 'complex'
-/** 源波形/调制（digital 时使用 modType；file 用于任意 IQ 回放） */
+/** 源波形/调制（digital 时使用 modType；file 用于任意 IQ 回放，network 用于 GNU Radio/网络源） */
 export type SourceWaveform =
-  'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm' | 'file'
+  'cw' | 'am' | 'fm' | 'pulse' | 'twoTone' | 'noise' | 'digital' | 'ofdm' | 'file' | 'network'
 /**
  * 频谱语义（分析域，与源输出域独立）：
  * - real：只取实信号 I 通道，输出单边谱 0~Fs/2（非 DC 幅度 ×2）
@@ -174,7 +174,8 @@ const WAVEFORMS: readonly string[] = [
   'noise',
   'digital',
   'ofdm',
-  'file'
+  'file',
+  'network'
 ]
 
 export function sanitizeConfigPatch(patch: unknown): ConfigPatchResult {

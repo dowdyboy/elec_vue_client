@@ -13,7 +13,7 @@
  *   - 每个模块只做一件事，对外仅暴露 registerX(getMainWindow): Disposer
  *   - 通道名建议从 src/main/ipcChannels.ts 导入（可选，不引入也不影响运行）
  *   - 敏感操作（写文件、执行代码、打开路径）在 handle 顶部校验 isTrustedSender(event)
- *   - 返回 Disposer 供 index.ts 统一在 before-quit 释放资源（定时器/Server/监听）
+ *   - 返回 Disposer 供 index.ts 统一在 will-quit 释放资源（定时器/Server/监听）
  *   - 教学注释保留【特性】【API】【复制】三段，便于他人理解与复制
  */
 

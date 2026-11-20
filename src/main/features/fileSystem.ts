@@ -15,6 +15,7 @@ import { ipcMain } from 'electron'
 import { promises as fs, watch, type Dirent, type FSWatcher } from 'fs'
 import { join, basename, dirname } from 'path'
 import type { MainWindowGetter } from '../types'
+import { FORBIDDEN, isTrustedSender } from '../utils/validateSender'
 
 /** 统一返回结构：异常被捕获并转为 error 字段，不向上抛出 */
 type FsResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -46,31 +47,35 @@ export function disposeFileSystemWatchers(): void {
 
 function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
   // ── 读取文本文件 ──
-  ipcMain.handle('fs:readFile', (_e, filePath: string) =>
-    safe(async () => (await fs.readFile(filePath, 'utf-8')).toString())
-  )
+  ipcMain.handle('fs:readFile', (e, filePath: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return safe(async () => (await fs.readFile(filePath, 'utf-8')).toString())
+  })
 
   // ── 写入文本文件（自动创建父目录）──
-  ipcMain.handle('fs:writeFile', (_e, filePath: string, content: string) =>
-    safe(async () => {
+  ipcMain.handle('fs:writeFile', (e, filePath: string, content: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return safe(async () => {
       await fs.mkdir(dirname(filePath), { recursive: true })
       await fs.writeFile(filePath, content, 'utf-8')
       return `${basename(filePath)} 写入成功`
     })
-  )
+  })
 
   // ── 写入二进制文件（base64 输入，自动创建父目录；PNG 导出等场景）──
-  ipcMain.handle('fs:writeFileBase64', (_e, filePath: string, base64: string) =>
-    safe(async () => {
+  ipcMain.handle('fs:writeFileBase64', (e, filePath: string, base64: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return safe(async () => {
       await fs.mkdir(dirname(filePath), { recursive: true })
       await fs.writeFile(filePath, Buffer.from(base64, 'base64'))
       return `${basename(filePath)} 写入成功`
     })
-  )
+  })
 
   // ── 列出目录内容 ──
-  ipcMain.handle('fs:listDir', (_e, dirPath: string) =>
-    safe(async () => {
+  ipcMain.handle('fs:listDir', (e, dirPath: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
+    return safe(async () => {
       const entries = await fs.readdir(dirPath, { withFileTypes: true })
       return entries.map((entry: Dirent) => ({
         name: entry.name,
@@ -80,13 +85,14 @@ function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
         size: 0 // 完整工程可用 stat 获取，此处从简
       }))
     })
-  )
+  })
 
   // ── 拼接路径工具（渲染进程无法直接用 node:path，走 IPC）──
   ipcMain.handle('fs:joinPath', (_e, base: string, name: string) => join(base, name))
 
   // ── 目录监听（fs.watch）：文件夹变化实时推送 ──
-  ipcMain.handle('fs:watch', (_e, dirPath: string) => {
+  ipcMain.handle('fs:watch', (e, dirPath: string) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     if (!dirPath) return { ok: false, error: '路径不能为空' }
     const id = ++watchSeq
     try {
@@ -114,7 +120,8 @@ function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
   })
 
   // 停止监听
-  ipcMain.handle('fs:unwatch', (_e, id: number) => {
+  ipcMain.handle('fs:unwatch', (e, id: number) => {
+    if (!isTrustedSender(e)) return FORBIDDEN
     const watcher = watchers.get(id)
     if (watcher) {
       watcher.close()

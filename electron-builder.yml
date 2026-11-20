@@ -9,8 +9,22 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!tools/**'
+  - '!docs/**'
+  - '!scripts/**'
+  - '!playground/**'
+  - '!coverage/**'
+  - '!dist-signal/**'
+  - '!out/test/**'
+  - '!DEVLOG.md'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: tools/gnuradio
+    to: gnuradio
+    filter:
+      - '**/*.py'
+      - '**/*.md'
 win:
   executableName: elec_vue_client
 nsis:

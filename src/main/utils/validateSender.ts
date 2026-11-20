@@ -13,13 +13,25 @@ import type { IpcMainInvokeEvent } from 'electron'
 export function isTrustedSender(event: IpcMainInvokeEvent): boolean {
   const url = event.senderFrame?.url ?? ''
   if (!url) return false
-  // 打包态：file:// 协议
-  if (url.startsWith('file://')) return true
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  // 打包态：只接受 file://（应用自身页面）
+  if (parsed.protocol === 'file:') return true
+  // 开发态：必须与 dev server 同 origin（不能用字符串前缀，避免 userinfo/相似域名绕过）
   const devUrl = process.env['ELECTRON_RENDERER_URL']
-  if (devUrl && url.startsWith(devUrl)) return true
-  // 兜底：electron 的 renderer 在 dev 下可能为 http://localhost:5173
-  if (url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:')) return true
-  return false
+  if (devUrl) {
+    try {
+      if (parsed.origin === new URL(devUrl).origin) return true
+    } catch {
+      // devUrl 非法：继续走回环兜底
+    }
+  }
+  // electron-vite dev 常见回环地址（任意端口）
+  return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
 }
 
 /** 校验失败时的统一返回（便于 handle 中直接 return） */

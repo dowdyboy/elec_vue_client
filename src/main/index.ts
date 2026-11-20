@@ -70,6 +70,7 @@ import { registerBetterSqlite } from './features/betterSqlite'
 // Demo：信号分析服务端（本地主进程计算 + 远程后端，仅演示，置于 signal 而非 features）
 import { registerSignalAnalysisServer } from './signal/analysisServer'
 import { registerSourceService } from './source/sourceService'
+import { registerLocalGnuRadio } from './source/localGnuRadio'
 import { registerSweepService } from './sweep/sweepService'
 import { registerRemoteMockServer } from './signal/remoteMockServer'
 
@@ -147,7 +148,7 @@ function createWindow(): void {
 // 教学要点：每行注释掉即可"停用"该特性，方便对照学习
 // ──────────────────────────────────────────────────
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.electron.app')
 
   // ── 单实例锁必须先注册：若已有实例在运行，直接退出不再初始化 ──
   if (!registerAppLifecycle(getMainWindow)) return
@@ -217,6 +218,7 @@ app.whenReady().then(() => {
   registerBetterSqlite() // 第三方 SQLite（better-sqlite3）
   featureDisposers.push(registerSignalAnalysisServer()) // 信号分析服务端（本地纯 IPC / 远程后端）
   featureDisposers.push(registerSourceService()) // 独立源服务（SourceEngine → source:frame）
+  featureDisposers.push(registerLocalGnuRadio()) // 本机 GNU Radio 一键启动（可配置 Python/脚本）
   featureDisposers.push(registerSweepService()) // S11 扫频源（sweep:frame）
   featureDisposers.push(registerRemoteMockServer()) // 远端Mock内置（独立 socket.io 端口，演示一键远程）
 
@@ -234,9 +236,11 @@ app.whenReady().then(() => {
 // 所有窗口关闭即退出（macOS 除外：保留 Dock 常驻）
 // 教学说明：正常关闭窗口已被拦截为"隐藏到托盘"（见 createWindow），
 // 走到这里说明是退出流程（托盘"退出应用"触发 before-quit → isQuitting=true）
-// 轻量化：退出前统一释放资源（端口/文件监听等），避免下次启动 EADDRINUSE
-app.on('before-quit', () => {
-  setQuitting(true)
+// 资源释放放在 will-quit：before-quit 只置 quit 标志，quitGuard 仍有机会
+// preventDefault（用户点“取消”时不能提前把 DB/端口/服务销毁）。
+app.on('before-quit', () => setQuitting(true))
+
+app.on('will-quit', () => {
   for (const d of featureDisposers) {
     try {
       d()
