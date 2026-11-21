@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/dialog.ts
  *         2. 在 index.ts 中调用 registerDialog()
  *         3. 渲染进程调用 window.api.dialog.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】打开/保存文件对话框**必须由主进程弹出**：
  *         - 对话框是系统原生窗口，需要挂在某个窗口上（parent）
  *         - 渲染进程无法直接调用（安全限制）

@@ -4,19 +4,33 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/partition.ts
  *         2. 在 index.ts 中调用 registerPartition()
  *         3. 渲染进程调用 window.api.partition.*
+ * 【依赖】复制时需一并带上：windowManager.ts（loadRenderer）、security.ts（权限白名单 / 内嵌网页会话）
  * 【说明】partition 让窗口使用独立的会话（Cookie/缓存/存储互不干扰）：
  *         - 'incognito-xxx'：内存会话，关窗即销毁（无痕浏览）
  *         - 'persist:work'：持久会话，数据落盘（多账号隔离，如工作/私人账号）
  *         典型场景：多账号同时登录、无痕浏览、应用内"访客模式"。
+ * 【安全】独立会话不会继承 defaultSession 的权限白名单，本模块已在新分区上
+ *         显式调用 registerSecurityForSession(...)（见 security.ts）。
+ *         复制到新工程时若删除这一行，分区窗口的权限请求会退回"默认放行"。
  */
 
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, session, shell } from 'electron'
 import { join } from 'path'
 import { loadRenderer } from './windowManager'
+import { registerSecurityForSession } from './security'
+
+/** 已套用安全策略的分区（同一分区重复开窗时不必重复注册） */
+const securedPartitions = new Set<string>()
 
 export function registerPartition(): void {
   // 创建使用独立会话的窗口
   const createPartitionWindow = (partition: string): BrowserWindow => {
+    // 权限处理器按 session 生效：分区窗口不会继承 defaultSession 的白名单，
+    // 不显式套用就会退回 Electron 默认行为（默认放行），等于绕过 security.ts
+    if (!securedPartitions.has(partition)) {
+      registerSecurityForSession(session.fromPartition(partition))
+      securedPartitions.add(partition)
+    }
     const win = new BrowserWindow({
       width: 640,
       height: 480,

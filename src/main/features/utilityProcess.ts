@@ -5,6 +5,7 @@
  *         2. electron.vite.config.ts 的 main.rollupOptions.input 增加 worker 入口
  *         3. 在 index.ts 中调用 registerUtilityProcess(getMainWindow)
  *         4. 渲染进程调用 window.api.perf.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】教学核心：主进程是单线程——
  *         - 在主进程同步跑 CPU 密集任务 → 整个应用（所有窗口 IPC）被阻塞
  *         - utilityProcess.fork 启动独立 Node.js 进程 → 主进程照常响应

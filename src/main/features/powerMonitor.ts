@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/powerMonitor.ts
  *         2. 在 index.ts 中调用 registerPowerMonitor(getMainWindow)
  *         3. 渲染进程调用 window.api.power.* 与 onEvent 监听
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】powerMonitor 监听系统电源/会话状态：
  *         - lock-screen / unlock-screen：锁屏与解锁（如：解锁后恢复数据）
  *         - suspend / resume：睡眠与唤醒（如：唤醒后重新连接服务器）

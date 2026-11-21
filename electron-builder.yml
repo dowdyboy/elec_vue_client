@@ -1,4 +1,12 @@
-appId: com.electron.app
+# ────────────────────────────────────────────────────────────────
+# 发布前必须替换的项（当前为占位/演示值，直接打包会得到"能装但不能更新"的产物）：
+#   appId        → 注册到系统的唯一应用 ID，改为自己的反向域名
+#   publish.url  → 真实更新服务器（当前 example.com 必然 404；
+#                  docs/15-自动更新.md 把"检查失败"当作教学的一部分，
+#                  但正式发布必须换成自己的地址或改用 provider: github）
+#   linux.maintainer → deb/AppImage 包的维护者邮箱
+# ────────────────────────────────────────────────────────────────
+appId: com.dowdyboy.elec-vue-client
 productName: elec_vue_client
 directories:
   buildResources: build
@@ -47,13 +55,16 @@ linux:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: dowdyboy <dowdyboy@users.noreply.github.com>
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
+# 原生模块（better-sqlite3）由 postinstall 的 `electron-builder install-app-deps` 重建；
+# 这里保持 false 以免安装依赖时重复编译。
 npmRebuild: false
 publish:
   provider: generic
+  # ⚠ 占位地址：正式发布前替换为自己的更新服务器（或整体改为 provider: github）
   url: https://example.com/auto-updates
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

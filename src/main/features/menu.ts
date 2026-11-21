@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/menu.ts
  *         2. 在 index.ts 中调用 registerMenu(getMainWindow)
  *         3. 渲染进程触发右键菜单：window.api.menu.showContext()
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】两类菜单：
  *         - 应用菜单：窗口顶部菜单栏（macOS 在系统顶部），可放全局命令
  *         - 上下文菜单：右键弹出，本工程演示在渲染进程页面右键区域触发

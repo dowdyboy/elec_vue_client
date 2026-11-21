@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/fileIcon.ts
  *         2. 在 index.ts 中调用 registerFileIcon()
  *         3. 渲染进程调用 window.api.fileIcon.get(path)
+ * 【依赖】复制时需一并带上：src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】获取文件在操作系统中的类型图标（如 Word 文档、图片、可执行文件），
  *         常配合文件列表/资源管理器类应用使用。
  *         size 可选 'small' | 'normal' | 'large'（越大越清晰）。

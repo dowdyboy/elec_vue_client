@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/socket.ts
  *         2. 在 index.ts 中调用 registerSockets(getMainWindow)
  *         3. 渲染进程通过 window.api.socket.* 收发消息
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、src/main/utils/disposable.ts（Disposer 释放约定）
  * 【说明】区别于 HTTP（请求-响应），TCP/UDP 是传输层协议：
  *         - TCP：面向连接、可靠、有序（文件传输、游戏、远程桌面）
  *         - UDP：无连接、不可靠、低延迟（音视频流、实时游戏、广播）
@@ -15,6 +16,7 @@ import { ipcMain } from 'electron'
 import net from 'net'
 import dgram from 'dgram'
 import type { MainWindowGetter } from '../types'
+import type { Disposer } from '../utils/disposable'
 
 /** 日志条目：{ port/type 标识, 内容 }，渲染进程按类型着色展示 */
 interface SocketLog {
@@ -51,7 +53,7 @@ let tcpServer: net.Server | null = null
 let tcpClient: net.Socket | null = null
 const udpSockets = new Map<number, dgram.Socket>()
 
-export function registerSockets(getMainWindow: MainWindowGetter): () => void {
+export function registerSockets(getMainWindow: MainWindowGetter): Disposer {
   const push = (channel: 'socket:tcp-log' | 'socket:udp-log', log: SocketLog): void => {
     getMainWindow()?.webContents.send(channel, log)
   }

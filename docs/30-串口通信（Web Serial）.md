@@ -15,9 +15,13 @@
 
 ```ts
 // ① 权限：只允许本应用页面访问串口
+import { isTrustedPageUrl } from '../utils/validateSender'
+
 session.defaultSession.setDevicePermissionHandler((details) => {
   if (details.deviceType !== 'serial') return false
-  return details.origin.startsWith('file://') || details.origin.includes('localhost')
+  // 按 URL 解析后精确比对主机名。
+  // ⚠️ 不要写成 details.origin.includes('localhost')：https://localhost.evil.com 会绕过
+  return isTrustedPageUrl(details.origin)
 })
 
 // ② 选择：接管 Chromium 默认选择器，改为"应用内弹窗"

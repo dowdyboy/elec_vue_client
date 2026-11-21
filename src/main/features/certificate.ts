@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/certificate.ts
  *         2. 在 index.ts 中调用 registerCertificate()
  *         3. 渲染进程调用 window.api.cert.setVerifyMode()
+ * 【依赖】复制时需一并带上：src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】HTTPS 证书校验策略：
  *         - default：系统默认校验（生产必须保持）
  *         - trustAll：放行所有证书（企业内网自签证书、测试环境；生产禁用！）

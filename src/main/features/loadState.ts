@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/loadState.ts
  *         2. 在 index.ts 中调用 registerLoadState(getMainWindow)
  *         3. 渲染进程监听 window.api.web.onLoadState()
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】监控页面加载过程（主窗口 / 内嵌 WebContentsView 都适用）：
  *         - loading 开始 → did-finish-load 完成 → did-fail-load 失败（错误码）
  *         典型用途：加载指示器、失败错误页（网络异常时提示重试）。

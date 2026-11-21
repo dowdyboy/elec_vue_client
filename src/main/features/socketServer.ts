@@ -5,6 +5,7 @@
  *         2. 复制本文件到新工程 src/main/features/socketServer.ts
  *         3. 在 index.ts 中调用 registerSocketServer()
  *         4. 渲染进程调用 window.api.socketServer.* 配合 io() 连接
+ * 【依赖】复制时需一并带上：src/main/utils/disposable.ts（Disposer 释放约定）
  * 【说明】与 httpServer.ts（HTTP 请求-响应）互补，演示 WebSocket 两大核心价值：
  *         - 双向实时：客户端发 message → 服务端 echo 回显（对比 HTTP 每次都要新请求）
  *         - 服务端推送：服务端每秒 tick 推送（HTTP 无法由服务器主动发起）
@@ -16,6 +17,7 @@
 import { ipcMain } from 'electron'
 import http from 'node:http'
 import { Server as SocketIOServer } from 'socket.io'
+import type { Disposer } from '../utils/disposable'
 
 let server: http.Server | null = null
 let io: SocketIOServer | null = null
@@ -41,7 +43,7 @@ export function disposeSocketServer(): void {
   }
 }
 
-export function registerSocketServer(): () => void {
+export function registerSocketServer(): Disposer {
   // ── 启动 socket.io 服务 ──
   ipcMain.handle('socketServer:start', (_e, targetPort = 8766) => {
     if (io) return { ok: false, error: `服务器已在运行（端口 ${port}）` }

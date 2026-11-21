@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/quitGuard.ts
  *         2. 在 index.ts 中调用 registerQuitGuard(getMainWindow)
  *         3. 渲染进程调用 window.api.quitGuard.setDirty(true/false)
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、src/main/utils/disposable.ts（Disposer 释放约定）
  * 【说明】生产必备模式：应用存在未保存修改时，退出前弹窗确认。
  *         实现要点：
  *         - 页面通过 quitGuard.setDirty() 标记"有未保存修改"
@@ -15,6 +16,7 @@
 
 import { app, dialog, ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
+import type { Disposer } from '../utils/disposable'
 
 /** @deprecated 直接读写 quitState 已过时，请用 isQuitting()/setQuitting()，保留兼容旧代码 */
 export const quitState = {
@@ -36,7 +38,7 @@ export function setQuitting(v: boolean): void {
 let hasUnsaved = false
 let forceQuit = false
 
-export function registerQuitGuard(getMainWindow: MainWindowGetter): () => void {
+export function registerQuitGuard(getMainWindow: MainWindowGetter): Disposer {
   // 页面标记"有未保存修改"
   ipcMain.handle('quitGuard:setDirty', (_e, dirty: boolean) => {
     hasUnsaved = dirty

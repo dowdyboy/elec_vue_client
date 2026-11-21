@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/webRequest.ts
  *         2. 在 index.ts 中调用 registerWebRequest(getMainWindow)
  *         3. 渲染进程监听 window.api.session.onRequestLog() 查看拦截记录
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】webRequest 拦截 Chromium 网络栈的所有请求（渲染进程 fetch、
  *         下载、页面资源），典型用途：
  *         - 注入请求头（token、UA）与修改响应

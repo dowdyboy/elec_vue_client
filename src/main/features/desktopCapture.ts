@@ -5,6 +5,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/desktopCapture.ts
  *         2. 在 index.ts 中调用 registerDesktopCapture(getMainWindow)
  *         3. 渲染进程调用 window.api.capture.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】desktopCapturer 枚举所有屏幕/窗口源（含缩略图），
  *         是"录屏、共享屏幕"类应用（如 OBS、视频会议）的基础。
  *         本模块演示三种能力：

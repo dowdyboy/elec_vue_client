@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/theme.ts
  *         2. 在 index.ts 中调用 registerTheme(getMainWindow)
  *         3. 渲染进程配合 preload 的 theme 分组实现明暗主题联动
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】nativeTheme 是"主进程判断系统主题"的权威来源：
  *         - themeSource: 'system' | 'light' | 'dark'（应用偏好）
  *         - shouldUseDarkColors: 当前实际是否暗色（由 source 与系统决定）

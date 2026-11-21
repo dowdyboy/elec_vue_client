@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/scriptInjection.ts
  *         2. 在 index.ts 中调用 registerScriptInjection(getMainWindow)
  *         3. 渲染进程调用 window.api.inject.execute(code)
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】向页面注入脚本/读取页面数据（调试、自动化、埋点）：
  *         - 主进程可在任意时刻执行 JS（页面自身无法做到的"外部操控"）
  *         - 返回值会被序列化回主进程

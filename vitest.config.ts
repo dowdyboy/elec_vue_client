@@ -8,7 +8,7 @@ export default defineConfig({
     include: [
       'src/components/signal/**/*.test.ts',
       'src/shared/**/*.test.ts',
-      'src/main/source/**/*.test.ts'
+      'src/main/**/*.test.ts'
     ],
     coverage: {
       provider: 'v8',

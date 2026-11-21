@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/httpServer.ts
  *         2. 在 index.ts 中调用 registerHttpServer()
  *         3. 渲染进程调用 window.api.httpServer.*（或直接 fetch）
+ * 【依赖】复制时需一并带上：src/main/utils/disposable.ts（Disposer 释放约定）
  * 【说明】主进程可以用 Node 的 http 模块起本地 HTTP 服务：
  *         - 应用内 API mock（渲染进程 fetch 本地接口，绕开跨域）
  *         - 局域网共享（监听 0.0.0.0 供其他设备访问）
@@ -16,6 +17,7 @@
 import { ipcMain } from 'electron'
 import http from 'node:http'
 import { parse } from 'node:url'
+import type { Disposer } from '../utils/disposable'
 
 let server: http.Server | null = null
 let port = 0
@@ -36,7 +38,7 @@ export function disposeHttpServer(): void {
 const CHUNK = Buffer.alloc(64 * 1024)
 for (let i = 0; i < CHUNK.length; i++) CHUNK[i] = (i * 31 + 7) % 256
 
-export function registerHttpServer(): () => void {
+export function registerHttpServer(): Disposer {
   // ── 启动本地 HTTP 服务器 ──
   ipcMain.handle('httpServer:start', (_e, targetPort = 8765) => {
     if (server) return { ok: false, error: `服务器已在运行（端口 ${port}）` }

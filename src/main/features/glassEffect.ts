@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/glassEffect.ts
  *         2. 在 index.ts 中调用 registerGlassEffect(getMainWindow)
  *         3. 渲染进程调用 window.api.glass.set(true/false)
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】窗口半透明毛玻璃：macOS 的 vibrancy 特效、Windows 11 的
  *         mica / acrylic 材质。注意平台限制：
  *         - macOS：setVibrancy('under-window') 等

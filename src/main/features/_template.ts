@@ -9,9 +9,16 @@
  *      并在 app.whenReady 内调用 registerYourFeature(getMainWindow)
  *   3. 如需渲染进程调用：在新工程 src/preload/index.ts 对应分组暴露 window.api.yourFeature.*
  *
+ * 【依赖】按需一并复制（本项目里 28 个特性依赖第 1 项、7 个依赖第 2 项）：
+ *   - src/main/types.ts                  → MainWindowGetter（需要 getMainWindow 时必带）
+ *   - src/main/utils/validateSender.ts   → 敏感通道的发送方校验
+ *   - src/main/utils/disposable.ts       → Disposer 类型（返回释放函数时必带）
+ *   提示：在仓库根执行 `npm run copy:feature <特性名> <目标工程>` 会自动带上这些依赖文件。
+ *
  * 【轻量化封装要点】
  *   - 每个模块只做一件事，对外仅暴露 registerX(getMainWindow): Disposer
- *   - 通道名建议从 src/main/ipcChannels.ts 导入（可选，不引入也不影响运行）
+ *   - 通道名建议从 src/main/ipcChannels.ts 导入（可选；不导入也不会失效，
+ *     因为 ipcChannels.test.ts 会校验"目录 ↔ 主进程 ↔ preload"三方一致）
  *   - 敏感操作（写文件、执行代码、打开路径）在 handle 顶部校验 isTrustedSender(event)
  *   - 返回 Disposer 供 index.ts 统一在 will-quit 释放资源（定时器/Server/监听）
  *   - 教学注释保留【特性】【API】【复制】三段，便于他人理解与复制

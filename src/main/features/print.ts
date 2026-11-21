@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/print.ts
  *         2. 在 index.ts 中调用 registerPrint(getMainWindow)
  *         3. 渲染进程调用 window.api.print.toPdf()
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】把当前窗口内容导出为 PDF：webContents.printToPDF 返回 Buffer，
  *         配合保存对话框落盘。实际打印（走系统打印机）用 webContents.print()，
  *         参数类似（silent、printBackground 等），此处演示 PDF 导出更直观。

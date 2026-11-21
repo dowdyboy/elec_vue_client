@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/errorHandler.ts
  *         2. 在 index.ts 中调用 registerErrorHandler(getMainWindow)
  *         3. 渲染进程调用 window.api.error.* 查看错误日志
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】生产应用的兜底保障：
  *         - uncaughtException：主进程未捕获异常（防止直接崩溃退出）
  *         - unhandledRejection：未处理的 Promise 拒绝

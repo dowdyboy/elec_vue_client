@@ -5,6 +5,7 @@
  *         2. 在 index.ts 中调用 registerAutoUpdater(getMainWindow)
  *         3. 打包配置：electron-builder.yml 中配置 publish（见 docs/15-自动更新.md）
  *         4. 需要依赖：electron-updater（本工程已安装）
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】自动更新是生产应用的标配能力：
  *         - 开发模式读取 dev-app-update.yml（指向本地/测试更新服务器）
  *         - 生产模式读取打包时生成的 app-update.yml

@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/inputHook.ts
  *         2. 在 index.ts 中调用 registerInputHook(getMainWindow)
  *         3. 渲染进程调用 window.api.inputHook.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】在按键到达页面之前拦截，两种典型用途：
  *         - 吞键：阻止某些快捷键生效（如禁 F12、禁 Ctrl+S）
  *         - 全局热键：应用内任意页面响应的自定义热键

@@ -1,30 +1,12 @@
 /**
- * 【工具】资源释放辅助（轻量化）
- * 【说明】每个 features 模块的 registerX 可返回 Disposer，
- *         index.ts 统一在 will-quit 时调用，避免资源泄漏。
- *         不引入新依赖，仅类型与辅助函数。
+ * 【工具】资源释放约定（轻量化）
+ * 【说明】各 features 模块的 registerX 返回 Disposer，index.ts 收集到
+ *         featureDisposers，在 app 'will-quit' 时统一调用，避免端口/文件句柄泄漏。
+ *         用同一个类型别名而不是各写 `() => void`，是为了让"哪些模块需要释放"
+ *         在签名上可 grep、可校验。
+ *         （历史版本里的 combineDisposers / safeDispose 从未被使用，已删除；
+ *           index.ts 的 will-quit 循环本身已经做了逐项 try/catch。）
  */
 
+/** 释放函数：调用即释放该模块占用的资源（可重复调用，需保证幂等） */
 export type Disposer = () => void
-
-/** 收集多个释放函数，返回一个合并释放函数 */
-export function combineDisposers(disposers: Disposer[]): Disposer {
-  return () => {
-    for (const d of disposers) {
-      try {
-        d()
-      } catch {
-        // 忽略单个释放失败，保证其余资源仍被释放
-      }
-    }
-  }
-}
-
-/** 安全调用：忽略异常（用于退出时的清理） */
-export function safeDispose(fn: () => void): void {
-  try {
-    fn()
-  } catch {
-    // 退出清理阶段不抛异常
-  }
-}

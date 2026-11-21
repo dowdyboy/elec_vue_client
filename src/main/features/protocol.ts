@@ -4,22 +4,38 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/protocol.ts
  *         2. 在 index.ts 中调用 registerProtocol(getMainWindow)
  *         3. 打包后协议自动注册；dev 模式注册到 electron 可执行文件
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、src/main/utils/validateSender.ts（敏感通道发送方校验）、security.ts（权限白名单 / 内嵌网页会话）
  * 【说明】深链接：注册自定义协议（如 elec-demo://）后，系统里点击
  *         该协议的链接会唤起应用（类似 weixin://、magnet://）。
  *         典型场景：网页/邮件里"打开应用"按钮、浏览器唤起应用传参。
  *         WebContentsView 是在窗口内嵌第三方网页的标准组件（替代已废弃的 BrowserView）。
+ * 【安全】内嵌的是**不受信任的第三方页面**，因此它跑在独立内存分区 `untrusted-embed` 上
+ *         （与 defaultSession 隔离 + 全拒权限 + sandbox + 无 preload），
+ *         且 window.open 一律转交系统浏览器。详见 security.ts 与 docs/12。
  */
 
-import { app, ipcMain, shell, WebContentsView } from 'electron'
+import { app, ipcMain, session, shell, WebContentsView } from 'electron'
 import { isAbsolute, join } from 'path'
 import { existsSync } from 'fs'
 import type { MainWindowGetter } from '../types'
 import { FORBIDDEN, isTrustedSender } from '../utils/validateSender'
+import { registerDenyAllForSession } from './security'
 
 /** 自定义协议名（注册为系统默认处理程序） */
 const PROTOCOL = 'elec-demo'
 
+/**
+ * 内嵌第三方网页使用的独立会话分区。
+ * 不用 persist: 前缀 = 内存会话，关窗即销毁，页面数据（Cookie/存储）不落盘；
+ * 关键是它与 defaultSession 隔离，因此主会话里的权限白名单不会波及到第三方页面。
+ */
+const EMBED_PARTITION = 'untrusted-embed'
+
 export function registerProtocol(getMainWindow: MainWindowGetter): void {
+  // 内嵌网页会话：全拒权限（摄像头/麦克风/录屏/串口/剪贴板）与显示捕获，
+  // 第三方页面即使与本应用同源域名也拿不到任何硬件能力（见 security.ts）。
+  registerDenyAllForSession(session.fromPartition(EMBED_PARTITION))
+
   // ── ① 注册为系统默认协议处理程序 ──
   // dev 模式：协议指向 electron.exe + 入口脚本
   // 生产模式：协议指向打包后的 exe（安装时自动注册）
@@ -149,7 +165,25 @@ export function registerProtocol(getMainWindow: MainWindowGetter): void {
       embeddedView = null
     }
     embeddedView = new WebContentsView({
-      webPreferences: { sandbox: false }
+      webPreferences: {
+        // 第三方网页的隔离基线：独立内存会话 + 沙箱 + 无 preload（拿不到 window.api）
+        // 注意：WebContentsView 的导航是 loadURL（编程式），不会触发 will-navigate，
+        //       所以不能指望 security.ts 的导航拦截兜住它——隔离必须做在会话与沙箱层。
+        partition: EMBED_PARTITION,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+    // 内嵌页面内的 window.open / target=_blank：不新开窗口，http(s) 交给系统浏览器
+    embeddedView.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+      try {
+        const p = new URL(targetUrl).protocol
+        if (p === 'http:' || p === 'https:') shell.openExternal(targetUrl)
+      } catch {
+        // 非法 URL：不打开
+      }
+      return { action: 'deny' }
     })
     // addChildView 添加到主窗口；新视图会覆盖主窗口内容
     win.contentView.addChildView(embeddedView)

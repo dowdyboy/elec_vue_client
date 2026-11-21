@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/fileSystem.ts
  *         2. 在 index.ts 中调用 registerFileSystem(getMainWindow)
  *         3. 渲染进程调用 window.api.fs.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、src/main/utils/disposable.ts（Disposer 释放约定）、src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】渲染进程默认没有 Node.js 能力（contextIsolation + 无 nodeIntegration），
  *         所有文件操作必须经主进程执行。本模块是最小可用封装：
  *         - 所有 IPC 返回 { ok, data?, error? }，异常不抛出到渲染进程
@@ -16,6 +17,7 @@ import { promises as fs, watch, type Dirent, type FSWatcher } from 'fs'
 import { join, basename, dirname } from 'path'
 import type { MainWindowGetter } from '../types'
 import { FORBIDDEN, isTrustedSender } from '../utils/validateSender'
+import type { Disposer } from '../utils/disposable'
 
 /** 统一返回结构：异常被捕获并转为 error 字段，不向上抛出 */
 type FsResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -131,7 +133,7 @@ function registerFileSystemImpl(getMainWindow: MainWindowGetter): void {
   })
 }
 
-export function registerFileSystem(getMainWindow: MainWindowGetter): () => void {
+export function registerFileSystem(getMainWindow: MainWindowGetter): Disposer {
   registerFileSystemImpl(getMainWindow)
   return () => {
     disposeFileSystemWatchers()

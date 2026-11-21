@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/serialPort.ts
  *         2. 在 index.ts 中调用 registerSerialPort()
  *         3. 渲染进程调用 window.api.serial.* 配合 navigator.serial 使用
+ * 【依赖】复制时需一并带上：src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】硬件工具 / IoT / 固件烧录类应用的标配能力：
  *         - 渲染进程无法直接枚举/打开串口（浏览器安全模型），必须由主进程放行
  *         - 两道关卡：① devicePermissionHandler 决定"这个页面能否申请设备权限"
@@ -18,6 +19,7 @@
  */
 
 import { ipcMain, session } from 'electron'
+import { isTrustedPageUrl } from '../utils/validateSender'
 
 /** 端口选择请求表：token → 完成回调（callback 必须恰好调用一次） */
 const pendingSelects = new Map<string, (portId: string) => void>()
@@ -28,12 +30,11 @@ const SELECT_TIMEOUT_MS = 30_000
 export function registerSerialPort(): void {
   // ── ① 设备权限处理器：只放行串口，且仅限本应用页面（防第三方页面窥探设备）──
   // 说明：必须在页面发起设备请求前设置（本工程特性注册先于 createWindow ✓）
+  // 注意：origin 必须按 URL 解析后精确比对主机名，用 includes('localhost') 之类的
+  //       子串判断会被 https://localhost.evil.com 绕过（见 utils/validateSender.ts）
   session.defaultSession.setDevicePermissionHandler((details) => {
     if (details.deviceType !== 'serial') return false
-    const origin = details.origin
-    const isInternal =
-      origin.startsWith('file://') || origin.includes('localhost') || origin.includes('127.0.0.1')
-    return isInternal
+    return isTrustedPageUrl(details.origin)
   })
 
   // ── ② 端口选择事件：navigator.serial.requestPort() 触发 ──

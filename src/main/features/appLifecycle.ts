@@ -5,6 +5,7 @@
  *         2. 在 index.ts 中调用 registerAppLifecycle(getMainWindow)，
  *            返回 false 时表示已有实例在运行，入口应立即 return 不再初始化
  *         3. 渲染进程调用 window.api.app.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】单实例锁：防止用户重复打开应用（如双击两次 exe），
  *         第二次启动会触发 first 实例的 'second-instance' 事件，
  *         典型做法是聚焦已有窗口并提示用户。

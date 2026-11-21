@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/tray.ts
  *         2. 在 index.ts 中调用 registerTray(getMainWindow)
  *         3. 需要托盘图标资源（本工程使用 resources/icon.png，可替换）
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】托盘是桌面应用"常驻系统"的关键特性：
  *         - 应用关闭窗口后进程仍存活（见 index.ts 的 window-all-closed 逻辑）
  *         - 通过托盘菜单可重新打开窗口、退出应用

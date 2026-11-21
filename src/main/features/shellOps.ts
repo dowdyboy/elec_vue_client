@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/shellOps.ts
  *         2. 在 index.ts 中调用 registerShellOps()
  *         3. 渲染进程调用 window.api.shell.*
+ * 【依赖】复制时需一并带上：src/main/utils/validateSender.ts（敏感通道发送方校验）
  * 【说明】shell 是"调用系统能力"的便捷通道：
  *         - openPath：用系统默认程序打开文件/文件夹/URL
  *         - showItemInFolder：在资源管理器中定位文件

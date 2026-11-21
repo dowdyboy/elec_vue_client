@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/screenInfo.ts
  *         2. 在 index.ts 中调用 registerScreenInfo(getMainWindow)
  *         3. 渲染进程调用 window.api.screen.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】screen 只能在主进程使用：
  *         - 获取所有显示器信息（位置、分辨率、缩放比、是否主屏）
  *         - 监听显示器"插入/拔出/分辨率变化"，实时推送渲染进程

@@ -1,13 +1,23 @@
 {
   "name": "elec_vue_client",
   "version": "1.0.0",
-  "description": "An Electron application with Vue and TypeScript",
+  "description": "Electron 39 + Vue 3 + TypeScript 教学与模板工程，附带可复用信号分析组件库（IQ/频谱/时频/星座/眼图等 10 个组件）",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "dowdyboy",
+  "license": "MIT",
+  "homepage": "https://github.com/dowdyboy/elec_vue_client",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dowdyboy/elec_vue_client.git"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
+    "copy:feature": "node scripts/copy-feature.mjs",
+    "copy:signal": "node scripts/copy-signal.mjs",
     "mock:remote": "node scripts/remote-signal-mock.mjs",
     "mock:gnuradio": "node scripts/gnuradio-mock-tcp.mjs",
     "test": "vitest run",

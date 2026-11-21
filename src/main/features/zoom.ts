@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/zoom.ts
  *         2. 在 index.ts 中调用 registerZoom(getMainWindow)
  *         3. 渲染进程调用 window.api.zoom.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】页面缩放（0.5 ~ 3.0 倍）：
  *         - 按钮/设置项控制：setZoomFactor
  *         - 用户 Ctrl+滚轮缩放：'zoom-changed' 事件（同步推送最新倍率）

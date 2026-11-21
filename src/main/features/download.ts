@@ -4,6 +4,7 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/download.ts
  *         2. 在 index.ts 中调用 registerDownload(getMainWindow)
  *         3. 渲染进程调用 window.api.download.*
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
  * 【说明】下载管理是桌面应用的常用能力：
  *         - will-download 事件在每次下载开始时触发（可设置保存路径、拦截）
  *         - DownloadItem 提供进度/暂停/恢复/取消/状态查询
