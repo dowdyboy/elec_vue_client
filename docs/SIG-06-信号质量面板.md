@@ -71,14 +71,14 @@ quality.metrics = stats ?? {}
 
 ## 五、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `metrics` | `{}` | 指标对象 |
-| `thresholds` | `{}` | 阈值对象 |
-| `title` | 内置文案 | 标题 |
-| `compact` | false | 紧凑间距 |
-| `showPassFail` | true | 总体 Pass/Fail 角标 |
-| `labels/locale/messages` | — | 文案覆盖/中英文 |
+| 属性                     | 默认     | 说明                |
+| ------------------------ | -------- | ------------------- |
+| `metrics`                | `{}`     | 指标对象            |
+| `thresholds`             | `{}`     | 阈值对象            |
+| `title`                  | 内置文案 | 标题                |
+| `compact`                | false    | 紧凑间距            |
+| `showPassFail`           | true     | 总体 Pass/Fail 角标 |
+| `labels/locale/messages` | —        | 文案覆盖/中英文     |
 
 没有 `analysis` 配置：这个组件本身永远只是显示/判定，不产生指标。
 

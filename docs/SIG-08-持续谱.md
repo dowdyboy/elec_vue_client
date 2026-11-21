@@ -10,11 +10,11 @@
 
 ```ts
 chart.appendData({
-  width: 256,       // 频率 bin 数
-  height: 256,      // 幅度 level 数
+  width: 256, // 频率 bin 数
+  height: 256, // 幅度 level 数
   minDb: -120,
   maxDb: -10,
-  density: counts   // row-major: level*width+bin
+  density: counts // row-major: level*width+bin
 })
 ```
 
@@ -42,23 +42,23 @@ chart.appendData(spectrumDb) // Float32Array，一帧 dB 谱
 
 ## 二、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `bins` | 512 | 分析模式频率 bin 数；矩阵模式由 `data.width` 决定 |
-| `levels` | 256 | 幅度 level 数 |
-| `minDb/maxDb` | -120/0 | 幅度范围 |
-| `unit` | dB | Y 轴单位 |
-| `colorMap` | viridis | viridis/turbo/jet/grayscale/hot |
-| `gamma` | 1 | 色阶 gamma |
-| `sampleRate/fftSize/binHz` | — | 频率轴换算 |
-| `freqStartHz` | — | 第 0 bin 频率 |
-| `spectrumMode/fftShift` | real/true | complex 时默认 -Fs/2 起点 |
-| `analysis` | — | 开启逐帧累加 |
-| `showInfo` | true | 左上统计 |
-| `showColorbar` | true | 右侧色标 |
-| `showCursor` | true | 十字游标读数 |
-| `axis/xAxis/grid/axisLabels` | true | 轴/网格 |
-| `theme/chartStyle` | auto | 主题 |
+| 属性                         | 默认      | 说明                                              |
+| ---------------------------- | --------- | ------------------------------------------------- |
+| `bins`                       | 512       | 分析模式频率 bin 数；矩阵模式由 `data.width` 决定 |
+| `levels`                     | 256       | 幅度 level 数                                     |
+| `minDb/maxDb`                | -120/0    | 幅度范围                                          |
+| `unit`                       | dB        | Y 轴单位                                          |
+| `colorMap`                   | viridis   | viridis/turbo/jet/grayscale/hot                   |
+| `gamma`                      | 1         | 色阶 gamma                                        |
+| `sampleRate/fftSize/binHz`   | —         | 频率轴换算                                        |
+| `freqStartHz`                | —         | 第 0 bin 频率                                     |
+| `spectrumMode/fftShift`      | real/true | complex 时默认 -Fs/2 起点                         |
+| `analysis`                   | —         | 开启逐帧累加                                      |
+| `showInfo`                   | true      | 左上统计                                          |
+| `showColorbar`               | true      | 右侧色标                                          |
+| `showCursor`                 | true      | 十字游标读数                                      |
+| `axis/xAxis/grid/axisLabels` | true      | 轴/网格                                           |
+| `theme/chartStyle`           | auto      | 主题                                              |
 
 ## 三、API
 

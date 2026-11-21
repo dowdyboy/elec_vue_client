@@ -11,6 +11,7 @@ import {
   type SweepFrame
 } from '../../shared/sweep'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
+import type { Disposer } from '../utils/disposable'
 
 class SweepService {
   private generator = new SweepGenerator(defaultSweepConfig())
@@ -67,7 +68,7 @@ export function getSweepService(): SweepService {
   return sweepServiceInstance
 }
 
-export function registerSweepService(): () => void {
+export function registerSweepService(): Disposer {
   const service = getSweepService()
 
   ipcMain.handle('sweep:start', (e) => {

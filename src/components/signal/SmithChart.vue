@@ -388,8 +388,9 @@ defineExpose({
 <template>
   <div
     class="sig-smith"
+    :class="theme.darkLike ? 'sig-dark' : 'sig-light'"
     role="img"
-    :aria-label="tr('smith.aria')"
+    :aria-label="props.labels?.aria ?? tr('smith.aria')"
     :style="{ width: viewWidth, height: viewHeight, background: theme.bg }"
   >
     <canvas

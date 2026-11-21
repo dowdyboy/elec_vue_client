@@ -92,7 +92,7 @@ IQ 时域/频谱/时频/星座/功率-时间/信号质量/眼图/持续谱/Smith
 
 文档：[SRC-01 信号源](./docs/SRC-01-信号源工作台.md) · [SIG-00 总览](./docs/SIG-00-信号组件总览.md) · [SIG-01 IQ](./docs/SIG-01-IQ时域图.md) · [SIG-02 频谱](./docs/SIG-02-频谱图.md) · [SIG-03 时频](./docs/SIG-03-时频图.md) · [SIG-04 星座](./docs/SIG-04-星座图.md) · [SIG-05 功率-时间](./docs/SIG-05-功率时间.md) · [SIG-06 信号质量](./docs/SIG-06-信号质量面板.md) · [SIG-07 眼图](./docs/SIG-07-眼图.md) · [SIG-08 持续谱](./docs/SIG-08-持续谱.md) · [SIG-09 Smith](./docs/SIG-09-Smith圆图.md) · [SIG-10 APD/CCDF](./docs/SIG-10-APD-CCDF.md) · [集成指南](./src/components/signal/README.md) · [Playground](./playground/README.md)
 
-> 10 个组件均已完成库化并加入 Canvas2D/WebGL2 双基线像素回归；核心数学/文案/DOM 面板有 288 个单测。
+> 全仓 420 个单测里，信号组件库占 309 个（`core/` 纯逻辑 255 + 10 个组件的 DOM 契约 54），其余在 `shared/`(79) 与 `main/`(32)；10 个组件另有两套 Canvas2D/WebGL2 像素基线。
 
 ## 快速开始
 
@@ -117,7 +117,7 @@ src/
     ├── App.vue           # Naive UI 主题 + 侧边导航 + 内容区
     ├── router/           # vue-router（hash 模式）
     ├── stores/theme.ts   # 主题状态（与 nativeTheme 联动）
-    └── pages/            # 58 个页面（30 Electron + 13 TS + 11 信号 + 2 源 + 首页/子窗口）
+    └── pages/            # 59 个页面（30 Electron + 13 TS + 11 信号 + 3 源 + 首页/子窗口）
 src/components/signal/    # 可复用 IQ/频谱组件（core + composables + README）
 playground/               # 独立 Vite 宿主 + 像素回归 visual 页
 docs/                     # 教学文档（每特性一篇，含复制步骤）
@@ -133,7 +133,13 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 
 以"系统托盘"为例复制到新工程：
 
-1. 复制 `src/main/features/tray.ts`（文件头注释写明完整步骤）
+```bash
+npm run copy:feature tray ../my-app   # 自动带上 types.ts / validateSender.ts 等依赖文件
+```
+
+脚本会解析源码里真实的 `registerX` 函数名与参数、补带它依赖的辅助文件，并打印可直接粘贴的 `index.ts` 注册代码。手动复制时按文件头注释的说明走（`【复制】` 段是步骤，`【依赖】` 段列出需一并带上的文件）：
+
+1. 复制 `src/main/features/tray.ts` 及该文件 `【依赖】` 段列出的文件（多数特性需要 `src/main/types.ts`）
 2. 新工程 `index.ts` 中调用 `registerTray(getMainWindow)`
 3. 需要渲染进程交互时，复制 `src/preload/index.ts` 对应分组
 
@@ -142,7 +148,7 @@ docs/                     # 教学文档（每特性一篇，含复制步骤）
 ## 质量校验
 
 ```powershell
-npm test                 # 纯逻辑单测（当前 288 例）
+npm test                 # 纯逻辑单测（当前 420 例，含 IPC 通道目录一致性与 10 组件 DOM 契约）
 npm run test:coverage    # 覆盖率（v8，含阈值；报告在 coverage/）
 npm run test:source-ipc  # 真实主进程 source/analysis/remote/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响
@@ -156,15 +162,21 @@ npm run test:dual-sim     # 应用内双通道合成源（无需 GNU Radio/硬�
 npm run test:gnuradio-perf # 10 MSPS 吞吐冒烟（Mock；真实 10 MSPS 见 SRC-02）
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
 npm run test:smoke       # 组件 Playground + API + PNG 导出管线 + 截图
-npm run test:visual      # Canvas2D/WebGL2 像素回归（10 个组件）
+npm run test:visual      # Canvas2D/WebGL2 像素回归（10 个组件；CI 的 visual job，暂为 continue-on-error）
 npm run test:e2e         # 4 套 Electron E2E 串联
 npm run check:signal     # 组件库 dist-signal 发布产物校验
 ```
 
-CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建与 10 套 Electron E2E；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
+CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建、10 套 Electron E2E 与像素回归；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
 
 `test:sections` 会构建真实应用并启动隐藏窗口，逐页验证 30 个 Electron 教学页、13 个 TypeScript 惯用法页的标题、菜单、页面内容和 renderer 异常，并执行 IPC、safeStorage、主题切换和 TS 示例运行等交互。
+
+`test:visual` 与 10 个组件的 DOM 契约测试（`Charts.dom.test.ts`）覆盖了宿主可见的调用面：挂载/降级、`class`/`role`/`aria-label`、`width`/`height`/`theme`/`locale`/`labels` 生效、`defineExpose` 方法齐全、`setData`/`appendData` 摄入不崩。
 
 ## 技术栈
 
 Electron 39 · Vue 3.5 · TypeScript 5.9 · electron-vite 5 · Naive UI 2 · vue-router 5 · axios · socket.io-client
+
+## 许可证
+
+[MIT](./LICENSE) —— 欢迎直接复制其中的特性模块到自己的工程（模板用途）；注明出处即可。

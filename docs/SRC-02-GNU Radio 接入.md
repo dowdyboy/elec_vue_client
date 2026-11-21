@@ -111,22 +111,22 @@ python tools/gnuradio/tone_pipeline.py --tcp-port 5000 --sample-rate 100000 --fr
 
 ## 四、ELIQ 帧头（48 字节，小端）
 
-| 偏移 | 类型 | 字段 | 说明 |
-|---|---|---|---|
-| 0 | 4s | magic | `ELIQ` |
-| 4 | u8 | version | 1 |
-| 5 | u8 | msgType | 1=IQ raw/full；4=显示抽取 IQ（桥已抽取） |
-| 6 | u16 | headerLen | 48 |
-| 8 | u32 | seq | 包序号，用于丢包统计 |
-| 12 | u64 | timestampNs | 采集墙钟（ns） |
-| 20 | u32 | sampleRate | 线上采样率 |
-| 24 | f64 | centerHz | 中心频率 |
-| 32 | u8 | format | 0=cf32 / 1=ci16 / 2=ci8 |
-| 33 | u8 | channels | 1=单通道；2=AD9361 双 RX（payload 按样本交错） |
-| 34 | u16 | reserved | 0 |
-| 36 | u32 | payloadBytes | 后续 payload 字节数 |
-| 40 | u32 | reserved2 | 0 |
-| 44 | u32 | reserved3 | 0 |
+| 偏移 | 类型 | 字段         | 说明                                           |
+| ---- | ---- | ------------ | ---------------------------------------------- |
+| 0    | 4s   | magic        | `ELIQ`                                         |
+| 4    | u8   | version      | 1                                              |
+| 5    | u8   | msgType      | 1=IQ raw/full；4=显示抽取 IQ（桥已抽取）       |
+| 6    | u16  | headerLen    | 48                                             |
+| 8    | u32  | seq          | 包序号，用于丢包统计                           |
+| 12   | u64  | timestampNs  | 采集墙钟（ns）                                 |
+| 20   | u32  | sampleRate   | 线上采样率                                     |
+| 24   | f64  | centerHz     | 中心频率                                       |
+| 32   | u8   | format       | 0=cf32 / 1=ci16 / 2=ci8                        |
+| 33   | u8   | channels     | 1=单通道；2=AD9361 双 RX（payload 按样本交错） |
+| 34   | u16  | reserved     | 0                                              |
+| 36   | u32  | payloadBytes | 后续 payload 字节数                            |
+| 40   | u32  | reserved2    | 0                                              |
+| 44   | u32  | reserved3    | 0                                              |
 
 解析器行为：
 
@@ -170,23 +170,23 @@ python tools/gnuradio/tone_pipeline.py --tcp-port 5000 --sample-rate 100000 --fr
 
 ## 六、配置字段
 
-| 字段 | 说明 |
-|---|---|
-| `host` | `127.0.0.1`（本机）或 LAN IP（远程）；不要带 `http://` |
-| `port` | `zmq_to_tcp.py` / `tcp_sink` 的监听端口 |
-| `format` | `cf32`（8 B/样本）、`ci16`（4 B/样本）、`ci8`（2 B/样本） |
-| `channels` | 1（单通道）或 2（AD9361 RX0/RX1，payload 按样本交错） |
-| `sampleRate` | 线上全速采样率，必须与 GNU Radio/桥一致 |
-| `centerHz` | 源中心频率，用于显示/分析读数 |
+| 字段                | 说明                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| `host`              | `127.0.0.1`（本机）或 LAN IP（远程）；不要带 `http://`                                     |
+| `port`              | `zmq_to_tcp.py` / `tcp_sink` 的监听端口                                                    |
+| `format`            | `cf32`（8 B/样本）、`ci16`（4 B/样本）、`ci8`（2 B/样本）                                  |
+| `channels`          | 1（单通道）或 2（AD9361 RX0/RX1，payload 按样本交错）                                      |
+| `sampleRate`        | 线上全速采样率，必须与 GNU Radio/桥一致                                                    |
+| `centerHz`          | 源中心频率，用于显示/分析读数                                                              |
 | `displaySampleRate` | 显示/分析采样率（≤ `sampleRate`）；单流时应用简单抽取；双流时桥按此抽取后以 msgType=4 发送 |
-| `dualStream` | `true` 时开双流：msgType=1 全速 raw 用于录制，msgType=4 显示包只用于 FFT/展示 |
-| `recordPort` | `>0` 时启用独立录制 TCP（与 `port` 不同）；`0`=同端口双流 |
-| `recordHost` | 录制连接主机，默认同 `host` |
-| `recordFormat` | 录制流格式，默认同 `format` |
-| `recordSampleRate` | 录制启动前兜底采样率；帧头到达后以帧头为准 |
-| `pointsPerFrame` | 每帧复数样本数；`0` = 自动（`displaySampleRate / 60`） |
-| `maxBufferBytes` | 环形缓冲上限（默认 32 MB） |
-| `reconnect` | 断线自动重连（指数退避，最多 10s） |
+| `dualStream`        | `true` 时开双流：msgType=1 全速 raw 用于录制，msgType=4 显示包只用于 FFT/展示              |
+| `recordPort`        | `>0` 时启用独立录制 TCP（与 `port` 不同）；`0`=同端口双流                                  |
+| `recordHost`        | 录制连接主机，默认同 `host`                                                                |
+| `recordFormat`      | 录制流格式，默认同 `format`                                                                |
+| `recordSampleRate`  | 录制启动前兜底采样率；帧头到达后以帧头为准                                                 |
+| `pointsPerFrame`    | 每帧复数样本数；`0` = 自动（`displaySampleRate / 60`）                                     |
+| `maxBufferBytes`    | 环形缓冲上限（默认 32 MB）                                                                 |
+| `reconnect`         | 断线自动重连（指数退避，最多 10s）                                                         |
 
 > `displaySampleRate < sampleRate` 时：单流是**简单抽取**（每 stride 个取 1 个，不做抗混叠）；
 > 双流由桥用 `scipy.signal.resample_poly` 做带抗混叠的抽取，应用不再二次抽取。
@@ -194,13 +194,13 @@ python tools/gnuradio/tone_pipeline.py --tcp-port 5000 --sample-rate 100000 --fr
 
 ## 七、速率预算（重要）
 
-| 场景 | 线上格式 | 带宽 |
-|---|---|---|
-| 2 MSPS 显示 | cf32 | 16 MB/s |
-| 2 MSPS 显示 | ci16 | 8 MB/s |
-| 30.72 MSPS 全速 | ci16 | **122.9 MB/s** |
-| 30.72 MSPS 全速 | cf32 | 245.8 MB/s |
-| 61.44 MSPS 全速（AD9361 上限） | ci16 | 245.8 MB/s |
+| 场景                           | 线上格式 | 带宽           |
+| ------------------------------ | -------- | -------------- |
+| 2 MSPS 显示                    | cf32     | 16 MB/s        |
+| 2 MSPS 显示                    | ci16     | 8 MB/s         |
+| 30.72 MSPS 全速                | ci16     | **122.9 MB/s** |
+| 30.72 MSPS 全速                | cf32     | 245.8 MB/s     |
+| 61.44 MSPS 全速（AD9361 上限） | ci16     | 245.8 MB/s     |
 
 - 1 GbE 理论 125 MB/s、实际约 118 MB/s：**30.72 MSPS ci16 已到上限，不可靠**；
 - 远程高采样率：GNU Radio 侧先抽取到 2–5 MSPS 发显示流；需要全速时用 10 GbE 或本机落盘；
@@ -210,15 +210,15 @@ python tools/gnuradio/tone_pipeline.py --tcp-port 5000 --sample-rate 100000 --fr
 
 ## 八、排错
 
-| 现象 | 排查 |
-|---|---|
-| 连接超时 | 桥是否监听？`--host 0.0.0.0`？Windows 防火墙？ |
-| 连上无数据 | GNU Radio flowgraph 是否运行？ZMQ 地址是否一致？桥日志是否有 client？ |
-| 峰值位置不对 | 应用 `sampleRate`、桥 `--sample-rate`、GNU Radio `samp_rate` 是否一致？ |
-| 帧头格式/采样率报错 | 应用 format/采样率与桥 `--format`/`--sample-rate` 不一致 |
-| 丢包计数增长 | 看「seq 丢包」；降低采样率或让 GNU Radio 抽取 |
-| 远程连不上 | 先用 `127.0.0.1` 验证，再换 LAN IP；WSL2 注意端口转发 |
-| 重连后时间轴跳变 | 断线期间样本缺失，`timestamp` 按显示样本连续累计；需要严格时间戳时后续接 `rx_time` tag |
+| 现象                | 排查                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| 连接超时            | 桥是否监听？`--host 0.0.0.0`？Windows 防火墙？                                         |
+| 连上无数据          | GNU Radio flowgraph 是否运行？ZMQ 地址是否一致？桥日志是否有 client？                  |
+| 峰值位置不对        | 应用 `sampleRate`、桥 `--sample-rate`、GNU Radio `samp_rate` 是否一致？                |
+| 帧头格式/采样率报错 | 应用 format/采样率与桥 `--format`/`--sample-rate` 不一致                               |
+| 丢包计数增长        | 看「seq 丢包」；降低采样率或让 GNU Radio 抽取                                          |
+| 远程连不上          | 先用 `127.0.0.1` 验证，再换 LAN IP；WSL2 注意端口转发                                  |
+| 重连后时间轴跳变    | 断线期间样本缺失，`timestamp` 按显示样本连续累计；需要严格时间戳时后续接 `rx_time` tag |
 
 ## 九、双流（raw + 显示）
 
@@ -310,31 +310,33 @@ python tools/gnuradio/tone_pipeline.py --tcp-port 5000 --record-port 5001 `
 
 ## 十二、代码结构
 
-| 文件 | 作用 |
-|---|---|
-| `src/shared/sourceNetwork.ts` | 配置/状态类型、校验、自动点数/抽取计算 |
-| `src/main/source/localGnuRadio.ts` | 本机 Python/脚本一键启动、READY 解析、进程树清理 |
-| `src/main/source/network/iqStreamParser.ts` | 裸流/ELIQ 帧头解析、seq 丢包、格式校验 |
-| `src/main/source/network/rawIqRecorder.ts` | 全速 raw 录制（分段/背压/导出） |
-| `src/main/source/network/rawTcpLink.ts` | 独立录制 TCP 连接（只收 msgType=1，独立重连/背压） |
-| `src/main/source/network/iqChannelSplit.ts` | 双通道交错 payload 解交织（ci16/cf32/ci8） |
-| `src/main/source/network/rawIqPlayback.ts` | raw 录制回放（逐帧读文件 + 抽取） |
-| `src/main/source/network/rawArchivePlayback.ts` | 滚动归档目录跨段连续回放 |
-| `src/shared/sourceDualSim.ts` | 应用内双通道合成源配置/校验 |
-| `src/shared/sourceDualMetrics.ts` | 跨通道幅度比/相位差/相关系数 |
-| `src/main/source/network/iqRingBuffer.ts` | 原始字节环形缓冲（按 stride 抽取读取） |
-| `src/main/source/network/tcpIqSource.ts` | TCP 连接、60fps drain、重连、状态 |
-| `src/main/source/sourceService.ts` | `startNetwork/stopNetwork/networkStatus`，与模拟/回放互斥 |
-| `src/preload/index.ts` | `window.api.source.startNetwork/stopNetwork/networkStatus` |
-| `src/renderer/src/pages/source/NetworkSourcePage.vue` | 连接参数、链路状态、IQ/频谱预览、录制/回放 |
-| `src/renderer/src/pages/signal/DualChannelPage.vue` | RX0/RX1 并排 IQ+频谱、同步缩放 |
-| `scripts/gnuradio-mock-tcp.mjs` | 无 GNU Radio 的 Mock（支持 `--framed`） |
-| `scripts/gnuradio-e2e.cjs` + `run-gnuradio-e2e.mjs` | 真实 Electron E2E（默认 framed） |
-| `scripts/gnuradio-split-e2e.cjs` + `run-gnuradio-split-e2e.mjs` | 独立双端口 E2E |
-| `scripts/gnuradio-dualch-e2e.cjs` + `run-gnuradio-dualch-e2e.mjs` | 双通道模拟 E2E |
-| `scripts/gnuradio-perf-e2e.cjs` + `run-gnuradio-perf-e2e.mjs` | 10 MSPS 吞吐测试 |
-| `tools/gnuradio/tone_zmq_sink.py` | GNU Radio 单音 → ZMQ |
-| `tools/gnuradio/zmq_to_tcp.py` | ZMQ → TCP IQ 桥（默认 ELIQ 帧头） |
+| 文件                                                              | 作用                                                       |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `src/shared/sourceNetwork.ts`                                     | 配置/状态类型、校验、自动点数/抽取计算                     |
+| `src/main/source/localGnuRadio.ts`                                | 本机 Python/脚本一键启动、READY 解析、进程树清理           |
+| `src/main/source/network/iqStreamParser.ts`                       | 裸流/ELIQ 帧头解析、seq 丢包、格式校验                     |
+| `src/main/source/network/rawIqRecorder.ts`                        | 全速 raw 录制（分段/背压/导出）                            |
+| `src/main/source/network/rawTcpLink.ts`                           | 独立录制 TCP 连接（只收 msgType=1，独立重连/背压）         |
+| `src/main/source/network/iqChannelSplit.ts`                       | 双通道交错 payload 解交织（ci16/cf32/ci8）                 |
+| `src/main/source/network/rawIqPlayback.ts`                        | raw 录制回放（逐帧读文件 + 抽取）                          |
+| `src/main/source/network/rawArchivePlayback.ts`                   | 滚动归档目录跨段连续回放                                   |
+| `src/shared/sourceDualSim.ts`                                     | 应用内双通道合成源配置/校验                                |
+| `src/shared/sourceDualMetrics.ts`                                 | 跨通道幅度比/相位差/相关系数                               |
+| `src/main/source/network/iqRingBuffer.ts`                         | 原始字节环形缓冲（按 stride 抽取读取）                     |
+| `src/main/source/network/tcpIqSource.ts`                          | TCP 连接、60fps drain、重连、状态                          |
+| `src/main/source/sourceService.ts`                                | `startNetwork/stopNetwork/networkStatus`，与模拟/回放互斥  |
+| `src/main/source/sourceIpc.ts`                                    | `source:*` 通道注册（含网络源启停与录制/回放控制）         |
+| `src/main/source/sourceFiles.ts`                                  | raw 录制/任意 IQ 的对话框与 sidecar 解析                   |
+| `src/preload/index.ts`                                            | `window.api.source.startNetwork/stopNetwork/networkStatus` |
+| `src/renderer/src/pages/source/NetworkSourcePage.vue`             | 连接参数、链路状态、IQ/频谱预览、录制/回放                 |
+| `src/renderer/src/pages/signal/DualChannelPage.vue`               | RX0/RX1 并排 IQ+频谱、同步缩放                             |
+| `scripts/gnuradio-mock-tcp.mjs`                                   | 无 GNU Radio 的 Mock（支持 `--framed`）                    |
+| `scripts/gnuradio-e2e.cjs` + `run-gnuradio-e2e.mjs`               | 真实 Electron E2E（默认 framed）                           |
+| `scripts/gnuradio-split-e2e.cjs` + `run-gnuradio-split-e2e.mjs`   | 独立双端口 E2E                                             |
+| `scripts/gnuradio-dualch-e2e.cjs` + `run-gnuradio-dualch-e2e.mjs` | 双通道模拟 E2E                                             |
+| `scripts/gnuradio-perf-e2e.cjs` + `run-gnuradio-perf-e2e.mjs`     | 10 MSPS 吞吐测试                                           |
+| `tools/gnuradio/tone_zmq_sink.py`                                 | GNU Radio 单音 → ZMQ                                       |
+| `tools/gnuradio/zmq_to_tcp.py`                                    | ZMQ → TCP IQ 桥（默认 ELIQ 帧头）                          |
 
 ## 十三、验证
 

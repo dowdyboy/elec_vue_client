@@ -338,8 +338,9 @@ defineExpose({
 <template>
   <div
     class="sig-eye"
+    :class="theme.darkLike ? 'sig-dark' : 'sig-light'"
     role="img"
-    :aria-label="tr('eye.aria')"
+    :aria-label="props.labels?.aria ?? tr('eye.aria')"
     :style="{ width: viewWidth, height: viewHeight, background: theme.bg }"
   >
     <canvas ref="canvasRef" class="sig-eye-canvas" />

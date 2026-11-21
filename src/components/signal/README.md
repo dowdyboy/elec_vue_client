@@ -1,4 +1,4 @@
-﻿# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
+# 信号组件（IQ / 频谱 / 时频 / 星座 / 功率-时间 / 信号质量 / 眼图 / 持续谱 / Smith / APD-CCDF）集成指南
 
 > 面向“把组件接到其他上位机项目”的公共说明。组件内部实现与设计细节见仓库
 > `docs/SIG-00-信号组件总览.md`、`docs/SIG-01-IQ时域图.md`、`docs/SIG-02-频谱图.md`、`docs/SIG-03-时频图.md`
@@ -455,6 +455,10 @@ specgram.value?.appendData(rowDb, {
 
 完整列表见 `core/types.ts` 与 docs/SIG-*。
 
+> 公共 prop（`width`/`height`/`theme`/`chartStyle`/`labels`/`axis`/`xAxis`/`grid`/`axisLabels`/`showInfo`/
+> `locale`/`messages`/`renderer`/`decimation`/`fpsLimit`/`viewport`）统一定义在 `ChartBaseProps`，
+> 10 个组件的 props 接口都 `extends` 它，不再各写一遍。
+
 **通用**
 
 - `theme`：`light | dark | auto | spectrum`；`auto` 会跟随系统深浅色变化
@@ -525,6 +529,24 @@ specgram.value?.appendData(rowDb, {
 - 优先级：`labels`（旧字段） > `messages` > `locale` 内置。
 - 可用 `translate()`/`zhCN`/`enUS`/`ChartMessages` 自行扩展；数值单位（Hz/dB/ms）保持 SI/仪器通用写法。
 
+### 10 个组件的公共契约
+
+以下行为在全部 10 个组件上一致（由 `Charts.dom.test.ts` 强制，破坏契约会直接测试失败）：
+
+| 契约               | 说明                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 根节点 class       | `sig-<组件>` + `sig-dark` / `sig-light`（跟随 `theme` 与系统深浅色），可作为宿主样式钩子                      |
+| `role`             | 可交互图（IQ/频谱/时频/星座）= `application` 且 `tabindex=0`；纯显示图 = `img`                                |
+| `aria-label`       | 默认取 `locale` 对应文案；`labels.aria` 可覆盖（优先级最高）                                                  |
+| `width` / `height` | 数字按 px，字符串原样（`'100%'` / `'calc(...)'`）                                                             |
+| `theme`            | `'dark' \| 'light' \| 'auto' \| 'spectrum'`；`chartStyle` 字段级覆盖                                          |
+| `data`             | **挂载时即生效**（`immediate`），静态数据可直接用 `:data`；后续变化同样追踪                                   |
+| `defineExpose`     | 至少提供 `setData` / `appendData` / `clear` / `exportPNG` / `exportCSV`；多数还提供 `getStats` / `getBackend` |
+| 无 GPU 环境        | 挂载不抛错、不产生 `console.error`；缺 WebGL2 自动降级 Canvas2D，两者都缺时进占位态                           |
+
+> 注意：`grid` 是 `boolean`（网格开关）；网格颜色请用 `chartStyle.grid` 覆盖。
+> 早期类型里写成 `boolean | string` 但实现从未接受字符串，已收窄——见 `core/types.ts` 的 `ChartBaseProps`。
+
 ## 7. 性能与限制
 
 - IQ 默认 2M 环缓冲，约 25~40MB/实例；多实例/低内存请显式设置 `maxPoints`。
@@ -538,7 +560,7 @@ specgram.value?.appendData(rowDb, {
 - 多迹线是**同一帧数据**的显示变换；两路独立信号请开两个实例（或等后续独立 source API）。
 - 时频默认保留 `timeSpan` 行（256 行 × 512 bin 约 0.5MB）；WebGL 纹理按行增量上传，只有电平/gamma/色阶变化才整幅重建；Canvas2D 回退每帧按可见行×列映射，建议控制 `timeSpan`/FFT 规模。
 - 时频时间轴依赖 `timeStepSec`（帧/ prop）；重叠行请由服务端显式提供，否则按非重叠 `fftSize/sampleRate` 估算。
-- 无浏览器级组件单测；核心数学/文案/DOM 面板有 255 个单测。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端，且已覆盖全部 10 个组件（见下节）。
+- 组件级 DOM 测试覆盖全部 10 个组件（`Charts.dom.test.ts` 的公共契约 + `SignalQualityPanel.dom.test.ts`）；本目录共 309 个单测，其中 `core/` 纯逻辑 255 个（仓库总量见根 README）。像素级视觉回归覆盖 canvas2d/WebGL2 两条后端，且已覆盖全部 10 个组件（见下节）；`test:visual` 在 CI 的 `visual` job 里跑（暂为 `continue-on-error`）。
 
 ## 8. Playground、像素级视觉回归与截图冒烟
 
@@ -582,6 +604,34 @@ npx electron scripts/screenshot-playground.cjs
 
 > `?nowebgl=1` 模拟无 WebGL2，验证 `renderer='auto'` 的 Canvas2D 回退；截图脚本会检查颜色数，白屏/黑屏直接失败。
 
-## 9. 版本
+## 9. 源码结构（可复用单元）
+
+```
+core/
+  types.ts            类型与 props 契约（ChartBaseProps 收口公共 prop）
+  theme.ts            主题预置与解析（style > colors > 预置）
+  i18n.ts             zh-CN / en-US 文案与 translate()
+  axis.ts             轴/网格绘制、niceTicks、刻度格式挂点
+  frequency? → freqFormat.ts   频率刻度/读数格式化（Hz/kHz/MHz、小数位随步长）
+  viewHistory.ts      视图撤销/重做栈（栈满、撤销后再提交等边界有单测）
+  spectrum.ts         频谱 DSP（检波器/迹线运算/峰值/OBW/N dB/ACPR/限制线）
+  constellation.ts    星座点与统计     constellationAnalysis.ts  星座分析仪（NCO/定时/EVM）
+  power.ts            功率-时间/脉冲    apd.ts  APD/CCDF
+  eye.ts              眼图轨迹与测量    smith.ts Smith 几何
+  pyramid.ts          min/max 极值金字塔（大窗 O(块数)）
+  yauto.ts            Y 轴档位状态机    trigger.ts  触发状态机
+  gl.ts               WebGL2 折线/散点/余辉/回读（hexToRgba/withAlpha 等有单测）
+  canvasRenderer.ts   Canvas2D 折线降级后端
+  spectrogramGl.ts    瀑布纹理环（re)分配/环形 slot 上传
+  spectrogramCanvas.ts/constellationCanvas.ts  Canvas2D 降级后端
+  adapters.ts         数据适配器       keyboardFocus.ts  多实例键盘仲裁
+composables/
+  useGlChart.ts       尺寸/DPR/rAF 节流/ResizeObserver
+  usePrefersDark.ts   系统深浅色订阅
+```
+
+`core/` 除 `types.ts`（纯类型声明）外每个模块都有对应 `*.test.ts`。
+
+## 10. 版本
 
 `SIGNAL_CHARTS_VERSION = '2.5.0'`（公共 API 变更时按语义化版本维护，需同步 `package.meta.json`；`npm run check:signal` 会校验两者一致）。

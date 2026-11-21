@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 import type { LocalGnuRadioSettings, LocalGnuRadioStatus } from '../../shared/localGnuRadio'
 import type { NetworkFormat } from '../../shared/sourceNetwork'
 import { FORBIDDEN, isTrustedSender } from '../utils/validateSender'
+import type { Disposer } from '../utils/disposable'
 
 const SETTINGS_FILE = 'local-gnuradio.json'
 const MAX_LOG = 200
@@ -372,7 +373,7 @@ export class LocalGnuRadioRunner {
   }
 }
 
-export function registerLocalGnuRadio(): () => void {
+export function registerLocalGnuRadio(): Disposer {
   const runner = new LocalGnuRadioRunner()
 
   ipcMain.handle('source:localDefaults', (e) => {

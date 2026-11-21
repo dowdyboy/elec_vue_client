@@ -256,11 +256,10 @@ function exportCSV(): void {
 watch(
   () => props.data,
   (v) => {
-    if (v !== undefined) {
-      data.value = v
-      lastSamples = null
-      glChart.scheduleDraw()
-    }
+    // 必须走 setData：data 可能是「APD/CCDF 曲线对象」也可能是「功率样本」，
+    // 只有 setData 会按类型分流（直接赋值会把 Float32Array 塞进 data.value，
+    // 随后 info 计算读 d.meanDb.toFixed 直接抛 TypeError）
+    if (v !== undefined) setData(v)
   },
   { immediate: true }
 )
@@ -295,8 +294,9 @@ defineExpose({ appendData, setData, clear, getStats, getBackend, exportPNG, expo
 <template>
   <div
     class="sig-apd"
+    :class="theme.darkLike ? 'sig-dark' : 'sig-light'"
     role="img"
-    :aria-label="tr('apd.aria')"
+    :aria-label="props.labels?.aria ?? tr('apd.aria')"
     :style="{ width: viewWidth, height: viewHeight, background: theme.bg }"
   >
     <canvas ref="canvasRef" class="sig-apd-canvas" />

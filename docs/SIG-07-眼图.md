@@ -9,9 +9,9 @@
 每条轨迹是一个 `Float32Array`，长度通常为 `samplesPerSymbol × spanSymbols`：
 
 ```ts
-chart.appendData(trace)        // 单条
-chart.appendTraces(traces)     // 多条
-chart.setData(traces)          // 替换
+chart.appendData(trace) // 单条
+chart.appendTraces(traces) // 多条
+chart.setData(traces) // 替换
 ```
 
 也可传：
@@ -31,18 +31,18 @@ chart.setData(traces)          // 替换
 
 ## 二、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `spanSymbols` | 2 | 横向 UI 数 |
-| `samplesPerSymbol` | 32 | UI 标注/抖动换算参考 |
-| `maxTraces` | 500 | 轨迹上限 |
-| `alpha` | 0.55 | 轨迹透明度 |
-| `lineWidth` | 1 | 线宽 |
-| `autoScale` | true | 自动 Y 量程 |
-| `yMin/yMax` | — | 手动量程 |
-| `showInfo` | true | 轨迹数/眼高/眼宽/抖动 |
-| `axis/xAxis/grid/axisLabels` | true | 轴/网格 |
-| `theme/chartStyle` | auto | 主题 |
+| 属性                         | 默认 | 说明                  |
+| ---------------------------- | ---- | --------------------- |
+| `spanSymbols`                | 2    | 横向 UI 数            |
+| `samplesPerSymbol`           | 32   | UI 标注/抖动换算参考  |
+| `maxTraces`                  | 500  | 轨迹上限              |
+| `alpha`                      | 0.55 | 轨迹透明度            |
+| `lineWidth`                  | 1    | 线宽                  |
+| `autoScale`                  | true | 自动 Y 量程           |
+| `yMin/yMax`                  | —    | 手动量程              |
+| `showInfo`                   | true | 轨迹数/眼高/眼宽/抖动 |
+| `axis/xAxis/grid/axisLabels` | true | 轴/网格               |
+| `theme/chartStyle`           | auto | 主题                  |
 
 渲染为 Canvas2D 叠加轨迹；眼图通常数百条轨迹，2D 足够，且不受 WebGL 点数限制。
 
@@ -62,8 +62,7 @@ chart.setData(traces)          // 替换
 
 ```ts
 {
-  measured, traceCount, samples, min, max,
-  height, opening, width, jitter, jitterUi
+  ;(measured, traceCount, samples, min, max, height, opening, width, jitter, jitterUi)
 }
 ```
 

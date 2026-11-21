@@ -65,6 +65,31 @@ jobs:
           path: playground/dist/smoke.png
           if-no-files-found: ignore
 
+  # ── 像素级视觉回归（Canvas2D / WebGL2 双基线，覆盖全部 10 个组件）──
+  # 单独成 job：只依赖 playground 构建 + 两张基线图，失败信息比混在 e2e 里清楚。
+  # 目前 continue-on-error（先看 CI 上的稳定性）；确认稳定后删掉该行即为门禁。
+  # 绘制层有意改动时：本地 `npm run test:visual:update` 重新生成基线并提交。
+  visual:
+    name: Pixel regression (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:visual
+      - name: Upload actual screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-actual
+          path: playground/dist/visual-*.png
+          if-no-files-found: ignore
+
   # ── Linux：覆盖率 + 生产构建（不跑 Electron，避免 headless GPU 差异）──
   linux:
     name: Coverage + build (Linux)

@@ -69,7 +69,7 @@ import { registerAppPaths } from './features/appPaths'
 import { registerBetterSqlite } from './features/betterSqlite'
 // Demo：信号分析服务端（本地主进程计算 + 远程后端，仅演示，置于 signal 而非 features）
 import { registerSignalAnalysisServer } from './signal/analysisServer'
-import { registerSourceService } from './source/sourceService'
+import { registerSourceService } from './source/sourceIpc'
 import { registerLocalGnuRadio } from './source/localGnuRadio'
 import { registerSweepService } from './sweep/sweepService'
 import { registerRemoteMockServer } from './signal/remoteMockServer'

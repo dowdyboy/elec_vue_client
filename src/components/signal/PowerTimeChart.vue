@@ -564,8 +564,9 @@ defineExpose({
 <template>
   <div
     class="sig-power"
+    :class="resolvedTheme.darkLike ? 'sig-dark' : 'sig-light'"
     role="img"
-    :aria-label="tr('powerTime.aria')"
+    :aria-label="props.labels?.aria ?? tr('powerTime.aria')"
     :style="{ width: viewWidth, height: viewHeight, background: resolvedTheme.bg }"
   >
     <canvas ref="canvasRef" class="sig-power-canvas" />

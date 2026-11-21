@@ -847,7 +847,10 @@ watch(
   () => props.data,
   (v) => {
     if (v !== undefined) setData(v)
-  }
+  },
+  // immediate：宿主用 :data 传静态数据时也要在挂载时就吃进来
+  // （其余 5 个组件一直是 immediate，此前这 4 个只在数据变化时才生效）
+  { immediate: true }
 )
 watch(
   () => props.maxPoints,

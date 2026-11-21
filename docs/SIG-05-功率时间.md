@@ -56,23 +56,23 @@ pt.value?.getPulses()
 
 ## 三、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `unit` | `'dB'` | 仅显示单位 |
-| `timeStepSec` / `sampleRate` | — | 时间轴换算 |
-| `startTimeSec` | 0 | 首点绝对时间 |
-| `span` | 4096 | 跟随窗口点数 |
-| `follow` | true | 跟随最新点 |
-| `autoScale` | true | 自动 Y 量程 |
-| `yMin` / `yMax` | — | 手动 Y 量程 |
-| `mode` | `'line'` | line / dots |
-| `lineWidth` | 1 | 线宽 |
-| `showInfo` | true | 左上峰值/均值/脉冲摘要 |
-| `maxPoints` | 500000 | 环形缓冲上限 |
-| `thresholdDb` | — | 仅画门限线，不分析 |
-| `analysis` | — | 开启脉冲分析 |
-| `axis/xAxis/grid/axisLabels` | true | 轴/网格 |
-| `theme/chartStyle` | auto | 主题 |
+| 属性                         | 默认     | 说明                   |
+| ---------------------------- | -------- | ---------------------- |
+| `unit`                       | `'dB'`   | 仅显示单位             |
+| `timeStepSec` / `sampleRate` | —        | 时间轴换算             |
+| `startTimeSec`               | 0        | 首点绝对时间           |
+| `span`                       | 4096     | 跟随窗口点数           |
+| `follow`                     | true     | 跟随最新点             |
+| `autoScale`                  | true     | 自动 Y 量程            |
+| `yMin` / `yMax`              | —        | 手动 Y 量程            |
+| `mode`                       | `'line'` | line / dots            |
+| `lineWidth`                  | 1        | 线宽                   |
+| `showInfo`                   | true     | 左上峰值/均值/脉冲摘要 |
+| `maxPoints`                  | 500000   | 环形缓冲上限           |
+| `thresholdDb`                | —        | 仅画门限线，不分析     |
+| `analysis`                   | —        | 开启脉冲分析           |
+| `axis/xAxis/grid/axisLabels` | true     | 轴/网格                |
+| `theme/chartStyle`           | auto     | 主题                   |
 
 ## 四、API
 

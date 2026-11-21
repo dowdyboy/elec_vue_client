@@ -121,7 +121,8 @@ export function hexToRgba(color: string): [number, number, number, number] {
   const c = color.trim()
   if (c.startsWith('#')) {
     let h = c.slice(1)
-    if (h.length === 3)
+    // #rgb / #rgba 简写：把每个半字节翻倍成完整字节（rgba 顺序同 CSS：rgb a）
+    if (h.length === 3 || h.length === 4)
       h = h
         .split('')
         .map((ch) => ch + ch)

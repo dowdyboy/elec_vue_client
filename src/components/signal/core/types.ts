@@ -102,6 +102,24 @@ export interface ChartBaseProps {
   locale?: ChartLocale
   /** 按 key 覆盖任意文案（优先级高于 locale；labels 的最高优先级保持不变） */
   messages?: ChartMessages
+
+  // ── 显示层公共项 ──
+  // 这 7 个 prop 在 10 个组件里的语义与类型完全一致，统一在基类声明，
+  // 免得每个组件各写一遍（历史上 9 个组件重复了 59 处，且文案已经开始分叉）。
+  /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */
+  axis?: boolean
+  /** 底部 X 轴刻度（axis 开启时生效） */
+  xAxis?: boolean
+  /** 网格线，axis 开启时生效（网格颜色请用 chartStyle.grid 覆盖） */
+  grid?: boolean
+  /** 轴单位标题（如左上「幅度」、右下「频率」/「样本」/「时间」），默认开启 */
+  axisLabels?: boolean
+  /** 图内参数栏（左上角信息芯片），默认开启 */
+  showInfo?: boolean
+  /** 外观覆盖项，优先级：chartStyle > 组件专属配色 prop > 主题预置 */
+  chartStyle?: ChartStyle
+  /** 可覆盖的界面文案（轴标题/角标/图例等），优先级高于 locale */
+  labels?: ChartLabels
 }
 
 // ── IQ ──
@@ -127,10 +145,6 @@ export interface IqProps extends ChartBaseProps {
   mode?: 'line' | 'dots'
   lineWidth?: number
   colors?: [string, string] // [I 颜色, Q 颜色]；未传时取主题预置，chartStyle.traceI/Q 可再覆盖
-  /** 外观覆盖项，优先级：chartStyle > colors > 主题预置 */
-  chartStyle?: ChartStyle
-  /** 可覆盖的界面文案（轴标题/角标等；默认中文） */
-  labels?: ChartLabels
   /** 采样率 Hz：>0 时 X 轴与十字光标读数切换为时间单位（内部视口仍以样本索引为单位，不受影响） */
   sampleRate?: number
   /** 启用幅度包络通道 √(I²+Q²)（第三条叠加迹线，基于金字塔 env 聚合，大窗仍 O(块数)） */
@@ -171,14 +185,6 @@ export interface IqProps extends ChartBaseProps {
   exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: IqAdapter
   data?: RawInput | IqNormalized
-  /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */
-  axis?: boolean
-  /** 底部 X 轴（样本索引）刻度，axis 开启时生效 */
-  xAxis?: boolean
-  /** 网格线，axis 开启时生效 */
-  grid?: boolean
-  /** 轴单位标题（左上「幅度」/右下「时间·样本」），默认开启；false 关闭 */
-  axisLabels?: boolean
 }
 
 /** IqChart 视口信息（viewportChange 事件载荷 / getView() 返回值） */
@@ -297,10 +303,6 @@ export interface SpectrumPeakTableOpts {
 export interface SpectrumProps extends ChartBaseProps {
   /** 显示用线色（旧 API；优先级低于 chartStyle.traceColor，未覆盖时取主题预置） */
   lineColor?: string
-  /** 外观覆盖项（优先级：chartStyle > lineColor > 主题预置） */
-  chartStyle?: ChartStyle
-  /** 可覆盖的界面文案（轴标题/角标/图例等；默认中文） */
-  labels?: ChartLabels
   /** 折线宽度（CSS px；>1 时 ribbon 几何展开） */
   lineWidth?: number
   /** 采样率 Hz（帧元数据优先；与 fftSize 一起换算频率轴，缺省时 X 轴为 bin 索引） */
@@ -335,14 +337,6 @@ export interface SpectrumProps extends ChartBaseProps {
   span?: number
   /** 峰值跟踪：每帧自动把标记 1 移到可见跨度最大点 */
   peakTrack?: boolean
-  /** 坐标轴与刻度槽（默认开启；关闭后回退纯曲线满幅模式） */
-  axis?: boolean
-  /** 底部 X 轴（频率/bin）刻度，axis 开启时生效 */
-  xAxis?: boolean
-  /** 网格线，axis 开启时生效 */
-  grid?: boolean
-  /** 轴单位标题（默认开启） */
-  axisLabels?: boolean
   /** 多迹线配置（提供且非空时生效，覆盖 traceMode 单迹线路径；v-model:traces 可同步图例开关） */
   traces?: SpectrumTraceSpec[]
   /** 迹线图例（实时/平均/最大保持/最小保持）是否显示；默认 true。图例固定在顶部居中 */
@@ -355,8 +349,6 @@ export interface SpectrumProps extends ChartBaseProps {
   impedance?: 50 | 75
   /** 视频带宽 VBW Hz（0/缺省=关；比例模型 α=1−VBW/RBW，VBW≥RBW 视为关。先滤波再做平均/保持） */
   vbw?: number
-  /** 图内参数栏（四角：Ref/Scale、Center/Span、RBW/VBW；默认开启） */
-  showInfo?: boolean
   /** 峰值表面板（默认关闭） */
   peakTable?: boolean
   /** 峰值表参数 */
@@ -494,10 +486,6 @@ export interface SpectrogramLevelRange {
 
 export interface SpectrogramProps extends ChartBaseProps {
   colorMap?: ColorMap
-  /** 外观覆盖（主题色/字体芯片等） */
-  chartStyle?: ChartStyle
-  /** 可覆盖文案（轴/色标/aria 等） */
-  labels?: ChartLabels
   /** 显示行数（时间窗），默认 256 */
   timeSpan?: number
   /** 环形缓冲容量（默认 = max(timeSpan, 256)） */
@@ -532,8 +520,6 @@ export interface SpectrogramProps extends ChartBaseProps {
   paused?: boolean
   /** 右侧色标（默认 true） */
   showColorbar?: boolean
-  /** 左上参数栏（默认 true） */
-  showInfo?: boolean
   /** 十字光标读数（默认 true） */
   showCursor?: boolean
   /** 内置右键菜单（默认 true；false 时仍 emit contextmenu） */
@@ -542,14 +528,6 @@ export interface SpectrogramProps extends ChartBaseProps {
   unit?: string
   /** 幅度校准偏移 dB（仅显示层） */
   ampOffsetDb?: number
-  /** 坐标轴（默认 true） */
-  axis?: boolean
-  /** X 轴刻度（频率） */
-  xAxis?: boolean
-  /** 网格 */
-  grid?: boolean
-  /** 轴/色标标题 */
-  axisLabels?: boolean
   /** PNG/CSV 交由宿主交付 */
   exportHandler?: (p: ExportPayload) => void | Promise<void>
   adapter?: SpectrogramAdapter
@@ -640,7 +618,6 @@ export interface PowerTimeProps extends ChartBaseProps {
   yMax?: number
   mode?: 'line' | 'dots'
   lineWidth?: number
-  showInfo?: boolean
   follow?: boolean
   /** 时间窗显示点数（默认 4096） */
   span?: number
@@ -650,13 +627,6 @@ export interface PowerTimeProps extends ChartBaseProps {
   thresholdDb?: number
   /** 可选脉冲分析；不传即纯显示 */
   analysis?: PowerTimeAnalysisConfig
-  /** 坐标轴/网格（默认开启） */
-  axis?: boolean
-  xAxis?: boolean
-  grid?: boolean
-  axisLabels?: boolean
-  chartStyle?: ChartStyle
-  labels?: ChartLabels
 }
 
 // ── 信号质量面板（纯指标显示） ──
@@ -739,17 +709,10 @@ export interface PersistenceProps extends ChartBaseProps {
   fftSize?: number
   fftShift?: boolean
   spectrumMode?: SpectrumMode
-  showInfo?: boolean
   showColorbar?: boolean
   showCursor?: boolean
-  axis?: boolean
-  xAxis?: boolean
-  grid?: boolean
-  axisLabels?: boolean
   /** 可选：把 appendData 的 dB 谱逐帧累加到密度矩阵 */
   analysis?: PersistenceAnalysisConfig
-  chartStyle?: ChartStyle
-  labels?: ChartLabels
 }
 
 // ── Smith 圆图 ──
@@ -767,12 +730,9 @@ export interface SmithProps extends ChartBaseProps {
   showGrid?: boolean
   showLabels?: boolean
   showCursor?: boolean
-  showInfo?: boolean
   maxPoints?: number
   freqStartHz?: number
   freqStopHz?: number
-  chartStyle?: ChartStyle
-  labels?: ChartLabels
 }
 
 // ── APD / CCDF ──
@@ -807,14 +767,7 @@ export interface ApdCcdfProps extends ChartBaseProps {
   data?: ApdCcdfData
   /** 可选：把 appendData 的功率样本转成 APD/CCDF */
   analysis?: ApdAnalysisConfig
-  showInfo?: boolean
-  axis?: boolean
-  xAxis?: boolean
-  grid?: boolean
-  axisLabels?: boolean
   lineWidth?: number
-  chartStyle?: ChartStyle
-  labels?: ChartLabels
 }
 
 // ── 眼图 ──
@@ -840,13 +793,6 @@ export interface EyeDiagramProps extends ChartBaseProps {
   autoScale?: boolean
   yMin?: number
   yMax?: number
-  showInfo?: boolean
-  axis?: boolean
-  xAxis?: boolean
-  grid?: boolean
-  axisLabels?: boolean
-  chartStyle?: ChartStyle
-  labels?: ChartLabels
 }
 
 // ── 星座 ──
@@ -888,18 +834,6 @@ export interface ConstellationProps extends ChartBaseProps {
    * appendData 的 IQ 被原样展示，不启用载波/符号/EVM 分析。
    */
   analysis?: ConstellationAnalysisConfig
-  /** 外观覆盖项，优先级：chartStyle > 主题预置 */
-  chartStyle?: ChartStyle
-  /** 可覆盖的界面文案（I/Q 轴标题等） */
-  labels?: ChartLabels
-  /** 坐标轴/网格（默认开启；关闭后为满幅点云） */
-  axis?: boolean
-  /** 网格线（axis 开启时生效） */
-  grid?: boolean
-  /** 轴单位标题 I/Q（默认开启） */
-  axisLabels?: boolean
-  /** 图内信息（点数/自动量程等，默认开启） */
-  showInfo?: boolean
   /** 环形缓冲上限（点数，默认 500,000） */
   maxPoints?: number
   /** 单帧最多绘制点数（默认 WebGL 150k / Canvas2D 30k；抽点渲染，不丢缓冲） */

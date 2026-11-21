@@ -133,7 +133,13 @@ OFDM 生成：
 - **不读取** `/signal/analysis-config` 的 FFT/窗/重叠/`spectrumMode`；
 - 因此分析配置只影响分析 UI 页，不会改变源工作台的频谱展示。
 
-主进程新增 `src/main/source/sourceService.ts` 与独立 IPC：
+主进程新增源服务与独立 IPC（源码按职责拆成三个文件）：
+
+| 文件                               | 职责                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `src/main/source/sourceService.ts` | `SourceService` 类：模拟源/回放/双通道/网络源/录制状态，可单测的纯状态机 |
+| `src/main/source/sourceIpc.ts`     | 33 个 `source:*` 通道的 IPC 注册与订阅投递                               |
+| `src/main/source/sourceFiles.ts`   | 文件对话框与解析（内存录制 / 网络 raw / 任意 IQ / sidecar 元数据）       |
 
 ```text
 source:start / source:stop / source:getStatus / source:setConfig / source:trigger

@@ -10,8 +10,8 @@
 
 ```ts
 chart.appendData({
-  apd: { x, y },   // y 为各电平概率 %
-  ccdf: { x, y },  // y 为超限概率 %
+  apd: { x, y }, // y 为各电平概率 %
+  ccdf: { x, y }, // y 为超限概率 %
   meanDb: 0,
   peakDb: 10,
   paprDb: 10,
@@ -24,10 +24,7 @@ chart.appendData({
 ### 2. 可选 analysis：从功率样本计算
 
 ```vue
-<ApdCcdfChart
-  :analysis="{ enabled: true, bins: 100 }"
-  theme="spectrum"
-/>
+<ApdCcdfChart :analysis="{ enabled: true, bins: 100 }" theme="spectrum" />
 ```
 
 ```ts
@@ -43,17 +40,17 @@ chart.appendData(samplesDb) // Float32Array
 
 ## 二、Props
 
-| 属性 | 默认 | 说明 |
-| --- | --- | --- |
-| `data` | — | ApdCcdfData 纯显示 |
-| `analysis` | — | 样本计算配置 |
-| `analysis.bins` | 100 | 直方图 bin 数 |
-| `analysis.minDb/maxDb` | — | 固定范围；缺省由样本推导 |
-| `analysis.linear` | false | 输入是否线性功率 |
-| `showInfo` | true | 左上统计 |
-| `lineWidth` | 1.5 | 曲线线宽 |
-| `axis/xAxis/grid/axisLabels` | true | 轴/网格 |
-| `theme/chartStyle` | auto | 主题 |
+| 属性                         | 默认  | 说明                     |
+| ---------------------------- | ----- | ------------------------ |
+| `data`                       | —     | ApdCcdfData 纯显示       |
+| `analysis`                   | —     | 样本计算配置             |
+| `analysis.bins`              | 100   | 直方图 bin 数            |
+| `analysis.minDb/maxDb`       | —     | 固定范围；缺省由样本推导 |
+| `analysis.linear`            | false | 输入是否线性功率         |
+| `showInfo`                   | true  | 左上统计                 |
+| `lineWidth`                  | 1.5   | 曲线线宽                 |
+| `axis/xAxis/grid/axisLabels` | true  | 轴/网格                  |
+| `theme/chartStyle`           | auto  | 主题                     |
 
 ## 三、API
 

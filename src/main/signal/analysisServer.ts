@@ -27,6 +27,7 @@ import { getSourceService, type SourceService } from '../source/sourceService'
 import type { SourceFrame } from '../../shared/sourceEngine'
 import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
+import type { Disposer } from '../utils/disposable'
 
 /** 仍在接收信号帧的 webContents（引用计数，由渲染进程 subscribe/unsubscribe 维护） */
 const analysisSubscribers = new Map<number, number>()
@@ -593,7 +594,7 @@ class RemoteAnalysisSource implements SignalAnalysisSource {
 // 注册（主进程）：本地 SourceFrame 消费者 / 远程 socket 客户端 → 渲染进程
 // ──────────────────────────────────────────────────
 
-export function registerSignalAnalysisServer(): () => void {
+export function registerSignalAnalysisServer(): Disposer {
   let source: SignalAnalysisSource | null = null
   // 持久化配置（未运行时保留，供下次 start；setConfig 即时更新运行中的 source）
   let persistedConfig: SignalAnalysisConfig = defaultAnalysisConfig()

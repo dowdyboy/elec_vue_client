@@ -67,10 +67,10 @@
 
 > 信号源与信号分析 UI 拆分：SourceEngine/SourceFrame、独立 source IPC、OutputBackend、OFDM（含远端 Mock）、任意 IQ、录制（内存/流式分段）/回放、S11 扫频与 Smith 端口校准、推荐分析固定源数据；GNU Radio/TCP IQ 网络源支持本机/远程。
 
-| #   | 文档                                     | 对应源码                                                                                                                                          | 状态       |
-| --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [信号源工作台](./SRC-01-信号源工作台.md) | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/sourceService.ts` | Phase 0/18 |
-| 02  | [GNU Radio 网络源](./SRC-02-GNU%20Radio%20接入.md) | `src/main/source/network/`、`src/main/source/localGnuRadio.ts`、`src/shared/sourceNetwork.ts`、`src/renderer/src/pages/source/NetworkSourcePage.vue`、`tools/gnuradio/` | Phase 4 |
+| #   | 文档                                               | 对应源码                                                                                                                                                                  | 状态       |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | [信号源工作台](./SRC-01-信号源工作台.md)           | `src/renderer/src/pages/source/SourceWorkbenchPage.vue`、`src/shared/source.ts`、`src/shared/sourceEngine.ts`、`src/main/source/{sourceService,sourceIpc,sourceFiles}.ts` | Phase 0/18 |
+| 02  | [GNU Radio 网络源](./SRC-02-GNU%20Radio%20接入.md) | `src/main/source/network/`、`src/main/source/localGnuRadio.ts`、`src/shared/sourceNetwork.ts`、`src/renderer/src/pages/source/NetworkSourcePage.vue`、`tools/gnuradio/`   | Phase 4    |
 
 ## 信号分析组件（SIG-00~10）
 

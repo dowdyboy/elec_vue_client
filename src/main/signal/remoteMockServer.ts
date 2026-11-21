@@ -16,8 +16,9 @@ import {
 import { createSignalGenerator, type SignalGenerator } from '../../shared/signalDsp'
 import { SpectrogramAccumulator, SpectrumAnalyzer } from '../../shared/signalFrames'
 import { isTrustedSender, FORBIDDEN } from '../utils/validateSender'
+import type { Disposer } from '../utils/disposable'
 
-export function registerRemoteMockServer(): () => void {
+export function registerRemoteMockServer(): Disposer {
   let io: SocketIOServer | null = null
   let server: http.Server | null = null
   let timer: NodeJS.Timeout | null = null

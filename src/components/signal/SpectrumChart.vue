@@ -60,6 +60,8 @@ import { resolveTheme } from './core/theme'
 import { KeyboardArbiter } from './core/keyboardFocus'
 import { translate, type ChartMessageKey } from './core/i18n'
 import { cssSize } from './core/css'
+import { decimalsForStep, fmtFreqReadout, fmtFreqStep, fmtSigned } from './core/freqFormat'
+import { createViewHistory } from './core/viewHistory'
 import type {
   ExportPayload,
   SpectrumBinRange,
@@ -1172,28 +1174,10 @@ function clearOverlay(): void {
 }
 
 // ── 数值格式（频率/幅度）──
-function trimZeros(v: number, step: number): string {
-  const dec = Math.min(6, Math.max(0, Math.ceil(-Math.log10(Math.max(Math.abs(step), 1e-12)))))
-  const s = v.toFixed(dec)
-  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
-}
-function unitScale(stepHz: number): number {
-  const a = Math.abs(stepHz)
-  return a >= 1e6 ? 1e6 : a >= 1e3 ? 1e3 : 1
-}
-function unitName(stepHz: number): string {
-  const a = Math.abs(stepHz)
-  return a >= 1e6 ? 'MHz' : a >= 1e3 ? 'kHz' : 'Hz'
-}
-function fmtFreqStep(hz: number, stepHz: number): string {
-  return `${trimZeros(hz / unitScale(stepHz), stepHz / unitScale(stepHz))} ${unitName(stepHz)}`
-}
-/** 频率读数（小数位随 bin 宽自适应；按值自动选 Hz/kHz/MHz 单位） */
+// 纯格式化规则已抽到 core/freqFormat.ts（有单测）；这里只保留依赖组件状态的薄封装。
+/** 频率读数：小数位随 bin 宽自适应，单位按值量级选 */
 function fmtFreq(hz: number): string {
-  const step = binHz() ?? 1
-  const a = Math.abs(hz)
-  const unit = a >= 1e6 ? 1e6 : a >= 1e4 ? 1e3 : 1
-  return `${trimZeros(hz / unit, step / unit)} ${unitName(unit)}`
+  return fmtFreqReadout(hz, binHz() ?? 1)
 }
 function buildFreqTicks(
   min: number,
@@ -1213,11 +1197,10 @@ function buildFreqTicks(
 }
 function yDecimals(): number {
   if (!lastView) return 2
-  const step = niceStep(lastView.yRange.max - lastView.yRange.min, DIVISIONS)
-  return Math.min(6, Math.max(1, Math.ceil(-Math.log10(Math.max(step, 1e-9))) + 1))
+  return decimalsForStep(niceStep(lastView.yRange.max - lastView.yRange.min, DIVISIONS))
 }
 function fmtVal(v: number): string {
-  return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(yDecimals())}`
+  return fmtSigned(v, yDecimals())
 }
 function levelText(v: number): string {
   return curDbScale ? `${fmtVal(toUnit(v))}${unitSuffix()}` : fmtVal(v)
@@ -2461,9 +2444,8 @@ interface ViewState {
   ref: number
   div: number
 }
-const viewHistory: ViewState[] = []
-let viewHistoryPos = -1
-const VIEW_HISTORY_MAX = 30
+// 撤销/重做栈抽到 core/viewHistory.ts（边界条件有单测：栈满、撤销后再提交、空栈）
+const viewHistory = createViewHistory<ViewState>(30)
 
 function captureView(): ViewState {
   const xr = resolveXRange()
@@ -2477,15 +2459,10 @@ function captureView(): ViewState {
   }
 }
 function commitViewState(): void {
-  viewHistory.length = viewHistoryPos + 1
-  viewHistory.push(captureView())
-  if (viewHistory.length > VIEW_HISTORY_MAX) viewHistory.shift()
-  viewHistoryPos = viewHistory.length - 1
+  viewHistory.commit(captureView())
 }
 function clearViewHistory(): void {
-  viewHistory.length = 0
-  viewHistoryPos = -1
-  commitViewState()
+  viewHistory.reset(captureView())
 }
 function applyViewState(s: ViewState): void {
   view.fullSpan = s.fullSpan
@@ -2499,14 +2476,12 @@ function applyViewState(s: ViewState): void {
   emitViewportChange(true)
 }
 function undoView(): void {
-  if (viewHistoryPos <= 0) return
-  viewHistoryPos--
-  applyViewState(viewHistory[viewHistoryPos]!)
+  const s = viewHistory.undo()
+  if (s) applyViewState(s)
 }
 function redoView(): void {
-  if (viewHistoryPos >= viewHistory.length - 1) return
-  viewHistoryPos++
-  applyViewState(viewHistory[viewHistoryPos]!)
+  const s = viewHistory.redo()
+  if (s) applyViewState(s)
 }
 
 // ── 峰值搜索 / 峰值跟踪 ──
@@ -3225,7 +3200,10 @@ watch(
   () => props.data,
   (v) => {
     if (v !== undefined) setData(v)
-  }
+  },
+  // immediate：宿主用 :data 传静态数据时也要在挂载时就吃进来
+  // （其余 5 个组件一直是 immediate，此前这 4 个只在数据变化时才生效）
+  { immediate: true }
 )
 
 defineExpose({

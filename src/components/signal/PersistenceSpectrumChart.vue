@@ -503,8 +503,9 @@ defineExpose({
 <template>
   <div
     class="sig-persist"
+    :class="theme.darkLike ? 'sig-dark' : 'sig-light'"
     role="img"
-    :aria-label="tr('persistence.aria')"
+    :aria-label="props.labels?.aria ?? tr('persistence.aria')"
     :style="{ width: viewWidth, height: viewHeight, background: theme.bg }"
   >
     <canvas
