@@ -144,6 +144,8 @@ export const IPC = {
   error: {
     getLogs: 'error:getLogs',
     new: 'error:new',
+    /** 渲染层未捕获错误上报（renderer → main，见 errorReporter.ts） */
+    report: 'error:report',
     setAutoRecovery: 'error:setAutoRecovery',
     getCrashInfo: 'error:getCrashInfo',
     simulateError: 'error:simulateError',

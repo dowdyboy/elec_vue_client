@@ -4,7 +4,8 @@
  * 【复制】1. 复制本文件到新工程 src/main/features/errorHandler.ts
  *         2. 在 index.ts 中调用 registerErrorHandler(getMainWindow)
  *         3. 渲染进程调用 window.api.error.* 查看错误日志
- * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）
+ * 【依赖】复制时需一并带上：src/main/types.ts（MainWindowGetter 类型）、
+ *         src/main/utils/validateSender.ts（渲染层错误上报的发送方校验）
  * 【说明】生产应用的兜底保障：
  *         - uncaughtException：主进程未捕获异常（防止直接崩溃退出）
  *         - unhandledRejection：未处理的 Promise 拒绝
@@ -15,12 +16,23 @@
 
 import { app, crashReporter, ipcMain } from 'electron'
 import type { MainWindowGetter } from '../types'
+import { isTrustedSender } from '../utils/validateSender'
 
 interface ErrorRecord {
   time: string
   type: string
   message: string
 }
+
+/** 渲染层上报的错误载荷（见 src/renderer/src/errorReporter.ts） */
+interface RendererErrorReport {
+  message?: unknown
+  stack?: unknown
+  kind?: unknown
+}
+
+/** 同一渲染层错误的去重窗口（ms）：页面反复重试时不刷满日志 */
+const RENDERER_DEDUPE_MS = 2000
 
 /** 错误日志环形缓冲（最多保留 50 条） */
 const logs: ErrorRecord[] = []
@@ -91,6 +103,29 @@ export function registerErrorHandler(getMainWindow: MainWindowGetter): void {
 
   // 查询历史日志（页面初始化时加载）
   ipcMain.handle('error:getLogs', () => logs)
+
+  // ── 渲染进程未捕获错误上报（renderer → main，fire-and-forget）──
+  // 渲染层的 window.onerror / unhandledrejection 会走到这里（见 src/renderer/src/errorReporter.ts），
+  // 这样"渲染层的崩"和"主进程的崩"进同一份日志，页面上的错误面板能看到全部。
+  // 用 send 而不是 invoke：上报本身失败时不会产生新的未处理 Promise 拒绝（避免自激循环）。
+  let lastRendererKey = ''
+  let lastRendererAt = 0
+  ipcMain.on('error:report', (event, payload: RendererErrorReport) => {
+    if (!isTrustedSender(event)) return
+    const rawMessage =
+      typeof payload?.message === 'string' ? payload.message : String(payload?.message ?? '')
+    const message = rawMessage.trim()
+    if (!message) return
+    const kind = typeof payload?.kind === 'string' ? payload.kind.slice(0, 40) : 'renderer'
+    // 去重：同一消息在窗口期内只记一次（页面重试/轮询失败时防止刷屏）
+    const now = Date.now()
+    const key = `${kind}:${message}`
+    if (key === lastRendererKey && now - lastRendererAt < RENDERER_DEDUPE_MS) return
+    lastRendererKey = key
+    lastRendererAt = now
+    const stack = typeof payload?.stack === 'string' ? payload.stack : ''
+    log(kind, stack ? `${message}\n${stack.slice(0, 400)}` : message)
+  })
 
   // ── 模拟触发主进程错误（教学演示：走真实 uncaughtException 捕获链路）──
   ipcMain.handle('error:simulateError', () => {

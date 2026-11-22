@@ -9,8 +9,6 @@
  *         任何一处写成 startsWith/includes 都会留下相似域名绕过（如 localhost.evil.com）。
  */
 
-import type { IpcMainInvokeEvent } from 'electron'
-
 /**
  * 回环主机名精确匹配（不做子串匹配）。
  * 反例：`origin.includes('localhost')` 会被 `https://localhost.evil.com` 绕过。
@@ -53,9 +51,12 @@ export function isTrustedPageUrl(rawUrl: string | null | undefined): boolean {
   return isLoopbackHost(parsed.hostname)
 }
 
-/** 是否为可信的本应用 IPC 发送方（file:// 打包态 或 devServer 开发态） */
-export function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-  return isTrustedPageUrl(event.senderFrame?.url)
+/**
+ * 是否为可信的本应用 IPC 发送方（file:// 打包态 或 devServer 开发态）。
+ * 参数取结构化最小类型，invoke（IpcMainInvokeEvent）与 send（IpcMainEvent）两种回调都能直接传。
+ */
+export function isTrustedSender(event: { senderFrame?: { url: string } | null } | null): boolean {
+  return isTrustedPageUrl(event?.senderFrame?.url)
 }
 
 /** 校验失败时的统一返回（便于 handle 中直接 return） */

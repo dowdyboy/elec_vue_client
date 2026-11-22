@@ -321,6 +321,12 @@ const api = {
     onNew: (cb: (record: unknown) => void) => on('error:new', cb),
     setAutoRecovery: (enabled: boolean) => ipcRenderer.invoke('error:setAutoRecovery', enabled),
     getCrashInfo: () => ipcRenderer.invoke('error:getCrashInfo'),
+    /**
+     * 上报一条渲染层错误到主进程日志（见 src/renderer/src/errorReporter.ts）。
+     * 用 send 而非 invoke：上报自身失败时不会产生新的未处理拒绝。
+     */
+    report: (payload: { message: string; stack?: string; kind?: string }) =>
+      ipcRenderer.send('error:report', payload),
     /** 模拟触发主进程错误（教学演示，走真实 uncaughtException 捕获链路） */
     simulateError: () => ipcRenderer.invoke('error:simulateError'),
     /** 模拟渲染进程崩溃（触发 render-process-gone + 自动恢复 reload） */
