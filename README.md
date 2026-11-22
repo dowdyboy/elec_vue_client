@@ -153,6 +153,7 @@ npm run test:coverage    # 覆盖率（v8，含阈值；报告在 coverage/）
 npm run test:source-ipc  # 真实主进程 source/analysis/remote/sweep IPC E2E
 npm run test:source-preview # 源工作台频谱预览不受分析配置影响
 npm run test:signal-pages # PowerTime/Eye/Persistence/APD 固定源数据并收到真实帧
+npm run test:signal-demo # IQ/频谱/时频/星座 4 个演示页：标题/画布/轴层像素/画面随帧更新
 npm run test:gnuradio    # GNU Radio / TCP IQ 网络源（Mock + 真实 Electron E2E）
 npm run test:local-gnuradio # 本机有 GNU Radio 时验证一键启动（不进 CI）
 npm run test:raw-playback # 网络源 raw（ci16/cf32/ci8）录制回放
@@ -163,11 +164,11 @@ npm run test:gnuradio-perf # 10 MSPS 吞吐冒烟（Mock；真实 10 MSPS 见 SR
 npm run test:sections    # 真实应用逐页巡检 Electron 教学 + TypeScript 惯用法
 npm run test:smoke       # 组件 Playground + API + PNG 导出管线 + 截图
 npm run test:visual      # Canvas2D/WebGL2 像素回归（10 个组件；CI 的 visual job，暂为 continue-on-error）
-npm run test:e2e         # 4 套 Electron E2E 串联
+npm run test:e2e         # 5 套 Electron E2E 串联
 npm run check:signal     # 组件库 dist-signal 发布产物校验
 ```
 
-CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查、构建、10 套 Electron E2E 与像素回归；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
+CI 配置在 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)：Windows 跑静态检查（含 prettier）、构建、11 套 Electron E2E 与像素回归；Linux 跑覆盖率与生产构建。`test:source-ipc` 同时覆盖本地分析、内置远端 Mock + 远程分析链路、录制/回放与订阅投递。
 
 `test:sections` 会构建真实应用并启动隐藏窗口，逐页验证 30 个 Electron 教学页、13 个 TypeScript 惯用法页的标题、菜单、页面内容和 renderer 异常，并执行 IPC、safeStorage、主题切换和 TS 示例运行等交互。
 

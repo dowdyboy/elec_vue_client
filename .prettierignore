@@ -1,5 +1,8 @@
 out
 dist
+dist-signal
+coverage
+playground/dist
 pnpm-lock.yaml
 LICENSE.md
 tsconfig.json

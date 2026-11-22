@@ -26,6 +26,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run format:check
       - run: npm test
       - run: npm run build
       - run: npm run build:signal
@@ -44,12 +45,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      # 一次构建供 10 套 Electron E2E 复用；smoke 需要 playground 构建
+      # 一次构建供 11 套 Electron E2E 复用；smoke 需要 playground 构建
       - run: npm run build
       - run: npm run build:playground
       - run: node scripts/run-source-ipc-e2e.mjs
       - run: node scripts/run-source-preview-e2e.mjs
       - run: node scripts/run-signal-pages-e2e.mjs
+      - run: node scripts/run-signal-demo-e2e.mjs
       - run: node scripts/run-gnuradio-e2e.mjs
       - run: node scripts/run-gnuradio-split-e2e.mjs
       - run: node scripts/run-gnuradio-dualch-e2e.mjs

@@ -15,6 +15,7 @@
   },
   "scripts": {
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint --cache .",
     "copy:feature": "node scripts/copy-feature.mjs",
     "copy:signal": "node scripts/copy-signal.mjs",
@@ -22,7 +23,7 @@
     "mock:gnuradio": "node scripts/gnuradio-mock-tcp.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run test:source-ipc && npm run test:source-preview && npm run test:signal-pages && npm run test:sections",
+    "test:e2e": "npm run test:source-ipc && npm run test:source-preview && npm run test:signal-pages && npm run test:signal-demo && npm run test:sections",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -37,6 +38,7 @@
     "test:source-ipc": "node scripts/run-source-ipc-e2e.mjs",
     "test:source-preview": "npm run build && node scripts/run-source-preview-e2e.mjs",
     "test:signal-pages": "npm run build && node scripts/run-signal-pages-e2e.mjs",
+    "test:signal-demo": "npm run build && node scripts/run-signal-demo-e2e.mjs",
     "test:gnuradio": "npm run build && node scripts/run-gnuradio-e2e.mjs",
     "test:local-gnuradio": "npm run build && node scripts/run-local-gnuradio-e2e.mjs",
     "test:raw-playback": "npm run build && node scripts/run-raw-playback-e2e.mjs",
@@ -56,8 +58,6 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
-    "@vueuse/core": "^14.4.0",
-    "@vueuse/electron": "^14.4.0",
     "axios": "^1.19.0",
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.3.9",

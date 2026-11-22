@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # npm 依赖：每周一检查，按"运行时/开发期"分组，减少 PR 噪音
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # 补丁与次版本合并成一个 PR，一个 PR 跑完整套 E2E 即可验证
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    # Electron 是运行时（不是普通库）：主版本升级必须人工排期（涉及原生模块重编译、
+    # E2E/像素基线重新校准），交给 Dependabot 自动开 PR 只会制造"看起来能合"的假象。
+    # 升级路线见 README「技术栈」与 releases.electronjs.org/schedule。
+    ignore:
+      - dependency-name: electron
+        update-types:
+          - version-update:semver-major
+      - dependency-name: better-sqlite3
+        update-types:
+          - version-update:semver-major
+
+  # GitHub Actions：每月检查（版本变动很少，但遗漏会产生告警）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
